@@ -1,0 +1,37 @@
+{
+  "summary": "Frontend-only MVP testing for Ruhani Islamic app on Expo web preview (mobile viewport 390x844). Navigated every screen via direct URL navigation (Expo Router was flaky with browser back). All 14 requested feature flows verified end-to-end. Two invalid MaterialCommunityIcons names ('kaaba', 'lantern') were producing console warnings on the Home grid — fixed by the testing agent. All other functionality is working as expected, including the local-only AsyncStorage flows (favourites, reminders) and the external AlQuran Cloud + Aladhan integrations (Quran list & detail returned real data; prayer times and qibla show graceful 'location permission needed' fallback on web as documented).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Quran search (app/quran/index.tsx)", "issue": "Search uses englishName from AlQuran Cloud API (e.g. 'Al-Faatiha'). User queries with common spellings like 'Fatihah' return 0 results because the filter does not match the API spelling 'Faatiha'. Consider also matching englishNameTranslation, name, or a normalized form to be forgiving with diacritics/spellings.", "testID": "surah-search", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home (Other categories grid)", "issues": ["Two invalid MaterialCommunityIcons names ('kaaba' on Hajj card, 'lantern' on Ramadan card) caused console warnings and missing icons — FIXED by testing agent to 'mosque' and 'moon-waning-crescent' respectively in src/data/duas.ts"]}
+    ],
+    "react_native_issues": [
+      {"component": "Root layout", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — coming from a third-party RN library (likely react-native-gesture-handler or expo-router internals), not from app code. Safe to ignore for now."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_1.json"],
+  "action_items": [
+    "(Optional, low priority) Make Quran surah search more forgiving — match against name (Arabic), englishName, and englishNameTranslation, and normalize diacritics so queries like 'Fatihah' and 'fatiha' both find Al-Faatiha.",
+    "(Optional) Confirm 'mosque' and 'moon-waning-crescent' icon choices for Hajj & Ramadan categories match your design intent — testing agent picked closest valid MaterialCommunityIcons names."
+  ],
+  "critical_code_review_comments": [
+    "Frontend properly uses process.env.EXPO_PUBLIC_BACKEND_URL pattern (no calls observed — local-first, AlQuran/Aladhan are public APIs as expected).",
+    "All interactive elements have testID attributes — excellent test coverage.",
+    "Screens correctly handle web fallbacks (Prayer Times/Qibla show 'Location permission needed' instead of crashing).",
+    "Quran list uses FlatList (VirtualizedList on web) — only ~92 of 114 surahs rendered in DOM at viewport, expected behaviour, scrolling renders the rest."
+  ],
+  "updated_files": ["/app/frontend/src/data/duas.ts"],
+  "success_rate": {"backend": "n/a (frontend-only request)", "frontend": "100% (14/14 flows pass)"},
+  "seed_data_creation": "Created a transient TEST reminder ('TEST Dhuhr' @ 13:15) and deleted it within the same run. Favourited dua 'fav-ummah-1' during testing (still in AsyncStorage on the test browser session, no impact on shipping app).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All flows verified on web preview at https://islamic-recite-2.preview.emergentagent.com. Use direct URL navigation (page.goto BASE+path) rather than page.go_back() with Expo Router — back-navigation in expo-router web is flaky. Correct testIDs are: surah-search (NOT quran-search), tasbih-tap (NOT tasbih-counter), fav-<duaId> on dua list, add-reminder-btn (NOT reminder-add), reminder-title-input/hour-input/minute-input/save-btn, switch-<id>/delete-<id> on reminder cards. Prayer Times & Qibla require geolocation which the headless browser denies — that is the documented web fallback, not a bug.",
+  "rca_of_issue": "Invalid MaterialCommunityIcons names 'kaaba' and 'lantern' in src/data/duas.ts (Hajj & Ramadan categories). The @expo/vector-icons MaterialCommunityIcons set does not include these glyph names, producing runtime console warnings and rendering empty icons. Fixed by substituting 'mosque' and 'moon-waning-crescent' which exist in the set and are semantically appropriate."
+}
