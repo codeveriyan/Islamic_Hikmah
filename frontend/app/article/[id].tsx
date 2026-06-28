@@ -4,16 +4,18 @@ import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { ARTICLES } from "@/src/data/articles";
 
 export default function ArticleDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
   const article = ARTICLES.find((a) => a.id === id);
   if (!article) return null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.surface }]}>
       <Image source={{ uri: article.cover }} style={styles.cover} contentFit="cover" />
       <SafeAreaView edges={["top"]} style={styles.backWrap}>
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10} testID="article-back">
@@ -21,10 +23,10 @@ export default function ArticleDetail() {
         </Pressable>
       </SafeAreaView>
       <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 64 }}>
-        <View style={styles.bodyInner}>
-          <Text style={styles.cat}>{article.category} · {article.readingTime}</Text>
-          <Text style={styles.title}>{article.title}</Text>
-          <Text style={styles.text}>{article.body}</Text>
+        <View style={[styles.bodyInner, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.cat, { color: colors.brand }]}>{article.category} · {article.readingTime}</Text>
+          <Text style={[styles.title, { color: colors.onSurface }]}>{article.title}</Text>
+          <Text style={[styles.text, { color: colors.onSurfaceSecondary }]}>{article.body}</Text>
         </View>
       </ScrollView>
     </View>

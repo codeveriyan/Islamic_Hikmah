@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 
 type Surah = {
   number: number;
@@ -16,6 +17,7 @@ type Surah = {
 
 export default function QuranIndex() {
   const router = useRouter();
+  const { colors } = useTheme();
   const [surahs, setSurahs] = useState<Surah[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -36,7 +38,7 @@ export default function QuranIndex() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="quran-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={theme.colors.onSurface} />

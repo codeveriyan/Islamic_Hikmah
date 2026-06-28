@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { toggleFavourite } from "@/src/storage";
 
 type Ayah = {
@@ -38,6 +39,7 @@ export default function SurahDetail() {
 
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
+  const { colors } = useTheme();
 
   useEffect(() => {
     setLoading(true);
@@ -109,7 +111,7 @@ export default function SurahDetail() {
   const currentReciterName = RECITERS.find((r) => r.id === reciter)?.name;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="surah-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={theme.colors.onSurface} />

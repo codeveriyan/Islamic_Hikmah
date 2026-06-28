@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { Magnetometer } from "expo-sensors";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { getSavedLocation, setSavedLocation } from "@/src/storage";
 
 const KAABA = { lat: 21.4225, lon: 39.8262 };
@@ -23,6 +24,7 @@ function bearingTo(lat: number, lon: number) {
 
 export default function QiblaScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const [heading, setHeading] = useState(0);
   const [qibla, setQibla] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export default function QiblaScreen() {
   const aligned = qibla !== null && Math.abs(((arrowRot % 360) + 360) % 360) < 8;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="qibla-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={theme.colors.onSurface} />

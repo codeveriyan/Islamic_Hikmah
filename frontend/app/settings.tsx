@@ -3,6 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 
 const ROWS = [
   { id: "quran", label: "The Quran", icon: "book-open-variant", route: "/quran" },
@@ -13,8 +14,9 @@ const ROWS = [
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="settings-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={theme.colors.onSurface} />
@@ -39,11 +41,11 @@ export default function SettingsScreen() {
 
         <Text style={[styles.section, { marginTop: theme.spacing.xl }]}>About</Text>
         <View style={styles.about}>
-          <Text style={styles.aboutTitle}>Ruhani</Text>
+          <Text style={styles.aboutTitle}>Islamic Hikmah</Text>
           <Text style={styles.aboutTxt}>
-            A spiritual companion for daily Du'as, Dhikr, Quran, and prayer.
+            A spiritual companion for daily Du{`'`}as, Dhikr, Quran, and prayer.
           </Text>
-          <Text style={styles.aboutVer}>v1.0.0</Text>
+          <Text style={styles.aboutVer}>v1.1.0</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

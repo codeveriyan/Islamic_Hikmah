@@ -653,4 +653,56 @@ export const CATEGORIES: DuaCategory[] = [
       },
     ],
   },
+  {
+    id: 'adhan',
+    title: 'Adhan Responses',
+    group: 'other',
+    gradient: ['#0E7490', '#0EA5E9'],
+    icon: 'bullhorn',
+    duas: [
+      {
+        id: 'adhan-1',
+        title: 'After Adhan — bear witness',
+        arabic: 'وَأَنَا أَشْهَدُ أَنْ لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، وَأَنَّ مُحَمَّدًا عَبْدُهُ وَرَسُولُهُ، رَضِيتُ بِاللَّهِ رَبًّا، وَبِمُحَمَّدٍ رَسُولًا، وَبِالْإِسْلَامِ دِينًا',
+        transliteration: "Wa ana ash-hadu an la ilaha illallah … radhitu billahi rabban, wa bi Muhammadin rasulan, wa bil-Islami dina",
+        translation: 'I bear witness… I am pleased with Allah as Lord, Muhammad as Messenger, Islam as religion.',
+        reference: 'Muslim',
+      },
+      {
+        id: 'adhan-2',
+        title: 'Wasilah Dua',
+        arabic: 'اللَّهُمَّ رَبَّ هَذِهِ الدَّعْوَةِ التَّامَّةِ وَالصَّلَاةِ الْقَائِمَةِ، آتِ مُحَمَّدًا الْوَسِيلَةَ وَالْفَضِيلَةَ، وَابْعَثْهُ مَقَامًا مَّحْمُودًا الَّذِي وَعَدْتَهُ',
+        transliteration: "Allahumma Rabba hadhihi-d-da'wati-t-tammah…",
+        translation: 'Grants intercession of the Prophet ﷺ on the Day of Judgement.',
+        reference: 'Bukhari',
+      },
+    ],
+  },
+  {
+    id: 'wudu',
+    title: 'Wudu',
+    group: 'other',
+    gradient: ['#0369A1', '#7DD3FC'],
+    icon: 'water',
+    duas: [
+      {
+        id: 'wudu-1',
+        title: 'Before wudu',
+        arabic: 'بِسْمِ اللَّهِ',
+        transliteration: 'Bismillah',
+        translation: 'In the name of Allah.',
+        reference: 'Abu Dawud',
+      },
+      {
+        id: 'wudu-2',
+        title: 'After wudu — 8 gates of Paradise',
+        arabic: 'أَشْهَدُ أَنْ لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، وَأَشْهَدُ أَنَّ مُحَمَّدًا عَبْدُهُ وَرَسُولُهُ، اللَّهُمَّ اجْعَلْنِي مِنَ التَّوَّابِينَ، وَاجْعَلْنِي مِنَ الْمُتَطَهِّرِينَ',
+        transliteration: "Ash-hadu an la ilaha illallah… Allahumma-j'alni mina-t-tawwabin wa-j'alni mina-l-mutatahhirin",
+        translation: 'I bear witness none is worthy of worship but Allah… O Allah, make me of those who repent and purify themselves.',
+        reference: 'Tirmidhi',
+      },
+    ],
+  },
 ];
+
+export const getCategory = (id: string) => CATEGORIES.find((c) => c.id === id);

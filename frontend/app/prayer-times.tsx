@@ -6,12 +6,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { getSavedLocation, setSavedLocation } from "@/src/storage";
 
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
 
 export default function PrayerTimesScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const [times, setTimes] = useState<Record<string, string> | null>(null);
   const [city, setCity] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,7 @@ export default function PrayerTimesScreen() {
   })();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.surface }]}>
       <LinearGradient colors={["#1E40AF", "#0EA5E9"]} style={styles.hero}>
         <SafeAreaView edges={["top"]}>
           <View style={styles.header}>

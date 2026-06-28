@@ -5,12 +5,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { getCategory } from "@/src/data/duas";
 import { toggleFavourite, getFavourites, Favourite } from "@/src/storage";
 
 export default function DuaCategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
   const cat = getCategory(String(category));
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
 
@@ -43,7 +45,7 @@ export default function DuaCategoryScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.surface }]}>
       <LinearGradient colors={cat.gradient} style={styles.heroGrad}>
         <SafeAreaView edges={["top"]}>
           <View style={styles.headerRow}>
@@ -53,7 +55,7 @@ export default function DuaCategoryScreen() {
             <Text style={styles.heroTitle}>{cat.title}</Text>
             <View style={{ width: 28 }} />
           </View>
-          <Text style={styles.heroSub}>{cat.duas.length} Du'a{cat.duas.length === 1 ? "" : "s"}</Text>
+          <Text style={styles.heroSub}>{cat.duas.length} Du{`'`}a{cat.duas.length === 1 ? "" : "s"}</Text>
         </SafeAreaView>
       </LinearGradient>
 
@@ -61,7 +63,7 @@ export default function DuaCategoryScreen() {
         {cat.duas.map((d, i) => {
           const isFav = favIds.has(d.id);
           return (
-            <View key={d.id} style={styles.card} testID={`dua-${d.id}`}>
+            <View key={d.id} style={[styles.card, { backgroundColor: colors.surfaceSecondary }]} testID={`dua-${d.id}`}>
               <View style={styles.cardHead}>
                 <Text style={styles.cardTitle}>{d.title}</Text>
                 <Pressable onPress={() => onFav(i)} hitSlop={10} testID={`fav-${d.id}`}>

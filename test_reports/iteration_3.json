@@ -1,0 +1,34 @@
+{
+  "summary": "Frontend regression on Islamic Hikmah after theme propagation + new dua categories. PASS (95%): theme toggle from menu drawer now flips surface bg from navy rgb(11,17,32) to cream rgb(248,250,252) and propagates correctly to Home, Dhikr/Tasbih, Quran list, Quran detail, Qibla, Prayer Times, Article detail, Settings, Dua category. New 'Other' tab shows 16 categories including new ones: Ruqyah & Healing (8 duas), Daily Life Adhkar (6 duas), Adhan Responses (2 duas - Wasilah Dua + After Adhan), Wudu (2 duas - Before/After wudu). All 5 bottom tabs render (Home, Favourites, Articles, Emotions, Reminder). Tasbih chips and counter still work. Quran list loads 114 surahs, search filters correctly ('Yasin' -> 1 result). Quran/1 detail shows 4 reciters (Alafasy, Sudais, Ghamdi, Husary) + bitrate toggle Standard 128k / High 192k + Play Full Surah. getCategory export restored and used by /dua/[category]. ONE BLOCKER: /dua/masjid renders 'Category not found' — review request expected a 'Masjid' category with 2 duas but src/data/duas.ts does NOT contain a category with id 'masjid'. The masjid-related dua exists only as item 'daily-6' (Entering the masjid) inside the 'daily-life' category.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "/dua/masjid", "issue": "Category not found. The review request expected a new 'Masjid' category with 2 duas but src/data/duas.ts has no entry with id 'masjid'. Only entry related is the single dua 'daily-6 (Entering the masjid)' nested inside the 'daily-life' category.", "testID": "category-masjid (missing)", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["External Amiri font fails to load from cdn.jsdelivr.net (HTTP 404 for Amiri-Bold.ttf and Amiri-Regular.ttf). Arabic text falls back to a system font; readability still acceptable but main agent should host the font locally or use a working CDN to avoid layout shift and console noise."]}
+    ],
+    "react_native_issues": [
+      {"component": "Pressable / View props", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Search the codebase for pointerEvents prop and migrate to style.pointerEvents."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add the missing 'masjid' category to /app/frontend/src/data/duas.ts (id: 'masjid', group: 'other', title: 'Masjid', with 2 duas — e.g., 'Entering the masjid' (currently daily-6) and 'Leaving the masjid' (Allahumma inni as'aluka min fadlik). After adding, /dua/masjid should resolve via getCategory and render. Optionally also surface a 'category-masjid' card on the Home 'Other' tab.",
+    "Self-host or fix the Amiri font CDN — jsdelivr returns 404 for ofl/amiri/Amiri-*.ttf. Replace with a Google Fonts API URL, the @expo-google-fonts/amiri package, or a bundled .ttf in /assets/fonts.",
+    "Migrate the remaining `pointerEvents={...}` prop usages to `style={{ pointerEvents: ... }}` to silence the deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "ThemeContext correctly exposes { mode, colors, setMode } with persistence via AsyncStorage; all 6 detail screens read colors via useTheme() and apply colors.surface to the root container — verified working at runtime.",
+    "src/data/duas.ts is the single source of truth for /dua/[category] via getCategory(id). The screen renders 'Category not found.' when getCategory returns undefined, which surfaces the missing 'masjid' entry clearly.",
+    "Reciter modal correctly lists 4 testIDs (reciter-ar.alafasy / sudais / saadalghamdi / husary) and 2 bitrate testIDs (bitrate-128, bitrate-192) — selectable and labelled Standard/High."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "95%"},
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Theme toggle verified: dark=rgb(11,17,32), light=rgb(248,250,252); propagates to all detail screens. Home 'Other' tab shows 16 categories. /dua/{adhan,wudu,ruqyah,daily-life} all OK (2,2,8,6 duas). /dua/masjid still missing — confirm fix by checking getCategory('masjid') returns a category with 2 duas. testIDs: open-menu-btn, menu-close, theme-light, theme-dark, segment-main, segment-other, category-<id>, reciter-toggle, reciter-<id>, bitrate-128, bitrate-192, play-all-btn.",
+  "rca_of_issue": "Bug: tapping the 'Masjid' card (per spec) is supposed to navigate to /dua/masjid with 2 duas. Root cause: src/data/duas.ts CATEGORIES array does not contain any object with id==='masjid'. The 'masjid' entry was either not implemented or accidentally merged into the 'daily-life' category as a single dua item (daily-6). Reproduction: navigate to https://islamic-recite-2.preview.emergentagent.com/dua/masjid -> page shows 'Category not found.'. Mitigation: Append a new DuaCategory object {id:'masjid', title:'Masjid', group:'other', gradient:[..], icon:'mosque', duas:[entering, leaving]} to the CATEGORIES array and the existing category-<id> rendering on Home will pick it up automatically because the Home 'Other' grid iterates over CATEGORIES filtered by group==='other'."
+}

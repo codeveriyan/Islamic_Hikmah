@@ -42,13 +42,13 @@ export const DHIKRS: Dhikr[] = [
     translation: 'I seek forgiveness of Allah',
     goal: 100,
   },
-  {
-    id: 'salawat',
-    arabic: 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ',
-    transliteration: 'Allahumma salli ala Muhammad',
-    translation: 'O Allah, send blessings upon Muhammad ﷺ',
-    goal: 100,
-  },
+      {
+        id: 'salawat',
+        arabic: 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ',
+        transliteration: 'Salawat',
+        translation: 'O Allah, send blessings upon Muhammad ﷺ',
+        goal: 100,
+      },
   {
     id: 'subhanwabihamd',
     arabic: 'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ',
