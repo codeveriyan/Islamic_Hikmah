@@ -36,13 +36,13 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header} testID="home-header">
         <Pressable
-          onPress={() => router.push("/settings")}
+          onPress={() => router.push("/menu")}
           hitSlop={10}
           testID="open-menu-btn"
         >
           <MaterialCommunityIcons name="menu" size={26} color={theme.colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>Ruhani</Text>
+        <Text style={styles.headerTitle}>الحكمة الإسلامية</Text>
         <Pressable
           onPress={() => router.push("/settings")}
           hitSlop={10}
@@ -157,9 +157,9 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
   },
   headerTitle: {
-    color: theme.colors.onSurface,
-    fontSize: 22,
-    fontWeight: "700",
+    color: theme.colors.brand,
+    fontFamily: "AmiriBold",
+    fontSize: 28,
     letterSpacing: 0.5,
   },
   scrollContent: { paddingBottom: theme.spacing.xxxl },
