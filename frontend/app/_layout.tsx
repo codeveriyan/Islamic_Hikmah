@@ -33,8 +33,8 @@ function ThemedStack() {
 export default function RootLayout() {
   const [iconLoaded, iconError] = useIconFonts();
   const [fontsLoaded, fontsError] = useFonts({
-    Amiri: "https://cdn.jsdelivr.net/gh/google/fonts/ofl/amiri/Amiri-Regular.ttf",
-    AmiriBold: "https://cdn.jsdelivr.net/gh/google/fonts/ofl/amiri/Amiri-Bold.ttf",
+    Amiri: "https://github.com/aliftype/amiri/raw/master/sources/Amiri-Regular.ttf",
+    AmiriBold: "https://github.com/aliftype/amiri/raw/master/sources/Amiri-Bold.ttf",
   });
 
   const ready = (iconLoaded || iconError) && (fontsLoaded || fontsError);

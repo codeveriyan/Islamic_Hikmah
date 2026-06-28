@@ -703,6 +703,39 @@ export const CATEGORIES: DuaCategory[] = [
       },
     ],
   },
+  {
+    id: 'masjid',
+    title: 'Masjid',
+    group: 'other',
+    gradient: ['#065F46', '#A7F3D0'],
+    icon: 'mosque',
+    duas: [
+      {
+        id: 'masjid-1',
+        title: 'Walking to the masjid',
+        arabic: 'اللَّهُمَّ اجْعَلْ فِي قَلْبِي نُورًا، وَفِي بَصَرِي نُورًا، وَفِي سَمْعِي نُورًا، وَعَنْ يَمِينِي نُورًا، وَعَنْ يَسَارِي نُورًا، وَفَوْقِي نُورًا، وَتَحْتِي نُورًا، وَأَمَامِي نُورًا، وَخَلْفِي نُورًا، وَاجْعَلْ لِي نُورًا',
+        transliteration: "Allahumma-j'al fi qalbi nura, wa fi basari nura…",
+        translation: 'O Allah, place light in my heart, sight, hearing, on all sides — and make me light.',
+        reference: 'Bukhari',
+      },
+      {
+        id: 'masjid-2',
+        title: 'Entering the masjid',
+        arabic: 'بِسْمِ اللَّهِ، وَالصَّلَاةُ وَالسَّلَامُ عَلَى رَسُولِ اللَّهِ، اللَّهُمَّ افْتَحْ لِي أَبْوَابَ رَحْمَتِكَ',
+        transliteration: "Bismillah, was-salatu was-salamu ala Rasulillah. Allahumma-ftah li abwaba rahmatik",
+        translation: 'In the name of Allah, peace & blessings on the Messenger ﷺ. O Allah, open for me the gates of Your mercy.',
+        reference: 'Ibn Majah',
+      },
+      {
+        id: 'masjid-3',
+        title: 'Leaving the masjid',
+        arabic: 'بِسْمِ اللَّهِ، وَالصَّلَاةُ وَالسَّلَامُ عَلَى رَسُولِ اللَّهِ، اللَّهُمَّ إِنِّي أَسْأَلُكَ مِنْ فَضْلِكَ',
+        transliteration: "Bismillah, was-salatu was-salamu ala Rasulillah. Allahumma inni as'aluka min fadlik",
+        translation: 'O Allah, I ask You from Your bounty.',
+        reference: 'Muslim',
+      },
+    ],
+  },
 ];
 
 export const getCategory = (id: string) => CATEGORIES.find((c) => c.id === id);
