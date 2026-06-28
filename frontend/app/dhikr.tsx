@@ -4,12 +4,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { DHIKRS } from "@/src/data/dhikrs";
 import { getDhikrCounts, setDhikrCount } from "@/src/storage";
 
 export default function DhikrScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const [selected, setSelected] = useState(DHIKRS[0]);
   const [count, setCount] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -47,107 +48,103 @@ export default function DhikrScreen() {
   const progress = Math.min(count / selected.goal, 1);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="dhikr-back">
-          <MaterialCommunityIcons name="chevron-left" size={28} color={theme.colors.onSurface} />
+          <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Tasbih</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>Tasbih</Text>
         <Pressable onPress={reset} hitSlop={10} testID="reset-btn">
-          <MaterialCommunityIcons name="restore" size={24} color={theme.colors.brand} />
+          <MaterialCommunityIcons name="restore" size={24} color={colors.brand} />
         </Pressable>
       </View>
 
       <View style={styles.dhikrSelect}>
-        <Text style={styles.arabic}>{selected.arabic}</Text>
-        <Text style={styles.translit}>{selected.transliteration}</Text>
-        <Text style={styles.translation}>{selected.translation}</Text>
+        <Text style={[styles.arabic, { color: colors.brand }]}>{selected.arabic}</Text>
+        <Text style={[styles.translit, { color: colors.onSurfaceSecondary }]}>{selected.transliteration}</Text>
+        <Text style={[styles.translation, { color: colors.onSurfaceMuted }]}>{selected.translation}</Text>
       </View>
 
       <Pressable onPress={tap} style={styles.tapWrap} testID="tasbih-tap">
-        <View style={styles.ringOuter}>
+        <View style={[styles.ringOuter, { borderColor: colors.surfaceSecondary }]}>
           <View
             style={[
               styles.ringFill,
-              { transform: [{ rotate: `${progress * 360}deg` }] },
+              {
+                borderTopColor: colors.brand,
+                borderRightColor: colors.brand,
+                transform: [{ rotate: `${progress * 360}deg` }],
+              },
             ]}
           />
-          <View style={styles.ringInner}>
-            <Text style={styles.count}>{count}</Text>
-            <Text style={styles.goal}>of {selected.goal}</Text>
+          <View style={[styles.ringInner, { backgroundColor: colors.surfaceSecondary }]}>
+            <Text style={[styles.count, { color: colors.onSurface }]}>{count}</Text>
+            <Text style={[styles.goal, { color: colors.onSurfaceMuted }]}>of {selected.goal}</Text>
           </View>
         </View>
-        <Text style={styles.tapHint}>Tap anywhere to count</Text>
+        <Text style={[styles.tapHint, { color: colors.onSurfaceMuted }]}>Tap anywhere to count</Text>
       </Pressable>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.presetRow}
-      >
-        {DHIKRS.map((d) => {
-          const active = d.id === selected.id;
-          return (
-            <Pressable
-              key={d.id}
-              onPress={() => setSelected(d)}
-              style={[styles.preset, active && styles.presetActive]}
-              testID={`preset-${d.id}`}
-            >
-              <Text style={[styles.presetTxt, active && styles.presetTxtActive]}>
-                {d.transliteration}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      <View style={styles.presetWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.presetRow}
+        >
+          {DHIKRS.map((d) => {
+            const active = d.id === selected.id;
+            return (
+              <Pressable
+                key={d.id}
+                onPress={() => setSelected(d)}
+                style={[
+                  styles.preset,
+                  { backgroundColor: active ? colors.brand : colors.surfaceSecondary },
+                ]}
+                testID={`preset-${d.id}`}
+              >
+                <Text
+                  style={[
+                    styles.presetTxt,
+                    { color: active ? colors.onBrandPrimary : colors.onSurfaceMuted },
+                  ]}
+                >
+                  {d.transliteration}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.surface },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
-  title: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "700" },
-  dhikrSelect: { alignItems: "center", paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.md },
-  arabic: { color: theme.colors.brand, fontFamily: "Amiri", fontSize: 38, lineHeight: 60 },
-  translit: { color: theme.colors.onSurfaceSecondary, fontSize: 16, fontStyle: "italic", marginTop: 6 },
-  translation: { color: theme.colors.onSurfaceMuted, fontSize: 13, marginTop: 4 },
+  container: { flex: 1 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12 },
+  title: { fontSize: 18, fontWeight: "700" },
+  dhikrSelect: { alignItems: "center", paddingHorizontal: 16, marginTop: 12 },
+  arabic: { fontFamily: "Amiri", fontSize: 38, lineHeight: 60 },
+  translit: { fontSize: 16, fontStyle: "italic", marginTop: 6 },
+  translation: { fontSize: 13, marginTop: 4 },
   tapWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-  ringOuter: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    borderWidth: 4,
-    borderColor: theme.colors.surfaceSecondary,
-    alignItems: "center",
+  ringOuter: { width: 240, height: 240, borderRadius: 120, borderWidth: 4, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  ringFill: { position: "absolute", width: 240, height: 240, borderRadius: 120, borderWidth: 4, borderColor: "transparent" },
+  ringInner: { width: 200, height: 200, borderRadius: 100, alignItems: "center", justifyContent: "center" },
+  count: { fontSize: 72, fontWeight: "800" },
+  goal: { fontSize: 14 },
+  tapHint: { marginTop: 16 },
+  presetWrap: { height: 64, paddingVertical: 8 },
+  presetRow: { paddingHorizontal: 16, alignItems: "center", gap: 8 },
+  preset: {
+    height: 40,
+    paddingHorizontal: 18,
+    borderRadius: 999,
     justifyContent: "center",
-    overflow: "hidden",
-  },
-  ringFill: {
-    position: "absolute",
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    borderWidth: 4,
-    borderColor: "transparent",
-    borderTopColor: theme.colors.brand,
-    borderRightColor: theme.colors.brand,
-  },
-  ringInner: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: theme.colors.surfaceSecondary,
     alignItems: "center",
-    justifyContent: "center",
+    flexShrink: 0,
+    marginRight: 8,
   },
-  count: { color: theme.colors.onSurface, fontSize: 72, fontWeight: "800" },
-  goal: { color: theme.colors.onSurfaceMuted, fontSize: 14 },
-  tapHint: { color: theme.colors.onSurfaceMuted, marginTop: theme.spacing.lg },
-  presetRow: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xl, gap: theme.spacing.sm },
-  preset: { paddingHorizontal: theme.spacing.lg, paddingVertical: 10, borderRadius: theme.radius.pill, backgroundColor: theme.colors.surfaceSecondary, marginRight: theme.spacing.sm },
-  presetActive: { backgroundColor: theme.colors.brand },
-  presetTxt: { color: theme.colors.onSurfaceMuted, fontWeight: "600" },
-  presetTxtActive: { color: theme.colors.onBrandPrimary },
+  presetTxt: { fontWeight: "600", fontSize: 13 },
 });
