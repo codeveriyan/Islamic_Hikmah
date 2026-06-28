@@ -3,15 +3,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { ARTICLES } from "@/src/data/articles";
 
 export default function ArticlesScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Articles</Text>
-        <Text style={styles.subtitle}>Read & reflect</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>Articles</Text>
+        <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>Read & reflect</Text>
       </View>
       <FlatList
         data={ARTICLES}

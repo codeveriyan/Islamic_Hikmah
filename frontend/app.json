@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Show accurate prayer times and Qibla direction",
-        "NSMotionUsageDescription": "Detect compass heading for Qibla direction"
+        "NSMotionUsageDescription": "Detect compass heading for Qibla direction",
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {

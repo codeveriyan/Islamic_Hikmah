@@ -49,4 +49,25 @@ export const DHIKRS: Dhikr[] = [
     translation: 'O Allah, send blessings upon Muhammad ﷺ',
     goal: 100,
   },
+  {
+    id: 'subhanwabihamd',
+    arabic: 'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ',
+    transliteration: 'Subhan Allahi wa bihamdihi',
+    translation: 'Glory be to Allah and praise be to Him (light on tongue, heavy on scale)',
+    goal: 100,
+  },
+  {
+    id: 'lahawla',
+    arabic: 'لَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ',
+    transliteration: 'La hawla wa la quwwata illa billah',
+    translation: 'There is no might nor power except with Allah (a treasure from Paradise)',
+    goal: 100,
+  },
+  {
+    id: 'tahlil',
+    arabic: 'لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ، وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ',
+    transliteration: 'La ilaha illa-llah wahdahu la sharika lah…',
+    translation: 'There is no god but Allah alone, no partner — to Him belongs dominion & praise — He has power over all things.',
+    goal: 100,
+  },
 ];

@@ -5,11 +5,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { getFavourites, toggleFavourite, Favourite } from "@/src/storage";
 
 export default function FavouritesScreen() {
   const [items, setItems] = useState<Favourite[]>([]);
   const router = useRouter();
+  const { colors } = useTheme();
 
   useFocusEffect(
     useCallback(() => {
@@ -18,17 +20,17 @@ export default function FavouritesScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Favourites</Text>
-        <Text style={styles.subtitle}>{items.length} saved</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>Favourites</Text>
+        <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>{items.length} saved</Text>
       </View>
       {items.length === 0 ? (
         <View style={styles.empty} testID="fav-empty">
           <MaterialCommunityIcons name="heart-outline" size={64} color={theme.colors.brand} />
           <Text style={styles.emptyTitle}>No favourites yet</Text>
           <Text style={styles.emptyText}>
-            Tap the heart icon on any Du'a or Ayah to save it here.
+            Tap the heart icon on any Du{`'`}a or Ayah to save it here.
           </Text>
         </View>
       ) : (

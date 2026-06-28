@@ -4,21 +4,23 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { EMOTIONS } from "@/src/data/emotions";
 import { CATEGORIES } from "@/src/data/duas";
 
 export default function EmotionsScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const router = useRouter();
+  const { colors } = useTheme();
   const cur = EMOTIONS.find((e) => e.id === selected);
   const allDuas = CATEGORIES.flatMap((c) => c.duas.map((d) => ({ ...d, categoryId: c.id })));
   const suggestions = cur ? allDuas.filter((d) => cur.duaIds.includes(d.id)) : [];
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.title}>How do you feel?</Text>
-        <Text style={styles.subtitle}>Find Du'as for your heart's state</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>How do you feel?</Text>
+        <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>Find Du{`'`}as for your heart{`'`}s state</Text>
       </View>
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 32 }}>
         <View style={styles.grid}>
@@ -50,7 +52,7 @@ export default function EmotionsScreen() {
 
         {cur ? (
           <View style={styles.sugg}>
-            <Text style={styles.suggTitle}>Suggested Du'as</Text>
+            <Text style={styles.suggTitle}>Suggested Du{`'`}as</Text>
             <Text style={styles.suggSub}>{cur.description}</Text>
             {suggestions.map((d) => (
               <Pressable

@@ -14,6 +14,7 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { CATEGORIES } from "@/src/data/duas";
 
 const { width } = Dimensions.get("window");
@@ -29,26 +30,27 @@ const QUICK_ACTIONS = [
 export default function HomeScreen() {
   const [group, setGroup] = useState<"main" | "other">("main");
   const router = useRouter();
+  const { colors } = useTheme();
 
   const cats = useMemo(() => CATEGORIES.filter((c) => c.group === group), [group]);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header} testID="home-header">
         <Pressable
           onPress={() => router.push("/menu")}
           hitSlop={10}
           testID="open-menu-btn"
         >
-          <MaterialCommunityIcons name="menu" size={26} color={theme.colors.onSurface} />
+          <MaterialCommunityIcons name="menu" size={26} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>الحكمة الإسلامية</Text>
+        <Text style={[styles.headerTitle, { color: colors.brand }]}>الحكمة الإسلامية</Text>
         <Pressable
           onPress={() => router.push("/settings")}
           hitSlop={10}
           testID="settings-btn"
         >
-          <MaterialCommunityIcons name="cog-outline" size={26} color={theme.colors.onSurface} />
+          <MaterialCommunityIcons name="cog-outline" size={26} color={colors.onSurface} />
         </Pressable>
       </View>
 
@@ -56,13 +58,11 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Greeting */}
         <View style={styles.greeting}>
-          <Text style={styles.greetingHi}>Assalamu Alaikum</Text>
-          <Text style={styles.greetingSub}>May Allah grant you peace today</Text>
+          <Text style={[styles.greetingHi, { color: colors.brand }]}>Assalamu Alaikum</Text>
+          <Text style={[styles.greetingSub, { color: colors.onSurfaceSecondary }]}>May Allah grant you peace today</Text>
         </View>
 
-        {/* Quick actions */}
         <View style={styles.quickRow} testID="quick-actions">
           {QUICK_ACTIONS.map((a) => (
             <Pressable
@@ -77,13 +77,12 @@ export default function HomeScreen() {
               <View style={[styles.quickIconWrap, { backgroundColor: a.color + "22" }]}>
                 <MaterialCommunityIcons name={a.icon as any} size={22} color={a.color} />
               </View>
-              <Text style={styles.quickLabel}>{a.title}</Text>
+              <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{a.title}</Text>
             </Pressable>
           ))}
         </View>
 
-        {/* Segmented control */}
-        <View style={styles.segment} testID="home-segment">
+        <View style={[styles.segment, { backgroundColor: colors.surfaceSecondary }]} testID="home-segment">
           {(["main", "other"] as const).map((g) => {
             const active = group === g;
             return (
@@ -93,10 +92,10 @@ export default function HomeScreen() {
                   Haptics.selectionAsync().catch(() => {});
                   setGroup(g);
                 }}
-                style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                style={[styles.segmentBtn, active && { backgroundColor: colors.brandSecondary }]}
                 testID={`segment-${g}`}
               >
-                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                <Text style={[styles.segmentText, { color: colors.onSurfaceMuted }, active && styles.segmentTextActive]}>
                   {g === "main" ? "Main" : "Other"}
                 </Text>
               </Pressable>
@@ -104,7 +103,6 @@ export default function HomeScreen() {
           })}
         </View>
 
-        {/* Category grid */}
         <View style={styles.grid}>
           {cats.map((c) => (
             <Pressable

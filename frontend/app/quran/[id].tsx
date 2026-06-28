@@ -32,6 +32,7 @@ export default function SurahDetail() {
   const [loading, setLoading] = useState(true);
   const [playingIdx, setPlayingIdx] = useState<number | null>(null);
   const [reciter, setReciter] = useState<string>("ar.alafasy");
+  const [bitrate, setBitrate] = useState<128 | 192>(128);
   const [continuous, setContinuous] = useState(false);
   const [showReciters, setShowReciters] = useState(false);
 
@@ -62,7 +63,8 @@ export default function SurahDetail() {
         const next = playingIdx + 1;
         const url = audio[next]?.audio;
         if (url) {
-          player.replace({ uri: url });
+          const finalUrl = url.replace(/audio\/\d+\//, `audio/${bitrate}/`);
+          player.replace({ uri: finalUrl });
           player.play();
           setPlayingIdx(next);
           return;
@@ -76,12 +78,13 @@ export default function SurahDetail() {
   const playAyah = (i: number) => {
     const url = audio[i]?.audio;
     if (!url) return;
+    const finalUrl = url.replace(/audio\/\d+\//, `audio/${bitrate}/`);
     if (playingIdx === i && status?.playing) {
       player.pause();
       setPlayingIdx(null);
       return;
     }
-    player.replace({ uri: url });
+    player.replace({ uri: finalUrl });
     player.play();
     setPlayingIdx(i);
   };
@@ -91,7 +94,8 @@ export default function SurahDetail() {
     setContinuous(true);
     const url = audio[0]?.audio;
     if (!url) return;
-    player.replace({ uri: url });
+    const finalUrl = url.replace(/audio\/\d+\//, `audio/${bitrate}/`);
+    player.replace({ uri: finalUrl });
     player.play();
     setPlayingIdx(0);
   };
@@ -141,6 +145,21 @@ export default function SurahDetail() {
               <Text style={styles.reciterName}>{r.name}</Text>
             </Pressable>
           ))}
+          <Text style={[styles.reciterHead, { marginTop: 12 }]}>Audio Quality</Text>
+          <View style={styles.bitrateRow}>
+            {([128, 192] as const).map((b) => (
+              <Pressable
+                key={b}
+                onPress={() => setBitrate(b)}
+                style={[styles.bitrateBtn, bitrate === b && styles.bitrateBtnActive]}
+                testID={`bitrate-${b}`}
+              >
+                <Text style={[styles.bitrateTxt, bitrate === b && styles.bitrateTxtActive]}>
+                  {b === 128 ? "Standard · 128k" : "High · 192k"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       ) : (
         <View style={styles.currentReciter}>
@@ -226,6 +245,11 @@ const styles = StyleSheet.create({
   reciterItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 8 },
   reciterActive: { backgroundColor: theme.colors.brand + "15", borderRadius: 8 },
   reciterName: { color: theme.colors.onSurface, fontSize: 14, fontWeight: "600" },
+  bitrateRow: { flexDirection: "row", gap: 8, paddingHorizontal: 8, marginTop: 4 },
+  bitrateBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: "center", backgroundColor: theme.colors.surfaceTertiary },
+  bitrateBtnActive: { backgroundColor: theme.colors.brand },
+  bitrateTxt: { color: theme.colors.onSurfaceMuted, fontWeight: "700", fontSize: 12 },
+  bitrateTxtActive: { color: theme.colors.onBrandPrimary },
   currentReciter: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: theme.spacing.lg, paddingBottom: 6 },
   currentReciterTxt: { color: theme.colors.onSurfaceMuted, fontSize: 12, fontWeight: "600" },
   playAllRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },

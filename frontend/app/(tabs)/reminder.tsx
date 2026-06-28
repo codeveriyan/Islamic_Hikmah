@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { theme } from "@/src/theme";
+import { useTheme } from "@/src/ThemeContext";
 import { getReminders, saveReminders, Reminder } from "@/src/storage";
 
 export default function ReminderScreen() {
@@ -14,6 +15,7 @@ export default function ReminderScreen() {
   const [title, setTitle] = useState("");
   const [hour, setHour] = useState("06");
   const [minute, setMinute] = useState("00");
+  const { colors } = useTheme();
 
   useFocusEffect(
     useCallback(() => {
@@ -76,11 +78,11 @@ export default function ReminderScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Reminders</Text>
-          <Text style={styles.subtitle}>Daily Dhikr & Du'a alerts</Text>
+          <Text style={[styles.title, { color: colors.onSurface }]}>Reminders</Text>
+          <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>Daily Dhikr & Du{`'`}a alerts</Text>
         </View>
         <Pressable
           onPress={() => setAdding(true)}
@@ -143,7 +145,7 @@ export default function ReminderScreen() {
         <View style={styles.empty} testID="rem-empty">
           <MaterialCommunityIcons name="bell-ring-outline" size={64} color={theme.colors.brand} />
           <Text style={styles.emptyTitle}>No reminders</Text>
-          <Text style={styles.emptyText}>Set daily reminders for adhkar, Quran reading, or any Du'a habit.</Text>
+          <Text style={styles.emptyText}>Set daily reminders for adhkar, Quran reading, or any Du{`'`}a habit.</Text>
         </View>
       ) : (
         <FlatList
