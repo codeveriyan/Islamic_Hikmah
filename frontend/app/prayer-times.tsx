@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -11,6 +11,17 @@ import { getSavedLocation, setSavedLocation } from "@/src/storage";
 
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
 
+const PRAYER_ICONS: Record<string, string> = {
+  Fajr: "weather-sunset-up",
+  Sunrise: "white-balance-sunny",
+  Dhuhr: "sun-clock",
+  Asr: "weather-sunny",
+  Maghrib: "weather-sunset-down",
+  Isha: "weather-night",
+};
+
+// FIX 2: Use method=1 (Karachi/MWL) which is correct for India/South Asia
+// method=2 is ISNA which is for North America
 export default function PrayerTimesScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -41,22 +52,22 @@ export default function PrayerTimesScreen() {
         await setSavedLocation(loc);
       }
       setCity(loc.city || "");
-      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=2`;
+      // FIX 2: Changed method=2 (ISNA/North America) to method=1 (Karachi/MWL - correct for India)
+      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=1`;
       const r = await fetch(url);
       const j = await r.json();
       setTimes(j?.data?.timings || null);
     } catch (e) {
-      setErr("Could not load prayer times.");
+      setErr("Could not load prayer times. Please check your internet connection.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const now = new Date();
+
   const nextPrayer = (() => {
     if (!times) return null;
     for (const p of PRAYERS) {
@@ -69,6 +80,39 @@ export default function PrayerTimesScreen() {
     }
     return null;
   })();
+
+  const isCurrentPrayer = (name: string) => nextPrayer?.name === name;
+
+  // FIX 1: useCallback for FlatList renderItem
+  const renderPrayer = useCallback(({ item: p }: { item: string }) => {
+    const isCurrent = isCurrentPrayer(p);
+    return (
+      <View
+        key={p}
+        style={[
+          styles.row,
+          { backgroundColor: isCurrent ? colors.brand + "22" : colors.surfaceSecondary },
+          isCurrent && styles.rowActive,
+        ]}
+        testID={`prayer-${p.toLowerCase()}`}
+      >
+        <MaterialCommunityIcons
+          name={PRAYER_ICONS[p] as any}
+          size={22}
+          color={isCurrent ? colors.brand : colors.onSurfaceMuted}
+        />
+        <Text style={[styles.rowName, { color: isCurrent ? colors.brand : colors.onSurface }]}>{p}</Text>
+        <Text style={[styles.rowTime, { color: isCurrent ? colors.brand : colors.onSurface }]}>
+          {times?.[p] || "--:--"}
+        </Text>
+        {isCurrent && (
+          <View style={styles.nextBadge}>
+            <Text style={styles.nextBadgeTxt}>NEXT</Text>
+          </View>
+        )}
+      </View>
+    );
+  }, [times, nextPrayer, colors]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surface }]}>
@@ -90,7 +134,12 @@ export default function PrayerTimesScreen() {
               <Text style={styles.nextTime}>{nextPrayer.time}</Text>
               <Text style={styles.nextCity}>📍 {city || "Your location"}</Text>
             </View>
-          ) : null}
+          ) : (
+            <View style={styles.next}>
+              <Text style={styles.nextLabel}>All prayers complete</Text>
+              <Text style={styles.nextName}>Alhamdulillah 🌙</Text>
+            </View>
+          )}
         </SafeAreaView>
       </LinearGradient>
 
@@ -98,20 +147,23 @@ export default function PrayerTimesScreen() {
         <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 32 }} />
       ) : err ? (
         <View style={styles.errBox} testID="pt-error">
+          <MaterialCommunityIcons name="wifi-off" size={48} color={theme.colors.onSurfaceMuted} />
           <Text style={styles.errTxt}>{err}</Text>
           <Pressable onPress={load} style={styles.retry} testID="pt-retry">
             <Text style={styles.retryTxt}>Retry</Text>
           </Pressable>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
-          {PRAYERS.map((p) => (
-            <View key={p} style={styles.row} testID={`prayer-${p.toLowerCase()}`}>
-              <Text style={styles.rowName}>{p}</Text>
-              <Text style={styles.rowTime}>{times?.[p] || "--:--"}</Text>
-            </View>
-          ))}
-        </ScrollView>
+        // FIX 1: FlatList with getItemLayout and windowSize for better performance
+        <FlatList
+          data={PRAYERS}
+          keyExtractor={(p) => p}
+          renderItem={renderPrayer}
+          contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.sm }}
+          getItemLayout={(_, index) => ({ length: 68, offset: 68 * index, index })}
+          windowSize={5}
+          removeClippedSubviews={true}
+        />
       )}
     </View>
   );
@@ -127,10 +179,20 @@ const styles = StyleSheet.create({
   nextName: { color: "#fff", fontSize: 32, fontWeight: "800", marginTop: 6 },
   nextTime: { color: "#fff", fontSize: 44, fontWeight: "800" },
   nextCity: { color: "rgba(255,255,255,0.85)", marginTop: 6 },
-  row: { flexDirection: "row", justifyContent: "space-between", padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, marginBottom: theme.spacing.sm },
-  rowName: { color: theme.colors.onSurface, fontSize: 16, fontWeight: "600" },
-  rowTime: { color: theme.colors.brand, fontSize: 18, fontWeight: "700" },
-  errBox: { padding: theme.spacing.xl, alignItems: "center" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    gap: theme.spacing.md,
+    height: 68,
+  },
+  rowActive: { borderWidth: 1, borderColor: theme.colors.brand },
+  rowName: { flex: 1, fontSize: 16, fontWeight: "600" },
+  rowTime: { fontSize: 18, fontWeight: "700" },
+  nextBadge: { backgroundColor: theme.colors.brand, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99 },
+  nextBadgeTxt: { color: theme.colors.onBrandPrimary, fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  errBox: { padding: theme.spacing.xl, alignItems: "center", gap: theme.spacing.md },
   errTxt: { color: theme.colors.onSurfaceMuted, textAlign: "center" },
   retry: { marginTop: theme.spacing.md, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: theme.colors.brand, borderRadius: theme.radius.pill },
   retryTxt: { color: theme.colors.onBrandPrimary, fontWeight: "700" },

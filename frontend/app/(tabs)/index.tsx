@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -27,12 +27,40 @@ const QUICK_ACTIONS = [
   { id: "qibla", title: "Qibla", icon: "compass", route: "/qibla", color: "#F59E0B" },
 ] as const;
 
+// FIX 5: Time-based greeting
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 5) return { salaam: "Assalamu Alaikum", sub: "May your night be blessed" };
+  if (hour < 12) return { salaam: "Assalamu Alaikum", sub: "Good morning, may Allah bless your day" };
+  if (hour < 15) return { salaam: "Assalamu Alaikum", sub: "Good afternoon, remember your Dhuhr prayer" };
+  if (hour < 18) return { salaam: "Assalamu Alaikum", sub: "Good afternoon, Asr time approaches" };
+  if (hour < 20) return { salaam: "Assalamu Alaikum", sub: "Good evening, don't forget Maghrib" };
+  return { salaam: "Assalamu Alaikum", sub: "Good evening, may your night be peaceful" };
+}
+
 export default function HomeScreen() {
   const [group, setGroup] = useState<"main" | "other">("main");
   const router = useRouter();
   const { colors } = useTheme();
+  const greeting = useMemo(() => getGreeting(), []);
 
   const cats = useMemo(() => CATEGORIES.filter((c) => c.group === group), [group]);
+
+  // FIX 1: useCallback for press handlers to avoid re-renders
+  const handleQuickAction = useCallback((route: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push(route as any);
+  }, [router]);
+
+  const handleCategoryPress = useCallback((id: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push(`/dua/${id}` as any);
+  }, [router]);
+
+  const handleGroupChange = useCallback((g: "main" | "other") => {
+    Haptics.selectionAsync().catch(() => {});
+    setGroup(g);
+  }, []);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
@@ -57,20 +85,19 @@ export default function HomeScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        removeClippedSubviews={true}
       >
+        {/* FIX 5: Dynamic time-based greeting */}
         <View style={styles.greeting}>
-          <Text style={[styles.greetingHi, { color: colors.brand }]}>Assalamu Alaikum</Text>
-          <Text style={[styles.greetingSub, { color: colors.onSurfaceSecondary }]}>May Allah grant you peace today</Text>
+          <Text style={[styles.greetingHi, { color: colors.brand }]}>{greeting.salaam}</Text>
+          <Text style={[styles.greetingSub, { color: colors.onSurfaceSecondary }]}>{greeting.sub}</Text>
         </View>
 
         <View style={styles.quickRow} testID="quick-actions">
           {QUICK_ACTIONS.map((a) => (
             <Pressable
               key={a.id}
-              onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
-                router.push(a.route as any);
-              }}
+              onPress={() => handleQuickAction(a.route)}
               style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7 }]}
               testID={`quick-${a.id}`}
             >
@@ -88,15 +115,12 @@ export default function HomeScreen() {
             return (
               <Pressable
                 key={g}
-                onPress={() => {
-                  Haptics.selectionAsync().catch(() => {});
-                  setGroup(g);
-                }}
+                onPress={() => handleGroupChange(g)}
                 style={[styles.segmentBtn, active && { backgroundColor: colors.brandSecondary }]}
                 testID={`segment-${g}`}
               >
                 <Text style={[styles.segmentText, { color: colors.onSurfaceMuted }, active && styles.segmentTextActive]}>
-                  {g === "main" ? "Main" : "Other"}
+                  {g === "main" ? "Main Duas" : "Other Duas"}
                 </Text>
               </Pressable>
             );
@@ -107,10 +131,7 @@ export default function HomeScreen() {
           {cats.map((c) => (
             <Pressable
               key={c.id}
-              onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
-                router.push(`/dua/${c.id}` as any);
-              }}
+              onPress={() => handleCategoryPress(c.id)}
               style={({ pressed }) => [
                 styles.card,
                 { width: CARD_WIDTH },
@@ -173,7 +194,7 @@ const styles = StyleSheet.create({
   },
   greetingSub: {
     color: theme.colors.onSurfaceSecondary,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
     marginTop: 4,
   },
@@ -211,7 +232,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.pill,
     alignItems: "center",
   },
-  segmentBtnActive: { backgroundColor: theme.colors.brandSecondary },
   segmentText: {
     color: theme.colors.onSurfaceMuted,
     fontWeight: "600",
