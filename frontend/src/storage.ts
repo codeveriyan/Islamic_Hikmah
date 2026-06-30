@@ -74,3 +74,60 @@ export async function getSavedLocation(): Promise<{ lat: number; lon: number; ci
 export async function setSavedLocation(loc: { lat: number; lon: number; city?: string }) {
   await AsyncStorage.setItem(PRAY_LOC, JSON.stringify(loc));
 }
+
+// ── Goals Storage ──────────────────────────────────────────
+const GOALS_KEY = 'hikmah:goals-completed:v1';
+const GOALS_CONFIG_KEY = 'hikmah:goals-config:v1';
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+export async function getCompletedGoals(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(`${GOALS_KEY}:${todayKey()}`);
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function toggleGoal(id: string): Promise<boolean> {
+  const list = await getCompletedGoals();
+  const idx = list.indexOf(id);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(id);
+  await AsyncStorage.setItem(`${GOALS_KEY}:${todayKey()}`, JSON.stringify(list));
+  return idx < 0;
+}
+
+export async function getActiveGoalIds(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(GOALS_CONFIG_KEY);
+  if (raw) return JSON.parse(raw);
+  // Default: first 10 goals active
+  return ['fajr','dhuhr','asr','maghrib','isha','quran-5min','morning-adhkar','evening-adhkar','sleep-adhkar','fast-monday'];
+}
+
+export async function saveActiveGoalIds(ids: string[]) {
+  await AsyncStorage.setItem(GOALS_CONFIG_KEY, JSON.stringify(ids));
+}
+
+// ── Prayer Settings Storage ────────────────────────────────
+const PRAYER_SETTINGS_KEY = 'hikmah:prayer-settings:v1';
+
+export type PrayerSettings = {
+  method: number;
+  juristic: number; // 0=Shafi, 1=Hanafi
+  adhanEnabled: Record<string, boolean>;
+};
+
+export async function getPrayerSettings(): Promise<PrayerSettings> {
+  const raw = await AsyncStorage.getItem(PRAYER_SETTINGS_KEY);
+  if (raw) return JSON.parse(raw);
+  return {
+    method: 1,
+    juristic: 0,
+    adhanEnabled: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true },
+  };
+}
+
+export async function savePrayerSettings(s: PrayerSettings) {
+  await AsyncStorage.setItem(PRAYER_SETTINGS_KEY, JSON.stringify(s));
+}

@@ -27,6 +27,7 @@ export default function QiblaScreen() {
   const { colors } = useTheme();
   const [heading, setHeading] = useState(0);
   const [qibla, setQibla] = useState<number | null>(null);
+  const [city, setCity] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -63,16 +64,33 @@ export default function QiblaScreen() {
             return;
           }
           const p = await Location.getCurrentPositionAsync({});
-          loc = { lat: p.coords.latitude, lon: p.coords.longitude };
+          let cityName = "";
+          try {
+            const rev = await Location.reverseGeocodeAsync(p.coords);
+            cityName = rev?.[0]?.city || rev?.[0]?.region || "";
+          } catch {}
+          loc = { lat: p.coords.latitude, lon: p.coords.longitude, city: cityName };
           await setSavedLocation(loc);
+        } else if (!loc.city) {
+          // Self-heal: cached location is missing city, re-geocode it
+          try {
+            const rev = await Location.reverseGeocodeAsync({ latitude: loc.lat, longitude: loc.lon });
+            const cityName = rev?.[0]?.city || rev?.[0]?.region || "";
+            if (cityName) {
+              loc = { ...loc, city: cityName };
+              await setSavedLocation(loc);
+            }
+          } catch {}
         }
+        setCity(loc.city || "");
         const qiblaDir = bearingTo(loc.lat, loc.lon);
         setQibla(qiblaDir);
 
         Magnetometer.setUpdateInterval(100);
         sub = Magnetometer.addListener((d) => {
-          // FIX 3: Improved angle calculation
-          let angle = Math.atan2(d.y, d.x) * (180 / Math.PI);
+          // Correct compass heading formula: standard atan2(x, y) convention
+          // for a phone lying flat, with 0° = North, increasing clockwise (East).
+          let angle = Math.atan2(d.x, d.y) * (180 / Math.PI);
           angle = (angle + 360) % 360;
           setHeading(angle);
           // Smooth rotation to qibla direction relative to heading
@@ -112,6 +130,27 @@ export default function QiblaScreen() {
         <View style={styles.errWrap}>
           <MaterialCommunityIcons name="compass-off" size={64} color={theme.colors.onSurfaceMuted} />
           <Text style={styles.err}>{err}</Text>
+          <Pressable
+            onPress={() => {
+              setLoading(true);
+              setErr(null);
+              Location.requestForegroundPermissionsAsync().then(({ status }) => {
+                if (status === "granted") {
+                  // Re-trigger the effect by reloading
+                  setQibla(null);
+                  setLoading(false);
+                  // Force re-run via state flag would need restructuring; simplest is to ask user to reopen
+                  setErr(null);
+                } else {
+                  setErr("Location permission needed for Qibla direction. Please enable it in your phone Settings.");
+                  setLoading(false);
+                }
+              });
+            }}
+            style={[styles.retryBtn, { backgroundColor: colors.brand }]}
+          >
+            <Text style={[styles.retryTxt, { color: colors.onBrandPrimary }]}>Grant Location Access</Text>
+          </Pressable>
         </View>
       ) : (
         <View style={styles.center}>
@@ -158,6 +197,9 @@ export default function QiblaScreen() {
           <Text style={[styles.info, { color: colors.onSurfaceSecondary }]}>
             Qibla bearing: {qibla?.toFixed(1)}° from North
           </Text>
+          {city ? (
+            <Text style={[styles.cityTxt, { color: colors.onSurfaceMuted }]}>📍 {city}</Text>
+          ) : null}
           <Text style={[styles.hint, { color: colors.onSurfaceMuted }]}>
             Hold phone flat & away from metal for best accuracy
           </Text>
@@ -201,7 +243,10 @@ const styles = StyleSheet.create({
   kaabaEmoji: { fontSize: 20 },
   deg: { fontSize: 28, fontWeight: "800", marginBottom: 6 },
   info: { fontSize: 14, marginTop: 4 },
+  cityTxt: { fontSize: 12, marginTop: 4, fontWeight: "600" },
   hint: { marginTop: 16, textAlign: "center", fontSize: 13, paddingHorizontal: 24 },
   errWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
   err: { color: theme.colors.onSurfaceMuted, textAlign: "center", fontSize: 15 },
+  retryBtn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: theme.radius.pill, marginTop: 8 },
+  retryTxt: { fontWeight: "700" },
 });

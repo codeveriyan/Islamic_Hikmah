@@ -65,25 +65,25 @@ export default function DuaCategoryScreen() {
           return (
             <View key={d.id} style={[styles.card, { backgroundColor: colors.surfaceSecondary }]} testID={`dua-${d.id}`}>
               <View style={styles.cardHead}>
-                <Text style={styles.cardTitle}>{d.title}</Text>
+                <Text style={[styles.cardTitle, { color: colors.brand }]}>{d.title}</Text>
                 <Pressable onPress={() => onFav(i)} hitSlop={10} testID={`fav-${d.id}`}>
                   <MaterialCommunityIcons
                     name={isFav ? "heart" : "heart-outline"}
                     size={22}
-                    color={isFav ? theme.colors.error : theme.colors.onSurfaceMuted}
+                    color={isFav ? theme.colors.error : colors.onSurfaceMuted}
                   />
                 </Pressable>
               </View>
-              <Text style={styles.arabic}>{d.arabic}</Text>
+              <Text style={[styles.arabic, { color: colors.onSurface }]}>{d.arabic}</Text>
               {d.transliteration ? (
-                <Text style={styles.translit}>{d.transliteration}</Text>
+                <Text style={[styles.translit, { color: colors.brand }]}>{d.transliteration}</Text>
               ) : null}
-              <Text style={styles.translation}>{d.translation}</Text>
+              <Text style={[styles.translation, { color: colors.onSurfaceSecondary }]}>{d.translation}</Text>
               <View style={styles.footRow}>
-                {d.reference ? <Text style={styles.ref}>📖 {d.reference}</Text> : <View />}
+                {d.reference ? <Text style={[styles.ref, { color: colors.onSurfaceMuted }]}>📖 {d.reference}</Text> : <View />}
                 {d.repeat ? (
-                  <View style={styles.repeatPill}>
-                    <Text style={styles.repeatText}>×{d.repeat}</Text>
+                  <View style={[styles.repeatPill, { backgroundColor: colors.brandSecondary + "33" }]}>
+                    <Text style={[styles.repeatText, { color: colors.brandSecondary }]}>×{d.repeat}</Text>
                   </View>
                 ) : null}
               </View>
@@ -101,14 +101,14 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },
   heroTitle: { color: "#fff", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
   heroSub: { color: "rgba(255,255,255,0.85)", paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
-  card: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, padding: theme.spacing.lg, marginBottom: theme.spacing.md },
+  card: { borderRadius: theme.radius.lg, padding: theme.spacing.lg, marginBottom: theme.spacing.md },
   cardHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  cardTitle: { color: theme.colors.brand, fontSize: 13, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase", flex: 1 },
-  arabic: { color: theme.colors.onSurface, fontFamily: "Amiri", fontSize: 26, textAlign: "right", lineHeight: 44, marginTop: theme.spacing.md },
-  translit: { color: theme.colors.brand, fontStyle: "italic", marginTop: theme.spacing.md, lineHeight: 21 },
-  translation: { color: theme.colors.onSurfaceSecondary, marginTop: theme.spacing.sm, lineHeight: 22 },
+  cardTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase", flex: 1 },
+  arabic: { fontFamily: "Amiri", fontSize: 26, textAlign: "right", lineHeight: 44, marginTop: theme.spacing.md },
+  translit: { fontStyle: "italic", marginTop: theme.spacing.md, lineHeight: 21 },
+  translation: { marginTop: theme.spacing.sm, lineHeight: 22 },
   footRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: theme.spacing.md },
-  ref: { color: theme.colors.onSurfaceMuted, fontSize: 12 },
-  repeatPill: { backgroundColor: theme.colors.brandSecondary + "33", borderRadius: theme.radius.pill, paddingHorizontal: 12, paddingVertical: 4 },
-  repeatText: { color: theme.colors.brandSecondary, fontWeight: "700" },
+  ref: { fontSize: 12 },
+  repeatPill: { borderRadius: theme.radius.pill, paddingHorizontal: 12, paddingVertical: 4 },
+  repeatText: { fontWeight: "700" },
 });
