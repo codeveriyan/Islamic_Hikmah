@@ -33,7 +33,7 @@ const QUICK_ACTIONS = [
   { id: "quran", title: "Quran", icon: "book-open-variant", route: "/quran", color: "#10B981" },
   { id: "dhikr", title: "Tasbih", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
   { id: "prayer", title: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times", color: "#14B8A6" },
-  { id: "qibla", title: "Qibla", icon: "compass", route: "/qibla", color: "#F59E0B" },
+  { id: "goals", title: "Goals", icon: "checkbox-marked-circle-outline", route: "/goals", color: "#8B5CF6" },
 ] as const;
 
 function getGreeting() {
@@ -46,11 +46,38 @@ function getGreeting() {
   return { salaam: "Assalamu Alaikum", sub: "Good evening, may your night be peaceful" };
 }
 
+function format12Hour(timeStr: string): string {
+  if (!timeStr) return "";
+  const clean = timeStr.split(" ")[0];
+  const parts = clean.split(":");
+  if (parts.length < 2) return timeStr;
+  let h = parseInt(parts[0], 10);
+  const m = parts[1].substring(0, 2);
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  h = h ? h : 12;
+  return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
+}
+
 function getHijriDate() {
   try {
-    return new Intl.DateTimeFormat('en-TN-u-ca-islamic', {
+    const str = new Intl.DateTimeFormat('en-TN-u-ca-islamic', {
       day: 'numeric', month: 'long', year: 'numeric'
     }).format(new Date());
+    const clean = str.replace(" AH", "").trim();
+    const parts = clean.split(" ");
+    if (parts.length >= 3) {
+      const day = parseInt(parts[0], 10);
+      if (!isNaN(day)) {
+        let suffix = "th";
+        if (day % 10 === 1 && day !== 11) suffix = "st";
+        else if (day % 10 === 2 && day !== 12) suffix = "nd";
+        else if (day % 10 === 3 && day !== 13) suffix = "rd";
+        return `${day}${suffix} ${parts[1]} ${parts[2]}`;
+      }
+    }
+    return clean;
   } catch { return ""; }
 }
 
@@ -239,7 +266,7 @@ export default function HomeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.prayerLabel, { color: colors.onSurfaceMuted }]}>Current Prayer</Text>
               <Text style={[styles.prayerName, { color: colors.onSurface }]}>{nextPrayer.name}</Text>
-              <Text style={[styles.prayerTime, { color: colors.brand }]}>{nextPrayer.time}</Text>
+              <Text style={[styles.prayerTime, { color: colors.brand }]}>{format12Hour(nextPrayer.time)}</Text>
               <Text style={[styles.viewAll, { color: colors.brand }]}>View All Prayers →</Text>
             </View>
             {/* Countdown Ring */}
@@ -304,37 +331,6 @@ export default function HomeScreen() {
             ) : null)}
           </View>
 
-          {/* Goal items */}
-          {activeGoals.slice(0, 6).map(goal => {
-            const done = completed.includes(goal.id);
-            return (
-              <Pressable key={goal.id} onPress={() => handleGoalTap(goal.id)}
-                style={[styles.goalRow, { borderBottomColor: colors.surface }]}>
-                <View style={[styles.goalCircle, {
-                  borderColor: CATEGORY_COLORS[goal.category],
-                  backgroundColor: done ? CATEGORY_COLORS[goal.category] : "transparent"
-                }]}>
-                  {done && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.goalTitle, { color: done ? colors.onSurfaceMuted : colors.onSurface },
-                    done && { textDecorationLine: "line-through" }]}>
-                    {goal.title}
-                  </Text>
-                  {goal.subtitle && <Text style={[styles.goalSub, { color: colors.onSurfaceMuted }]}>{goal.subtitle}</Text>}
-                  {goal.arabic && <Text style={[styles.goalArabic, { color: colors.onSurfaceMuted }]}>{goal.arabic}</Text>}
-                </View>
-              </Pressable>
-            );
-          })}
-
-          {activeGoals.length > 6 && (
-            <Pressable onPress={() => router.push("/goals" as any)} style={styles.viewMoreBtn}>
-              <Text style={[styles.viewMoreTxt, { color: colors.brand }]}>
-                View all {activeGoals.length} goals →
-              </Text>
-            </Pressable>
-          )}
         </View>
 
         {/* Dua Categories */}

@@ -4,7 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const KEY = "islamic-hikmah:theme:v1";
 
 const dark = {
-  mode: "dark" as const,
+  mode: "dark" as Mode,
   surface: "#0B1120",
   surfaceSecondary: "#151E32",
   surfaceTertiary: "#1E293B",
@@ -20,7 +20,7 @@ const dark = {
 };
 
 const light = {
-  mode: "light" as const,
+  mode: "light" as Mode,
   surface: "#F8FAFC",
   surfaceSecondary: "#FFFFFF",
   surfaceTertiary: "#E2E8F0",
