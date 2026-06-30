@@ -27,9 +27,9 @@ export default function FavouritesScreen() {
       </View>
       {items.length === 0 ? (
         <View style={styles.empty} testID="fav-empty">
-          <MaterialCommunityIcons name="heart-outline" size={64} color={theme.colors.brand} />
-          <Text style={styles.emptyTitle}>No favourites yet</Text>
-          <Text style={styles.emptyText}>
+          <MaterialCommunityIcons name="heart-outline" size={64} color={colors.brand} />
+          <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>No favourites yet</Text>
+          <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>
             Tap the heart icon on any Du{`'`}a or Ayah to save it here.
           </Text>
         </View>
@@ -39,17 +39,17 @@ export default function FavouritesScreen() {
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md }}
           renderItem={({ item }) => (
-            <View style={styles.card} testID={`fav-${item.id}`}>
+            <View style={[styles.card, { backgroundColor: colors.surfaceSecondary }]} testID={`fav-${item.id}`}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardKind}>{item.type === "dua" ? "Du'a" : "Ayah"}</Text>
-                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={[styles.cardKind, { color: colors.brand }]}>{item.type === "dua" ? "Du'a" : "Ayah"}</Text>
+                <Text style={[styles.cardTitle, { color: colors.onSurface }]}>{item.title}</Text>
                 {item.arabic ? (
-                  <Text style={styles.arabic} numberOfLines={2}>
+                  <Text style={[styles.arabic, { color: colors.onSurfaceSecondary }]} numberOfLines={2}>
                     {item.arabic}
                   </Text>
                 ) : null}
                 {item.translation ? (
-                  <Text style={styles.translation} numberOfLines={2}>
+                  <Text style={[styles.translation, { color: colors.onSurfaceMuted }]} numberOfLines={2}>
                     {item.translation}
                   </Text>
                 ) : null}
@@ -73,23 +73,22 @@ export default function FavouritesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.surface },
+  container: { flex: 1 },
   header: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.lg },
-  title: { color: theme.colors.onSurface, fontSize: 28, fontWeight: "700" },
-  subtitle: { color: theme.colors.onSurfaceMuted, marginTop: 4 },
+  title: { fontSize: 28, fontWeight: "700" },
+  subtitle: { marginTop: 4 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
-  emptyTitle: { color: theme.colors.onSurface, fontSize: 18, fontWeight: "700", marginTop: 16 },
-  emptyText: { color: theme.colors.onSurfaceMuted, textAlign: "center", marginTop: 8, lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: "700", marginTop: 16 },
+  emptyText: { textAlign: "center", marginTop: 8, lineHeight: 20 },
   card: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: theme.colors.surfaceSecondary,
     padding: theme.spacing.lg,
     borderRadius: theme.radius.lg,
     gap: theme.spacing.md,
   },
-  cardKind: { color: theme.colors.brand, fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
-  cardTitle: { color: theme.colors.onSurface, fontSize: 15, fontWeight: "700", marginTop: 4 },
-  arabic: { color: theme.colors.onSurfaceSecondary, fontFamily: "Amiri", fontSize: 18, marginTop: 8, textAlign: "right" },
-  translation: { color: theme.colors.onSurfaceMuted, marginTop: 6, fontSize: 13, lineHeight: 18 },
+  cardKind: { fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
+  cardTitle: { fontSize: 15, fontWeight: "700", marginTop: 4 },
+  arabic: { fontFamily: "Amiri", fontSize: 18, marginTop: 8, textAlign: "right" },
+  translation: { marginTop: 6, fontSize: 13, lineHeight: 18 },
 });
