@@ -6,7 +6,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
-import { setAudioModeAsync } from "expo-audio";
+import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
+import * as Notifications from "expo-notifications";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ThemeProvider, useTheme } from "@/src/ThemeContext";
@@ -33,9 +34,21 @@ function ThemedStack() {
 export default function RootLayout() {
   const [iconLoaded, iconError] = useIconFonts();
   const [fontsLoaded, fontsError] = useFonts({
-    Amiri: "https://github.com/aliftype/amiri/raw/master/sources/Amiri-Regular.ttf",
-    AmiriBold: "https://github.com/aliftype/amiri/raw/master/sources/Amiri-Bold.ttf",
+    Amiri: require("../assets/fonts/Amiri-Regular.ttf"),
+    AmiriBold: require("../assets/fonts/Amiri-Bold.ttf"),
   });
+
+  const player = useAudioPlayer(require("../assets/audio/azaan.mp3"));
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener((notification) => {
+      const title = notification.request.content.title || "";
+      if (title.includes("Prayer Time")) {
+        player.play();
+      }
+    });
+    return () => subscription.remove();
+  }, [player]);
 
   const ready = (iconLoaded || iconError) && (fontsLoaded || fontsError);
 

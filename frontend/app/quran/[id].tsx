@@ -38,7 +38,6 @@ export default function SurahDetail() {
   const [audioErr, setAudioErr] = useState(false);
   const [playingIdx, setPlayingIdx] = useState<number | null>(null);
   const [reciter, setReciter] = useState<string>("ar.alafasy");
-  const [bitrate, setBitrate] = useState<128 | 192>(128);
   const [continuous, setContinuous] = useState(false);
   const [showReciters, setShowReciters] = useState(false);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
@@ -78,8 +77,7 @@ export default function SurahDetail() {
         const next = playingIdx + 1;
         const url = audio[next]?.audio;
         if (url) {
-          const finalUrl = url.replace(/audio\/\d+\//, `audio/${bitrate}/`);
-          player.replace({ uri: finalUrl });
+          player.replace({ uri: url });
           player.play();
           setPlayingIdx(next);
           return;
@@ -93,13 +91,12 @@ export default function SurahDetail() {
   const playAyah = (i: number) => {
     const url = audio[i]?.audio;
     if (!url) return;
-    const finalUrl = url.replace(/audio\/\d+\//, `audio/${bitrate}/`);
     if (playingIdx === i && status?.playing) {
       player.pause();
       setPlayingIdx(null);
       return;
     }
-    player.replace({ uri: finalUrl });
+    player.replace({ uri: url });
     player.play();
     setPlayingIdx(i);
   };
@@ -109,8 +106,7 @@ export default function SurahDetail() {
     setContinuous(true);
     const url = audio[0]?.audio;
     if (!url) return;
-    const finalUrl = url.replace(/audio\/\d+\//, `audio/${bitrate}/`);
-    player.replace({ uri: finalUrl });
+    player.replace({ uri: url });
     player.play();
     setPlayingIdx(0);
   };
@@ -174,21 +170,6 @@ export default function SurahDetail() {
               <Text style={[styles.reciterName, { color: colors.onSurface }]}>{r.name}</Text>
             </Pressable>
           ))}
-          <Text style={[styles.reciterHead, { color: colors.onSurfaceMuted, marginTop: 12 }]}>Audio Quality</Text>
-          <View style={styles.bitrateRow}>
-            {([128, 192] as const).map((b) => (
-              <Pressable
-                key={b}
-                onPress={() => setBitrate(b)}
-                style={[styles.bitrateBtn, { backgroundColor: bitrate === b ? colors.brand : colors.surfaceTertiary }]}
-                testID={`bitrate-${b}`}
-              >
-                <Text style={[styles.bitrateTxt, { color: bitrate === b ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>
-                  {b === 128 ? "Standard · 128k" : "High · 192k"}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
       ) : (
         <View style={styles.currentReciter}>

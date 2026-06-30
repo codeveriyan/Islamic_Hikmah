@@ -1,18 +1,105 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Switch, Modal, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Switch, Modal, ScrollView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { getSavedLocation, setSavedLocation, getPrayerSettings, savePrayerSettings, PrayerSettings } from "@/src/storage";
 
-const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
+const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Qiyam"];
 const PRAYER_ICONS: Record<string, string> = {
-  Fajr: "weather-sunset-up", Sunrise: "white-balance-sunny", Dhuhr: "sun-clock",
-  Asr: "weather-sunny", Maghrib: "weather-sunset-down", Isha: "weather-night",
+  Fajr: "weather-partly-cloudy",
+  Sunrise: "weather-sunset-up",
+  Dhuhr: "weather-sunny",
+  Asr: "weather-cloudy",
+  Maghrib: "weather-sunset-down",
+  Isha: "weather-night",
+  Qiyam: "weather-night",
+};
+
+const PRAYER_NOTIF_KEY = "scheduled_prayer_notifications";
+
+function format12Hour(timeStr: string): string {
+  if (!timeStr) return "";
+  const clean = timeStr.split(" ")[0];
+  const parts = clean.split(":");
+  if (parts.length < 2) return timeStr;
+  let h = parseInt(parts[0], 10);
+  const m = parts[1].substring(0, 2);
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  h = h ? h : 12;
+  return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
+}
+
+const cancelPrevPrayerNotifications = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(PRAYER_NOTIF_KEY);
+    if (raw) {
+      const ids = JSON.parse(raw) as string[];
+      for (const id of ids) {
+        await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+      }
+    }
+    await AsyncStorage.removeItem(PRAYER_NOTIF_KEY);
+  } catch (e) {
+    console.error("Error cancelling prayer notifications:", e);
+  }
+};
+
+const schedulePrayerNotifications = async (timings: Record<string, string>, adhanEnabled: Record<string, boolean>) => {
+  if (Platform.OS === "web") return;
+  
+  await cancelPrevPrayerNotifications();
+  
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== "granted") {
+    const res = await Notifications.requestPermissionsAsync();
+    if (res.status !== "granted") return;
+  }
+  
+  const newIds: string[] = [];
+  const activePrayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+  
+  for (const p of activePrayers) {
+    const isEnabled = adhanEnabled[p] ?? true;
+    if (!isEnabled) continue;
+    
+    const timeStr = timings[p];
+    if (!timeStr) continue;
+    
+    const [hStr, mStr] = timeStr.split(":");
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    
+    if (isNaN(h) || isNaN(m)) continue;
+    
+    try {
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `${p} Prayer Time`,
+          body: `It is time for ${p} prayer.`,
+          sound: Platform.OS === "android" ? "azaan" : "azaan.wav",
+        },
+        trigger: {
+          hour: h,
+          minute: m,
+          repeats: true,
+        } as any,
+      });
+      newIds.push(id);
+    } catch (e) {
+      console.error(`Failed to schedule notification for ${p}:`, e);
+    }
+  }
+  
+  await AsyncStorage.setItem(PRAYER_NOTIF_KEY, JSON.stringify(newIds));
 };
 
 const CALC_METHODS = [
@@ -72,9 +159,25 @@ export default function PrayerTimesScreen() {
       const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${usedSettings.method}&school=${usedSettings.juristic}`;
       const r = await fetch(url);
       const j = await r.json();
-      setTimes(j?.data?.timings || null);
-      const d = j?.data?.date?.readable || new Date().toDateString();
-      setDate(d);
+      const timings = j?.data?.timings || null;
+      setTimes(timings);
+      if (timings) {
+        await schedulePrayerNotifications(timings, usedSettings.adhanEnabled);
+      }
+      
+      let hijriStr = "";
+      if (j?.data?.date?.hijri) {
+        const h = j.data.date.hijri;
+        const day = parseInt(h.day, 10);
+        let suffix = "th";
+        if (day % 10 === 1 && day !== 11) suffix = "st";
+        else if (day % 10 === 2 && day !== 12) suffix = "nd";
+        else if (day % 10 === 3 && day !== 13) suffix = "rd";
+        hijriStr = `${day}${suffix} ${h.month.en} ${h.year}`;
+      } else {
+        hijriStr = j?.data?.date?.readable || new Date().toDateString();
+      }
+      setDate(hijriStr);
     } catch { setErr("Could not load prayer times. Check your internet connection."); }
     finally { setLoading(false); }
   };
@@ -87,14 +190,21 @@ export default function PrayerTimesScreen() {
     })();
   }, []);
 
+  const getPrayerTime = useCallback((p: string) => {
+    if (!times) return "";
+    if (p === "Qiyam") return times["Lastthird"] || times["Midnight"] || "";
+    return times[p] || "";
+  }, [times]);
+
   const now = new Date();
   const nextPrayer = (() => {
     if (!times) return null;
     for (const p of PRAYERS) {
-      if (!times[p]) continue;
-      const [h, m] = times[p].split(":").map(Number);
+      const timeStr = getPrayerTime(p);
+      if (!timeStr) continue;
+      const [h, m] = timeStr.split(":").map(Number);
       const d = new Date(); d.setHours(h, m, 0, 0);
-      if (d > now) return { name: p, time: times[p] };
+      if (d > now) return { name: p, time: timeStr };
     }
     return null;
   })();
@@ -103,7 +213,10 @@ export default function PrayerTimesScreen() {
     const newSettings = { ...settings, adhanEnabled: { ...settings.adhanEnabled, [prayer]: val } };
     setSettings(newSettings);
     await savePrayerSettings(newSettings);
-  }, [settings]);
+    if (times) {
+      await schedulePrayerNotifications(times, newSettings.adhanEnabled);
+    }
+  }, [settings, times]);
 
   const selectMethod = async (id: number) => {
     const newSettings = { ...settings, method: id };
@@ -123,25 +236,32 @@ export default function PrayerTimesScreen() {
 
   const renderPrayer = useCallback(({ item: p }: { item: string }) => {
     const isCurrent = nextPrayer?.name === p;
+    const rawTime = getPrayerTime(p);
+    const formattedTime = format12Hour(rawTime);
+    const hasAdhan = p !== "Sunrise" && p !== "Qiyam";
     const adhanOn = settings.adhanEnabled[p] ?? true;
     return (
       <View style={[styles.row, { backgroundColor: isCurrent ? colors.brand + "18" : colors.surfaceSecondary }, isCurrent && { borderWidth: 1, borderColor: colors.brand }]}>
         <MaterialCommunityIcons name={PRAYER_ICONS[p] as any} size={22} color={isCurrent ? colors.brand : colors.onSurfaceMuted} />
         <Text style={[styles.rowName, { color: isCurrent ? colors.brand : colors.onSurface }]}>{p}</Text>
-        <Text style={[styles.rowTime, { color: isCurrent ? colors.brand : colors.onSurface }]}>{times?.[p] || "--:--"}</Text>
+        <Text style={[styles.rowTime, { color: isCurrent ? colors.brand : colors.onSurface }]}>{formattedTime || "--:--"}</Text>
         {isCurrent && <View style={[styles.nextBadge, { backgroundColor: colors.brand }]}><Text style={styles.nextBadgeTxt}>NEXT</Text></View>}
-        {p !== "Sunrise" && (
-          <Pressable onPress={() => toggleAdhan(p, !adhanOn)} hitSlop={8}>
+        {hasAdhan ? (
+          <Pressable onPress={() => toggleAdhan(p, !adhanOn)} hitSlop={8} testID={`toggle-adhan-${p}`}>
             <MaterialCommunityIcons
               name={adhanOn ? "volume-high" : "volume-off"}
               size={20}
               color={adhanOn ? colors.brand : colors.onSurfaceMuted}
             />
           </Pressable>
+        ) : (
+          <View style={{ width: 20, alignItems: "center" }}>
+            <Text style={{ color: colors.onSurfaceMuted, fontSize: 14 }}>•</Text>
+          </View>
         )}
       </View>
     );
-  }, [times, nextPrayer, settings, colors]);
+  }, [times, nextPrayer, settings, colors, getPrayerTime, toggleAdhan]);
 
   const currentMethod = CALC_METHODS.find(m => m.id === settings.method);
   const currentJuristic = JURISTIC_METHODS.find(j => j.id === settings.juristic);
@@ -167,7 +287,7 @@ export default function PrayerTimesScreen() {
               <View style={styles.nextBox}>
                 <Text style={styles.nextLabel}>Next Prayer</Text>
                 <Text style={styles.nextName}>{nextPrayer.name}</Text>
-                <Text style={styles.nextTime}>{nextPrayer.time}</Text>
+                <Text style={styles.nextTime}>{format12Hour(nextPrayer.time)}</Text>
               </View>
             ) : (
               <View style={styles.nextBox}>
