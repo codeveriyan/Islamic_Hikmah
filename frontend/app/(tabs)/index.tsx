@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,13 +15,43 @@ import { useTheme } from "@/src/ThemeContext";
 import { CATEGORIES } from "@/src/data/duas";
 import { DEFAULT_GOALS, CATEGORY_COLORS } from "@/src/data/goals";
 import {
-  getSavedLocation, setSavedLocation, getCompletedGoals, toggleGoal,
+  resolveUserLocation, getCompletedGoals, toggleGoal,
   getActiveGoalIds, getPrayerSettings,
 } from "@/src/storage";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md) / 2;
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
+
+
+const CATEGORY_IMAGES: Record<string, string> = {
+  ummah: "https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=500&auto=format&fit=crop&q=80",
+  morning: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop&q=80",
+  evening: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=500&auto=format&fit=crop&q=80",
+  sleep: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=500&auto=format&fit=crop&q=80",
+  tahajjud: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80",
+  salah: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80",
+  "after-salah": "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=500&auto=format&fit=crop&q=80",
+  istikharah: "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500&auto=format&fit=crop&q=80",
+  gatherings: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=500&auto=format&fit=crop&q=80",
+  difficulties: "https://images.unsplash.com/photo-1428908728789-d2de25dbd4e2?w=500&auto=format&fit=crop&q=80",
+  iman: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80",
+  hajj: "https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=500&auto=format&fit=crop&q=80",
+  travel: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=500&auto=format&fit=crop&q=80",
+  money: "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=500&auto=format&fit=crop&q=80",
+  social: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=500&auto=format&fit=crop&q=80",
+  marriage: "https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=500&auto=format&fit=crop&q=80",
+  death: "https://images.unsplash.com/photo-1453791052107-5c843da62d97?w=500&auto=format&fit=crop&q=80",
+  nature: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=500&auto=format&fit=crop&q=80",
+  ramadan: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80",
+  ruqyah: "https://images.unsplash.com/photo-1552089123-2d26226fc2b7?w=500&auto=format&fit=crop&q=80",
+  "daily-life": "https://images.unsplash.com/photo-1517842645767-c639042777db?w=500&auto=format&fit=crop&q=80",
+  adhan: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80",
+  wudu: "https://images.unsplash.com/photo-1548813730-e8f20cc74a4a?w=500&auto=format&fit=crop&q=80",
+  masjid: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80",
+  sickness: "https://images.unsplash.com/photo-1584017911766-d451b3d0e843?w=500&auto=format&fit=crop&q=80",
+  forgiveness: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80",
+};
 
 // Countdown ring size
 const RING = 80;
@@ -31,9 +61,11 @@ const CIRC = 2 * Math.PI * RADIUS;
 
 const QUICK_ACTIONS = [
   { id: "quran", title: "Quran", icon: "book-open-variant", route: "/quran", color: "#10B981" },
+  { id: "hadith", title: "Hadith", icon: "book-open", route: "/hadith", color: "#F59E0B" },
+  { id: "goals", title: "Goals", icon: "checkbox-marked-circle-outline", route: "/goals", color: "#EC4899" },
   { id: "dhikr", title: "Tasbih", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
-  { id: "prayer", title: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times", color: "#14B8A6" },
-  { id: "goals", title: "Goals", icon: "checkbox-marked-circle-outline", route: "/goals", color: "#8B5CF6" },
+  { id: "names", title: "99 Names", icon: "mosque", route: "/names", color: "#14B8A6" },
+  { id: "prayer", title: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times", color: "#8B5CF6" },
 ] as const;
 
 function getGreeting() {
@@ -88,17 +120,70 @@ function parseTime(t: string): Date {
   return d;
 }
 
-function getNextPrayer(times: Record<string, string>) {
+function getPrayerPeriods(times: Record<string, string>) {
   const now = new Date();
-  for (const p of PRAYERS) {
-    if (!times[p]) continue;
-    const d = parseTime(times[p]);
-    if (d > now) return { name: p, time: times[p], date: d };
+  
+  // Parse all times into Dates for comparison
+  const parsed = PRAYERS.map((name) => {
+    const t = times[name];
+    if (!t) return null;
+    const [h, m] = t.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return { name, date: d, timeStr: t };
+  }).filter(Boolean) as { name: string; date: Date; timeStr: string }[];
+
+  if (parsed.length === 0) return null;
+
+  // Find next prayer (first one where date > now)
+  let nextIdx = parsed.findIndex((p) => p.date > now);
+  
+  let current, next;
+  
+  if (nextIdx === -1) {
+    // All prayers for today have passed.
+    // Current is Isha.
+    current = parsed[parsed.length - 1];
+    // Next is Fajr tomorrow.
+    const tomorrowFajr = new Date(parsed[0].date);
+    tomorrowFajr.setDate(tomorrowFajr.getDate() + 1);
+    next = {
+      name: "Fajr",
+      date: tomorrowFajr,
+      timeStr: parsed[0].timeStr
+    };
+  } else if (nextIdx === 0) {
+    // Before Fajr.
+    // Current is Isha yesterday.
+    const yesterdayIsha = new Date(parsed[parsed.length - 1].date);
+    yesterdayIsha.setDate(yesterdayIsha.getDate() - 1);
+    current = {
+      name: "Isha",
+      date: yesterdayIsha,
+      timeStr: parsed[parsed.length - 1].timeStr
+    };
+    next = parsed[0];
+  } else {
+    current = parsed[nextIdx - 1];
+    next = parsed[nextIdx];
   }
-  // All done — next is Fajr tomorrow
-  const fajr = parseTime(times["Fajr"] || "00:00");
-  fajr.setDate(fajr.getDate() + 1);
-  return { name: "Fajr", time: times["Fajr"] || "--:--", date: fajr };
+
+  // Adjust for the 15-minute Sunrise duration:
+  // If the current period is Sunrise, it only lasts 15 minutes.
+  // During these 15 minutes, the next target is "Sunrise" end.
+  // After 15 minutes, the next target becomes Dhuhr.
+  if (current.name === "Sunrise") {
+    const sunriseEndTime = new Date(current.date.getTime() + 15 * 60 * 1000);
+    if (now < sunriseEndTime) {
+      next = {
+        name: "Sunrise",
+        date: sunriseEndTime,
+        timeStr: ""
+      };
+    }
+  }
+
+  return { current, next };
 }
 
 export default function HomeScreen() {
@@ -124,34 +209,17 @@ export default function HomeScreen() {
   // Load prayer times
   useEffect(() => {
     (async () => {
-      let loc = await getSavedLocation();
-      if (!loc) {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") return;
-        const p = await Location.getCurrentPositionAsync({});
-        let cityName = "";
-        try {
-          const rev = await Location.reverseGeocodeAsync(p.coords);
-          cityName = rev?.[0]?.city || rev?.[0]?.region || "";
-        } catch {}
-        loc = { lat: p.coords.latitude, lon: p.coords.longitude, city: cityName };
-        await setSavedLocation(loc);
-      } else if (!loc.city) {
-        try {
-          const rev = await Location.reverseGeocodeAsync({ latitude: loc.lat, longitude: loc.lon });
-          const cityName = rev?.[0]?.city || rev?.[0]?.region || "";
-          if (cityName) {
-            loc = { ...loc, city: cityName };
-            await setSavedLocation(loc);
-          }
-        } catch {}
+      try {
+        const loc = await resolveUserLocation();
+        setCity(loc.city);
+        const settings = await getPrayerSettings();
+        const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+        const r = await fetch(url);
+        const j = await r.json();
+        setTimes(j?.data?.timings || null);
+      } catch (e) {
+        console.error("Failed to load home page timings:", e);
       }
-      setCity(loc.city || "");
-      const settings = await getPrayerSettings();
-      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
-      const r = await fetch(url);
-      const j = await r.json();
-      setTimes(j?.data?.timings || null);
     })();
   }, []);
 
@@ -160,16 +228,20 @@ export default function HomeScreen() {
     if (!times) return;
     const tick = () => {
       const now = new Date();
-      const next = getNextPrayer(times);
+      const periods = getPrayerPeriods(times);
+      if (!periods) return;
+      const next = periods.next;
       const diff = next.date.getTime() - now.getTime();
       if (diff <= 0) { setCountdown("00:00:00"); setProgress(1); return; }
       const h = Math.floor(diff / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
-      setCountdown(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
-      // Progress = time elapsed since last prayer / total duration to next
-      const elapsed = 6 * 3600000 - diff; // approx
-      setProgress(Math.min(Math.max(elapsed / (6 * 3600000), 0), 1));
+      setCountdown(`-${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+      // Calculate progress of the current period
+      const current = periods.current;
+      const total = next.date.getTime() - current.date.getTime();
+      const elapsed = now.getTime() - current.date.getTime();
+      setProgress(Math.min(Math.max(elapsed / total, 0), 1));
     };
     tick();
     timerRef.current = setInterval(tick, 1000);
@@ -194,7 +266,7 @@ export default function HomeScreen() {
     });
   }, [activeIds]);
 
-  const nextPrayer = useMemo(() => times ? getNextPrayer(times) : null, [times]);
+  const prayerPeriods = useMemo(() => times ? getPrayerPeriods(times) : null, [times]);
 
   // Goal counts by category
   const goalCounts = useMemo(() => {
@@ -253,20 +325,20 @@ export default function HomeScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} removeClippedSubviews>
 
-        {/* Greeting */}
-        <View style={styles.greeting}>
-          <Text style={[styles.greetingHi, { color: colors.brand }]}>{greeting.salaam}</Text>
-          <Text style={[styles.greetingSub, { color: colors.onSurfaceSecondary }]}>{greeting.sub}</Text>
-          {city ? <Text style={[styles.cityTxt, { color: colors.onSurfaceMuted }]}>📍 {city}</Text> : null}
-        </View>
+        {city ? (
+          <View style={styles.locationRow}>
+            <MaterialCommunityIcons name="map-marker" size={14} color={colors.brand} />
+            <Text style={[styles.locationTxt, { color: colors.onSurfaceMuted }]}>{city}</Text>
+          </View>
+        ) : null}
 
         {/* Prayer Countdown Card */}
-        {nextPrayer && (
+        {prayerPeriods && (
           <Pressable onPress={() => router.push("/prayer-times")} style={[styles.prayerCard, { backgroundColor: colors.surfaceSecondary }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.prayerLabel, { color: colors.onSurfaceMuted }]}>Current Prayer</Text>
-              <Text style={[styles.prayerName, { color: colors.onSurface }]}>{nextPrayer.name}</Text>
-              <Text style={[styles.prayerTime, { color: colors.brand }]}>{format12Hour(nextPrayer.time)}</Text>
+              <Text style={[styles.prayerName, { color: colors.onSurface }]}>{prayerPeriods.current.name}</Text>
+              <Text style={[styles.prayerTime, { color: colors.brand }]}>{format12Hour(prayerPeriods.current.timeStr)}</Text>
               <Text style={[styles.viewAll, { color: colors.brand }]}>View All Prayers →</Text>
             </View>
             {/* Countdown Ring */}
@@ -282,7 +354,7 @@ export default function HomeScreen() {
               </Svg>
               <View style={styles.ringCenter}>
                 <Text style={[styles.nextLabel, { color: colors.onSurfaceMuted }]}>
-                  {PRAYERS[Math.min(PRAYERS.indexOf(nextPrayer.name) + 1, PRAYERS.length - 1)] || "Fajr"}
+                  {prayerPeriods.next.name}
                 </Text>
                 <Text style={[styles.countdown, { color: colors.onSurface }]}>{countdown}</Text>
               </View>
@@ -349,18 +421,22 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.grid}>
-          {cats.map((c) => (
-            <Pressable key={c.id} onPress={() => handleCategoryPress(c.id)}
-              style={({ pressed }) => [styles.card, { width: CARD_WIDTH }, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}>
-              <LinearGradient colors={c.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cardGradient}>
-                <View style={styles.cardIcon}>
-                  <MaterialCommunityIcons name={c.icon as any} size={42} color="rgba(255,255,255,0.85)" />
-                </View>
-                <LinearGradient colors={["transparent", "rgba(0,0,0,0.55)"]} style={styles.cardScrim} />
-                <Text style={styles.cardTitle}>{c.title}</Text>
-              </LinearGradient>
-            </Pressable>
-          ))}
+          {cats.map((c) => {
+            const imageUrl = CATEGORY_IMAGES[c.id] || "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80";
+            return (
+              <Pressable key={c.id} onPress={() => handleCategoryPress(c.id)}
+                style={({ pressed }) => [styles.card, { width: CARD_WIDTH }, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
+              >
+                <ImageBackground source={{ uri: imageUrl }} style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
+                  <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
+                    <View style={styles.cardLabelContainer}>
+                      <Text style={styles.cardTitle}>{c.title.toUpperCase()}</Text>
+                    </View>
+                  </LinearGradient>
+                </ImageBackground>
+              </Pressable>
+            );
+          })}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -375,8 +451,19 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: theme.spacing.xxxl },
   greeting: { paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
   greetingHi: { fontSize: 13, fontWeight: "600" },
-  greetingSub: { fontSize: 18, fontWeight: "700", marginTop: 2 },
   cityTxt: { fontSize: 12, marginTop: 4 },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    marginBottom: -8,
+  },
+  locationTxt: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
 
   // Prayer countdown card
   prayerCard: { marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.lg, padding: theme.spacing.lg, flexDirection: "row", alignItems: "center", marginBottom: theme.spacing.lg },
@@ -390,8 +477,8 @@ const styles = StyleSheet.create({
   countdown: { fontSize: 11, fontWeight: "800", marginTop: 2 },
 
   // Quick actions
-  quickRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.lg },
-  quickBtn: { alignItems: "center", flex: 1 },
+  quickRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
+  quickBtn: { alignItems: "center", width: "30%", marginBottom: 12 },
   quickIconWrap: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 6 },
   quickLabel: { fontSize: 11, fontWeight: "600" },
 
@@ -421,8 +508,17 @@ const styles = StyleSheet.create({
   segmentTextActive: { color: "#03201F" },
   grid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md },
   card: { height: 140, borderRadius: theme.radius.lg, overflow: "hidden" },
-  cardGradient: { flex: 1, padding: theme.spacing.md, justifyContent: "flex-end" },
-  cardIcon: { position: "absolute", right: 8, top: 8, opacity: 0.6 },
-  cardScrim: { ...StyleSheet.absoluteFillObject },
-  cardTitle: { color: "#FFFFFF", fontSize: 17, fontWeight: "700" },
+  cardImage: { flex: 1, justifyContent: "flex-end" },
+  cardScrim: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: theme.spacing.sm },
+  cardLabelContainer: {
+    backgroundColor: "rgba(15, 23, 42, 0.82)", // dark navy translucent overlay
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  cardTitle: { color: "#FFFFFF", fontSize: 11, fontWeight: "800", letterSpacing: 0.8, textAlign: "center" },
 });

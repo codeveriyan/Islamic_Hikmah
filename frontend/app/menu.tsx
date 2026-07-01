@@ -7,6 +7,8 @@ import { useTheme } from "@/src/ThemeContext";
 const ITEMS = [
   { id: "dhikr", label: "Tasbih Counter", icon: "circle-double", route: "/dhikr" },
   { id: "quran", label: "The Noble Quran", icon: "book-open-variant", route: "/quran" },
+  { id: "hadith", label: "Hadith Collections", icon: "book-open", route: "/hadith" },
+  { id: "names", label: "99 Names of Allah", icon: "mosque", route: "/names" },
   { id: "prayer", label: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times" },
   { id: "qibla", label: "Qibla Finder", icon: "compass", route: "/qibla" },
   { id: "fav", label: "Favourites", icon: "heart", route: "/(tabs)/favourites" },

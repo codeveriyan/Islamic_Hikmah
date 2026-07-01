@@ -9,7 +9,7 @@ import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { getSavedLocation, setSavedLocation, getPrayerSettings, savePrayerSettings, PrayerSettings } from "@/src/storage";
+import { resolveUserLocation, getPrayerSettings, savePrayerSettings, PrayerSettings, schedulePrayerNotifications } from "@/src/storage";
 
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Qiyam"];
 const PRAYER_ICONS: Record<string, string> = {
@@ -21,8 +21,6 @@ const PRAYER_ICONS: Record<string, string> = {
   Isha: "weather-night",
   Qiyam: "weather-night",
 };
-
-const PRAYER_NOTIF_KEY = "scheduled_prayer_notifications";
 
 function format12Hour(timeStr: string): string {
   if (!timeStr) return "";
@@ -37,70 +35,6 @@ function format12Hour(timeStr: string): string {
   h = h ? h : 12;
   return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
 }
-
-const cancelPrevPrayerNotifications = async () => {
-  try {
-    const raw = await AsyncStorage.getItem(PRAYER_NOTIF_KEY);
-    if (raw) {
-      const ids = JSON.parse(raw) as string[];
-      for (const id of ids) {
-        await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
-      }
-    }
-    await AsyncStorage.removeItem(PRAYER_NOTIF_KEY);
-  } catch (e) {
-    console.error("Error cancelling prayer notifications:", e);
-  }
-};
-
-const schedulePrayerNotifications = async (timings: Record<string, string>, adhanEnabled: Record<string, boolean>) => {
-  if (Platform.OS === "web") return;
-  
-  await cancelPrevPrayerNotifications();
-  
-  const { status } = await Notifications.getPermissionsAsync();
-  if (status !== "granted") {
-    const res = await Notifications.requestPermissionsAsync();
-    if (res.status !== "granted") return;
-  }
-  
-  const newIds: string[] = [];
-  const activePrayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
-  
-  for (const p of activePrayers) {
-    const isEnabled = adhanEnabled[p] ?? true;
-    if (!isEnabled) continue;
-    
-    const timeStr = timings[p];
-    if (!timeStr) continue;
-    
-    const [hStr, mStr] = timeStr.split(":");
-    const h = parseInt(hStr, 10);
-    const m = parseInt(mStr, 10);
-    
-    if (isNaN(h) || isNaN(m)) continue;
-    
-    try {
-      const id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `${p} Prayer Time`,
-          body: `It is time for ${p} prayer.`,
-          sound: Platform.OS === "android" ? "azaan" : "azaan.wav",
-        },
-        trigger: {
-          hour: h,
-          minute: m,
-          repeats: true,
-        } as any,
-      });
-      newIds.push(id);
-    } catch (e) {
-      console.error(`Failed to schedule notification for ${p}:`, e);
-    }
-  }
-  
-  await AsyncStorage.setItem(PRAYER_NOTIF_KEY, JSON.stringify(newIds));
-};
 
 const CALC_METHODS = [
   { id: 1, name: "Karachi / MWL", note: "South Asia & parts of Europe" },
@@ -135,33 +69,15 @@ export default function PrayerTimesScreen() {
     setErr(null);
     try {
       const usedSettings = s || settings;
-      let loc = await getSavedLocation();
-      if (!loc) {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") { setErr("Location permission needed."); setLoading(false); return; }
-        const p = await Location.getCurrentPositionAsync({});
-        let cityName = "";
-        try { const rev = await Location.reverseGeocodeAsync(p.coords); cityName = rev?.[0]?.city || rev?.[0]?.region || ""; } catch {}
-        loc = { lat: p.coords.latitude, lon: p.coords.longitude, city: cityName };
-        await setSavedLocation(loc);
-      } else if (!loc.city) {
-        // Self-heal: cached location is missing the city (e.g. saved earlier without geocoding)
-        try {
-          const rev = await Location.reverseGeocodeAsync({ latitude: loc.lat, longitude: loc.lon });
-          const cityName = rev?.[0]?.city || rev?.[0]?.region || "";
-          if (cityName) {
-            loc = { ...loc, city: cityName };
-            await setSavedLocation(loc);
-          }
-        } catch {}
-      }
-      setCity(loc.city || "");
+      const loc = await resolveUserLocation();
+      setCity(loc.city);
       const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${usedSettings.method}&school=${usedSettings.juristic}`;
       const r = await fetch(url);
       const j = await r.json();
       const timings = j?.data?.timings || null;
       setTimes(timings);
       if (timings) {
+        await AsyncStorage.setItem("last_fetched_timings", JSON.stringify(timings));
         await schedulePrayerNotifications(timings, usedSettings.adhanEnabled);
       }
       
