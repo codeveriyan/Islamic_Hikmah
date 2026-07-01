@@ -1,0 +1,354 @@
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Share } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useTheme } from "@/src/ThemeContext";
+import { theme } from "@/src/theme";
+import { SafeAreaView } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
+import { HADITH_BOOKS } from "./index";
+
+type Hadith = {
+  hadithnumber: number;
+  text: string;
+  arabicText?: string;
+};
+
+export default function HadithDetailScreen() {
+  const { book } = useLocalSearchParams<{ book: string }>();
+  const router = useRouter();
+  const { colors, language } = useTheme();
+
+  const bookMeta = useMemo(() => HADITH_BOOKS.find((b) => b.id === book), [book]);
+
+  const [hadiths, setHadiths] = useState<Hadith[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  
+  // Pagination
+  const [limit, setLimit] = useState(15);
+  
+  // Translation cache states
+  const [translatedTexts, setTranslatedTexts] = useState<Record<number, string>>({});
+  const [translatingIds, setTranslatingIds] = useState<Set<number>>(new Set());
+
+  // Load the full book once (English and Arabic in parallel)
+  useEffect(() => {
+    if (!book) return;
+    setLoading(true);
+    
+    Promise.all([
+      fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`).then((r) => r.json()),
+      fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).then((r) => r.json()).catch(() => ({ hadiths: [] })),
+    ])
+      .then(([engData, araData]) => {
+        const engList = engData?.hadiths || [];
+        const araList = araData?.hadiths || [];
+        
+        const zippedList: (Hadith & { arabicText?: string })[] = [];
+        
+        // Map Arabic by hadith number for instant lookups
+        const araMap: Record<number, string> = {};
+        araList.forEach((h: any) => {
+          if (h.hadithnumber) araMap[h.hadithnumber] = h.text;
+        });
+
+        engList.forEach((eng: any) => {
+          const araText = araMap[eng.hadithnumber] || "";
+          
+          // Skip if both texts are completely empty (fixes Sahih Muslim Hadith 1 to 92 blank cards bug!)
+          if (eng.text.trim() === "" && araText.trim() === "") {
+            return;
+          }
+
+          zippedList.push({
+            hadithnumber: eng.hadithnumber,
+            text: eng.text,
+            arabicText: araText,
+          });
+        });
+
+        setHadiths(zippedList);
+      })
+      .catch((e) => {
+        console.error("Failed to fetch Hadiths:", e);
+      })
+      .finally(() => setLoading(false));
+  }, [book]);
+
+  const handleShare = async (item: Hadith) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      const tamilTxt = translatedTexts[item.hadithnumber];
+      const message = `${bookMeta?.name} - Hadith #${item.hadithnumber}\n\n` +
+        `English: ${item.text}\n\n` +
+        (tamilTxt ? `Tamil: ${tamilTxt}\n\n` : "") +
+        `Shared via Islamic Hikmah 🕌`;
+      await Share.share({ message });
+    } catch {}
+  };
+
+  const handleTranslate = async (item: Hadith) => {
+    if (translatedTexts[item.hadithnumber] || translatingIds.has(item.hadithnumber)) return;
+    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setTranslatingIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.hadithnumber);
+      return next;
+    });
+
+    try {
+      const res = await fetch(
+        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ta&dt=t&q=${encodeURIComponent(item.text)}`
+      );
+      const data = await res.json();
+      const translatedPart = data?.[0]?.map((x: any) => x[0]).join("") || "";
+      
+      setTranslatedTexts((prev) => ({
+        ...prev,
+        [item.hadithnumber]: translatedPart,
+      }));
+    } catch (e) {
+      console.error("Failed to translate Hadith:", e);
+    } finally {
+      setTranslatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.hadithnumber);
+        return next;
+      });
+    }
+  };
+
+  // Filter Hadiths based on query
+  const filtered = useMemo(() => {
+    if (!q) return hadiths;
+    const isNum = !isNaN(Number(q));
+    if (isNum) {
+      return hadiths.filter((h) => h.hadithnumber === Number(q));
+    }
+    return hadiths.filter((h) => h.text.toLowerCase().includes(q.toLowerCase()));
+  }, [hadiths, q]);
+
+  // Paginated subset
+  const paginated = useMemo(() => {
+    return filtered.slice(0, limit);
+  }, [filtered, limit]);
+
+  const loadMore = () => {
+    if (limit < filtered.length) {
+      setLimit((l) => l + 15);
+    }
+  };
+
+  // Render individual Hadith card
+  const renderItem = useCallback(({ item }: { item: Hadith }) => {
+    const isTranslating = translatingIds.has(item.hadithnumber);
+    const tamilText = translatedTexts[item.hadithnumber];
+
+    return (
+      <View style={[styles.hadithCard, { backgroundColor: colors.surfaceSecondary }]}>
+        <View style={styles.cardHeader}>
+          <View style={[styles.badge, { backgroundColor: colors.brand + "18" }]}>
+            <Text style={[styles.badgeTxt, { color: colors.brand }]}>Hadith #{item.hadithnumber}</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <Pressable onPress={() => handleShare(item)} hitSlop={8} style={styles.headerBtn}>
+              <MaterialCommunityIcons name="share-variant" size={20} color={colors.onSurfaceMuted} />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Arabic Text (Default) */}
+        {item.arabicText ? (
+          <Text style={[styles.arabicText, { color: colors.onSurface }]}>{item.arabicText}</Text>
+        ) : null}
+
+        {/* English Text (Default) */}
+        {item.text ? (
+          <Text style={[styles.englishText, { color: colors.onSurfaceSecondary }]}>{item.text}</Text>
+        ) : null}
+
+        {/* Tamil Translation Section */}
+        {tamilText ? (
+          <View style={[styles.tamilBox, { backgroundColor: colors.brandSecondary + "10", borderColor: colors.brandSecondary + "33" }]}>
+            <View style={styles.tamilHeader}>
+              <Text style={[styles.tamilLabel, { color: colors.brandSecondary }]}>தமிழ் மொழிபெயர்ப்பு:</Text>
+              <Pressable
+                onPress={() => {
+                  setTranslatedTexts((prev) => {
+                    const next = { ...prev };
+                    delete next[item.hadithnumber];
+                    return next;
+                  });
+                }}
+                hitSlop={8}
+              >
+                <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.brandSecondary} />
+              </Pressable>
+            </View>
+            <Text style={[styles.tamilText, { color: colors.onSurface }]}>{tamilText}</Text>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => handleTranslate(item)}
+            style={[styles.translateBtn, { borderColor: colors.border }]}
+            disabled={isTranslating}
+          >
+            {isTranslating ? (
+              <ActivityIndicator size="small" color={colors.brand} />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="translate" size={16} color={colors.brand} />
+                <Text style={[styles.translateBtnTxt, { color: colors.brand }]}>Translate to Tamil (தமிழ்)</Text>
+              </>
+            )}
+          </Pressable>
+        )}
+      </View>
+    );
+  }, [colors, translatedTexts, translatingIds, bookMeta]);
+
+  if (!bookMeta) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+        <Text style={{ color: "#FFF", padding: 24 }}>Book not found.</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
+          <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
+        </Pressable>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{bookMeta.name}</Text>
+        <View style={{ width: 28 }} />
+      </View>
+
+      {/* Search Input Bar */}
+      <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
+        <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.onSurfaceMuted} />
+        <TextInput
+          value={q}
+          onChangeText={(txt) => {
+            setQ(txt);
+            setLimit(15); // reset page limit on search
+          }}
+          placeholder="Search by number or narration text..."
+          placeholderTextColor={theme.colors.onSurfaceMuted}
+          style={[styles.search, { color: colors.onSurface }]}
+        />
+        {q.length > 0 && (
+          <Pressable onPress={() => setQ("")} hitSlop={8}>
+            <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.onSurfaceMuted} />
+          </Pressable>
+        )}
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={paginated}
+          keyExtractor={(item) => String(item.hadithnumber)}
+          renderItem={renderItem}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+          ListFooterComponent={() => {
+            if (limit < filtered.length) {
+              return <ActivityIndicator size="small" color={colors.brand} style={{ marginVertical: 20 }} />;
+            }
+            return null;
+          }}
+          ListEmptyComponent={() => (
+            <View style={{ alignItems: "center", marginTop: 40 }}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.onSurfaceMuted} />
+              <Text style={{ color: colors.onSurfaceMuted, marginTop: 8 }}>No narrations found matching filter.</Text>
+            </View>
+          )}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+  },
+  backBtn: { padding: 4 },
+  title: { fontSize: 18, fontWeight: "700" },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: theme.spacing.lg,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.pill,
+    gap: 8,
+    marginBottom: 8,
+  },
+  search: { flex: 1, paddingVertical: 12, fontSize: 14 },
+  hadithCard: {
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    gap: theme.spacing.sm,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  badgeTxt: { fontSize: 12, fontWeight: "800" },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  headerBtn: { padding: 4 },
+  englishText: { fontSize: 14, lineHeight: 22, marginTop: 4 },
+  translateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  translateBtnTxt: { fontSize: 13, fontWeight: "700" },
+  tamilBox: {
+    padding: theme.spacing.md,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 10,
+    gap: 4,
+  },
+  tamilHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  tamilLabel: { fontSize: 12, fontWeight: "800" },
+  tamilText: { fontSize: 13, lineHeight: 20 },
+  arabicText: {
+    fontFamily: "AmiriBold",
+    fontSize: 20,
+    textAlign: "right",
+    lineHeight: 34,
+    marginBottom: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+});

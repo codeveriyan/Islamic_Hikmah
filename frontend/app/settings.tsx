@@ -4,8 +4,10 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getPrayerSettings, schedulePrayerNotifications } from "@/src/storage";
 
 type SettingItem = {
   id: string;
@@ -55,7 +57,7 @@ const ITEMS: SettingItem[] = [
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { colors, mode, setMode } = useTheme();
+  const { colors, mode, setMode, language, setLanguage } = useTheme();
   const [activeItem, setActiveItem] = useState<SettingItem | null>(null);
 
   // User preference states
@@ -70,7 +72,30 @@ export default function SettingsScreen() {
   const [tasbihVibe, setTasbihVibe] = useState(true);
 
   const [downloadWifi, setDownloadWifi] = useState(true);
-  const [appLanguage, setAppLanguage] = useState("English");
+  const appLanguage = language === "ta" ? "Tamil (தமிழ்)" : "English";
+  const [bgAzaan, setBgAzaan] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem("background_azaan_enabled").then((val) => {
+      if (val !== null) setBgAzaan(val !== "false");
+    });
+  }, []);
+
+  const handleToggleBgAzaan = async (val: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setBgAzaan(val);
+    await AsyncStorage.setItem("background_azaan_enabled", val ? "true" : "false");
+    try {
+      const timingsRaw = await AsyncStorage.getItem("last_fetched_timings");
+      if (timingsRaw) {
+        const timings = JSON.parse(timingsRaw);
+        const settings = await getPrayerSettings();
+        await schedulePrayerNotifications(timings, settings.adhanEnabled);
+      }
+    } catch (e) {
+      console.error("Failed to reschedule background azaan:", e);
+    }
+  };
 
   const handleItemPress = (item: SettingItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -179,6 +204,14 @@ export default function SettingsScreen() {
               <Switch value={tasbihVibe} onValueChange={setTasbihVibe} trackColor={{ true: colors.brand }} />
             </View>
 
+            <View style={[styles.optionRow, { marginTop: 16 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Play Azaan in Background</Text>
+                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Play full Azaan alarm when app is closed</Text>
+              </View>
+              <Switch value={bgAzaan} onValueChange={handleToggleBgAzaan} trackColor={{ true: colors.brand }} />
+            </View>
+
             <Pressable onPress={() => setActiveItem(null)} style={[styles.btn, { backgroundColor: colors.brand, marginTop: 24 }]}>
               <Text style={[styles.btnTxt, { color: colors.onBrandPrimary }]}>Save Preferences</Text>
             </Pressable>
@@ -215,16 +248,22 @@ export default function SettingsScreen() {
         return (
           <View style={styles.modalContent}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Change Language</Text>
-            {["English", "العربية (Arabic)", "Bahasa Indonesia", "Urdu", "Turkish"].map((lang) => (
+            {[
+              { name: "English", code: "en" as const },
+              { name: "Tamil (தமிழ்)", code: "ta" as const }
+            ].map((lang) => (
               <Pressable
-                key={lang}
-                onPress={() => setAppLanguage(lang)}
-                style={[styles.langRow, { backgroundColor: appLanguage === lang ? colors.brand + "18" : "transparent" }]}
+                key={lang.code}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setLanguage(lang.code);
+                }}
+                style={[styles.langRow, { backgroundColor: language === lang.code ? colors.brand + "18" : "transparent" }]}
               >
-                <Text style={[styles.langTxt, { color: colors.onSurface }, appLanguage === lang && { color: colors.brand, fontWeight: "700" }]}>
-                  {lang}
+                <Text style={[styles.langTxt, { color: colors.onSurface }, language === lang.code && { color: colors.brand, fontWeight: "700" }]}>
+                  {lang.name}
                 </Text>
-                {appLanguage === lang && <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />}
+                {language === lang.code && <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />}
               </Pressable>
             ))}
           </View>

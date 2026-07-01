@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+import * as Location from 'expo-location';
 
 const FAV_KEY = 'ruhani:favourites:v1';
 const DHIKR_KEY = 'ruhani:dhikr-counts:v1';
@@ -75,6 +78,67 @@ export async function setSavedLocation(loc: { lat: number; lon: number; city?: s
   await AsyncStorage.setItem(PRAY_LOC, JSON.stringify(loc));
 }
 
+export async function resolveUserLocation(): Promise<{ lat: number; lon: number; city: string }> {
+  let loc: any = null;
+  try {
+    loc = await getSavedLocation();
+  } catch {}
+
+  const getCityName = async (lat: number, lon: number): Promise<string> => {
+    try {
+      if (Platform.OS === "web") {
+        const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+        const geoData = await geoRes.json();
+        return geoData?.city || geoData?.locality || geoData?.principalSubdivision || "";
+      } else {
+        const rev = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+        return rev?.[0]?.city || rev?.[0]?.region || "";
+      }
+    } catch {
+      return "";
+    }
+  };
+
+  if (loc && loc.lat && loc.lon) {
+    if (loc.city) {
+      return loc as { lat: number; lon: number; city: string };
+    }
+    const cityName = await getCityName(loc.lat, loc.lon);
+    if (cityName) {
+      const updated = { ...loc, city: cityName };
+      await setSavedLocation(updated);
+      return updated;
+    }
+    return { ...loc, city: "London" };
+  }
+
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status === "granted") {
+      const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const cityName = await getCityName(p.coords.latitude, p.coords.longitude);
+      const newLoc = { lat: p.coords.latitude, lon: p.coords.longitude, city: cityName || "London" };
+      await setSavedLocation(newLoc);
+      return newLoc;
+    }
+  } catch {}
+
+  try {
+    const ipRes = await fetch("https://freeipapi.com/api/json");
+    const ipData = await ipRes.json();
+    if (ipData && ipData.latitude && ipData.longitude) {
+      const cityName = ipData.cityName || ipData.regionName || ipData.countryName || "London";
+      const newLoc = { lat: ipData.latitude, lon: ipData.longitude, city: cityName };
+      await setSavedLocation(newLoc);
+      return newLoc;
+    }
+  } catch {}
+
+  const defaultLoc = { lat: 21.3891, lon: 39.8579, city: "Mecca" };
+  await setSavedLocation(defaultLoc);
+  return defaultLoc;
+}
+
 // ── Goals Storage ──────────────────────────────────────────
 const GOALS_KEY = 'hikmah:goals-completed:v1';
 const GOALS_CONFIG_KEY = 'hikmah:goals-config:v1';
@@ -131,3 +195,74 @@ export async function getPrayerSettings(): Promise<PrayerSettings> {
 export async function savePrayerSettings(s: PrayerSettings) {
   await AsyncStorage.setItem(PRAYER_SETTINGS_KEY, JSON.stringify(s));
 }
+
+// ── Shared Notification Helpers ─────────────────────────────
+const PRAYER_NOTIF_KEY = 'scheduled_prayer_notifications';
+
+export const cancelPrevPrayerNotifications = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(PRAYER_NOTIF_KEY);
+    if (raw) {
+      const ids = JSON.parse(raw) as string[];
+      for (const id of ids) {
+        await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+      }
+    }
+    await AsyncStorage.removeItem(PRAYER_NOTIF_KEY);
+  } catch (e) {
+    console.error("Error cancelling prayer notifications:", e);
+  }
+};
+
+export const schedulePrayerNotifications = async (timings: Record<string, string>, adhanEnabled: Record<string, boolean>) => {
+  if (Platform.OS === "web") return;
+  
+  await cancelPrevPrayerNotifications();
+  
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== "granted") {
+    const res = await Notifications.requestPermissionsAsync();
+    if (res.status !== "granted") return;
+  }
+
+  // Check if background Azaan is enabled (defaults to true)
+  const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
+  const bgAzaanEnabled = bgAzaanRaw !== "false";
+  
+  const newIds: string[] = [];
+  const activePrayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+  
+  for (const p of activePrayers) {
+    const isEnabled = adhanEnabled[p] ?? true;
+    if (!isEnabled) continue;
+    
+    const timeStr = timings[p];
+    if (!timeStr) continue;
+    
+    const [hStr, mStr] = timeStr.split(":");
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    
+    if (isNaN(h) || isNaN(m)) continue;
+    
+    try {
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `${p} Prayer Time`,
+          body: `It is time for ${p} prayer.`,
+          sound: bgAzaanEnabled ? (Platform.OS === "android" ? "azaan" : "azaan.wav") : true,
+        },
+        trigger: {
+          hour: h,
+          minute: m,
+          repeats: true,
+        } as any,
+      });
+      newIds.push(id);
+    } catch (e) {
+      console.error(`Failed to schedule notification for ${p}:`, e);
+    }
+  }
+  
+  await AsyncStorage.setItem(PRAYER_NOTIF_KEY, JSON.stringify(newIds));
+};

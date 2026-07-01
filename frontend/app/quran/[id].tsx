@@ -7,6 +7,8 @@ import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { toggleFavourite, getFavourites } from "@/src/storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useIsFocused } from "@react-navigation/native";
 
 type Ayah = {
   number: number;
@@ -41,22 +43,30 @@ export default function SurahDetail() {
   const [continuous, setContinuous] = useState(false);
   const [showReciters, setShowReciters] = useState(false);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  const [fontType, setFontType] = useState<"indopak" | "uthmani" | "naskh">("indopak");
+  const [fontSize, setFontSize] = useState<number>(24);
+  const [showTranslation, setShowTranslation] = useState<boolean>(true);
+  const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
+  const [translit, setTranslit] = useState<Ayah[]>([]);
 
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
 
   useEffect(() => {
     setLoading(true);
     setAudioErr(false);
+    const transEdition = language === "ta" ? "ta.tamil" : "en.asad";
     Promise.all([
       fetch(`https://api.alquran.cloud/v1/surah/${id}/quran-uthmani`).then((r) => r.json()),
-      fetch(`https://api.alquran.cloud/v1/surah/${id}/en.asad`).then((r) => r.json()),
+      fetch(`https://api.alquran.cloud/v1/surah/${id}/${transEdition}`).then((r) => r.json()),
+      fetch(`https://api.alquran.cloud/v1/surah/${id}/en.transliteration`).then((r) => r.json()),
       fetch(`https://api.alquran.cloud/v1/surah/${id}/${reciter}`).then((r) => r.json()),
     ])
-      .then(([a, t, au]) => {
+      .then(([a, t, tr, au]) => {
         setArabic(a.data?.ayahs || []);
         setTrans(t.data?.ayahs || []);
+        setTranslit(tr.data?.ayahs || []);
         const ayahs = au.data?.ayahs || [];
         setAudio(ayahs);
         setAudioErr(ayahs.length === 0 || !ayahs[0]?.audio);
@@ -65,11 +75,31 @@ export default function SurahDetail() {
       })
       .catch(() => setAudioErr(true))
       .finally(() => setLoading(false));
-  }, [id, reciter]);
+  }, [id, reciter, language]);
+
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     getFavourites().then((fs) => setFavIds(new Set(fs.map((f) => f.id))));
   }, []);
+
+  useEffect(() => {
+    if (isFocused) {
+      // Load preferences
+      AsyncStorage.getItem("islamic_hikmah:quran_font_type").then((val) => {
+        if (val) setFontType(val as any);
+      });
+      AsyncStorage.getItem("islamic_hikmah:quran_font_size").then((val) => {
+        if (val) setFontSize(Number(val));
+      });
+      AsyncStorage.getItem("islamic_hikmah:quran_show_translation").then((val) => {
+        if (val !== null) setShowTranslation(val === "true");
+      });
+      AsyncStorage.getItem("islamic_hikmah:quran_show_transliteration").then((val) => {
+        if (val !== null) setShowTransliteration(val === "true");
+      });
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     if (status?.didJustFinish) {
@@ -143,9 +173,14 @@ export default function SurahDetail() {
           <Text style={[styles.title, { color: colors.onSurface }]}>{name}</Text>
           <Text style={[styles.subtitle, { color: colors.brand }]}>{arName}</Text>
         </View>
-        <Pressable onPress={() => setShowReciters((s) => !s)} hitSlop={10} testID="reciter-toggle">
-          <MaterialCommunityIcons name="account-music" size={26} color={colors.brand} />
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Pressable onPress={() => setShowReciters((s) => !s)} hitSlop={10} testID="reciter-toggle">
+            <MaterialCommunityIcons name="account-music" size={26} color={colors.brand} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/quran/personalise")} hitSlop={10} style={{ padding: 2 }}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       {showReciters ? (
@@ -244,8 +279,27 @@ export default function SurahDetail() {
                     </Pressable>
                   </View>
                 </View>
-                <Text style={[styles.arabic, { color: colors.onSurface }]}>{a.text}</Text>
-                <Text style={[styles.translation, { color: colors.onSurfaceMuted }]}>{trans[i]?.text}</Text>
+                <Text
+                  style={[
+                    styles.arabic,
+                    {
+                      color: colors.onSurface,
+                      fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "Amiri" : "System",
+                      fontSize: fontSize,
+                      lineHeight: fontSize * 1.8,
+                    },
+                  ]}
+                >
+                  {a.text}
+                </Text>
+                {showTransliteration && (
+                  <Text style={[styles.translit, { color: colors.brand }]}>
+                    {translit[i]?.text}
+                  </Text>
+                )}
+                {showTranslation && (
+                  <Text style={[styles.translation, { color: colors.onSurfaceMuted }]}>{trans[i]?.text}</Text>
+                )}
               </View>
             );
           })}
@@ -279,4 +333,5 @@ const styles = StyleSheet.create({
   ayahNumTxt: { fontWeight: "700" },
   arabic: { fontFamily: "Amiri", fontSize: 26, textAlign: "right", lineHeight: 48, marginTop: theme.spacing.md },
   translation: { marginTop: theme.spacing.md, lineHeight: 22 },
+  translit: { fontSize: 14, fontStyle: "italic", lineHeight: 22, marginTop: 8 },
 });
