@@ -9,6 +9,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { toggleFavourite, getFavourites } from "@/src/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useIsFocused } from "@react-navigation/native";
+import quranData from "@/src/data/quran/quranData.json";
 
 type Ayah = {
   number: number;
@@ -16,6 +17,13 @@ type Ayah = {
   numberInSurah: number;
   audio?: string;
 };
+
+type LocalAyah = { numberInSurah: number; arabic: string; translation: string; transliteration: string };
+type LocalSurah = { number: number; name: string; arabicName: string; totalAyahs: number; ayahs: LocalAyah[] };
+
+// Bundled offline dataset (Arabic Uthmani text, English translation, transliteration)
+// so the Quran can always be read without an internet connection.
+const QURAN: LocalSurah[] = quranData as LocalSurah[];
 
 // FIX: Only verified-working alquran.cloud audio editions.
 // "ar.saadalghamdi" is NOT a real edition on this API — that's why it silently failed.
@@ -56,25 +64,73 @@ export default function SurahDetail() {
   useEffect(() => {
     setLoading(true);
     setAudioErr(false);
-    const transEdition = language === "ta" ? "ta.tamil" : "en.asad";
-    Promise.all([
-      fetch(`https://api.alquran.cloud/v1/surah/${id}/quran-uthmani`).then((r) => r.json()),
-      fetch(`https://api.alquran.cloud/v1/surah/${id}/${transEdition}`).then((r) => r.json()),
-      fetch(`https://api.alquran.cloud/v1/surah/${id}/en.transliteration`).then((r) => r.json()),
-      fetch(`https://api.alquran.cloud/v1/surah/${id}/${reciter}`).then((r) => r.json()),
-    ])
-      .then(([a, t, tr, au]) => {
-        setArabic(a.data?.ayahs || []);
-        setTrans(t.data?.ayahs || []);
-        setTranslit(tr.data?.ayahs || []);
+
+    // Arabic text, transliteration, and English translation always come from the
+    // bundled offline dataset — no network required to read the Quran.
+    const surahId = Number(id);
+    const surah = QURAN.find((s) => s.number === surahId);
+
+    if (surah) {
+      setName(surah.name);
+      setArName(surah.arabicName);
+      setArabic(
+        surah.ayahs.map((a) => ({ number: a.numberInSurah, numberInSurah: a.numberInSurah, text: a.arabic }))
+      );
+      setTranslit(
+        surah.ayahs.map((a) => ({ number: a.numberInSurah, numberInSurah: a.numberInSurah, text: a.transliteration }))
+      );
+
+      const englishTrans = surah.ayahs.map((a) => ({
+        number: a.numberInSurah,
+        numberInSurah: a.numberInSurah,
+        text: a.translation,
+      }));
+
+      if (language === "ta") {
+        // Tamil translation isn't bundled locally. Show a cached copy instantly if we
+        // have one from a previous visit, otherwise fall back to English while we try
+        // to fetch and cache it. If offline and never cached, English stays shown.
+        const cacheKey = `islamic_hikmah:quran_ta_${surahId}`;
+        setTrans(englishTrans);
+        AsyncStorage.getItem(cacheKey).then((cached) => {
+          if (cached) {
+            try {
+              setTrans(JSON.parse(cached));
+            } catch {
+              // ignore malformed cache
+            }
+          }
+        });
+        fetch(`https://api.alquran.cloud/v1/surah/${surahId}/ta.tamil`)
+          .then((r) => r.json())
+          .then((t) => {
+            const ayahs = t.data?.ayahs || [];
+            if (ayahs.length) {
+              setTrans(ayahs);
+              AsyncStorage.setItem(cacheKey, JSON.stringify(ayahs)).catch(() => {});
+            }
+          })
+          .catch(() => {
+            // offline — cached or English fallback above already applied
+          });
+      } else {
+        setTrans(englishTrans);
+      }
+    }
+
+    setLoading(false);
+
+    // Audio recitation is streamed from the network — this is the one part of the
+    // Quran screen that genuinely needs a connection, since bundling every reciter's
+    // full audio would make the app enormous. Text reading works with no network.
+    fetch(`https://api.alquran.cloud/v1/surah/${id}/${reciter}`)
+      .then((r) => r.json())
+      .then((au) => {
         const ayahs = au.data?.ayahs || [];
         setAudio(ayahs);
         setAudioErr(ayahs.length === 0 || !ayahs[0]?.audio);
-        setName(a.data?.englishName || "");
-        setArName(a.data?.name || "");
       })
-      .catch(() => setAudioErr(true))
-      .finally(() => setLoading(false));
+      .catch(() => setAudioErr(true));
   }, [id, reciter, language]);
 
   const isFocused = useIsFocused();
