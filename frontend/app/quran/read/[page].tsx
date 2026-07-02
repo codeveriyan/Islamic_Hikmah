@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, Dimensions, FlatList, ActivityIndicator, Image } from "react-native";
+import { View, Text, StyleSheet, Pressable, Dimensions, FlatList, ActivityIndicator, Image, Platform, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
@@ -16,39 +16,45 @@ const QuranPageItem = ({
   colors,
   width,
   height,
+  zoomScale,
 }: {
   item: number;
   isNightMode: boolean;
   colors: any;
   width: number;
   height: number;
+  zoomScale: number;
 }) => {
   const [itemLoading, setItemLoading] = useState(true);
   const pageStr = String(item).padStart(3, "0");
   const imageUrl = `https://quran.islam-db.com/public/data/pages/quranpages_1024/images/page${pageStr}.png`;
 
   return (
-    <View style={[styles.pageContainer, { width, height: height - 180 }]}>
-      <Image
-        source={{ uri: imageUrl }}
-        style={[
-          styles.pageImage,
-          isNightMode && {
-            opacity: 0.8,
-          },
-        ]}
-        resizeMode="contain"
-        onLoadStart={() => setItemLoading(true)}
-        onLoadEnd={() => setItemLoading(false)}
-      />
-      {itemLoading && (
-        <ActivityIndicator
-          size="large"
-          color={colors.brand}
-          style={StyleSheet.absoluteFillObject}
+    <View style={[styles.pageContainer, { width, height: height - 180, backgroundColor: isNightMode ? "#000000" : "#FFFFFF" }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}
+      >
+        <Image
+          source={{ uri: imageUrl }}
+          style={{
+            width: width * 0.96 * zoomScale,
+            height: (height - 210) * zoomScale,
+            resizeMode: "contain",
+            ...(Platform.OS === "web" && isNightMode ? { filter: "brightness(0) invert(1)" } : {}),
+          } as any}
+          onLoadStart={() => setItemLoading(true)}
+          onLoadEnd={() => setItemLoading(false)}
         />
-      )}
-      {isNightMode && <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.15)", pointerEvents: "none" }]} />}
+        {itemLoading && (
+          <ActivityIndicator
+            size="large"
+            color={colors.brand}
+            style={StyleSheet.absoluteFillObject}
+          />
+        )}
+      </ScrollView>
     </View>
   );
 };
@@ -61,8 +67,11 @@ export default function QuranReadScreen() {
   const [currentPage, setCurrentPage] = useState(Number(page) || 1);
   const [isNightMode, setIsNightMode] = useState(false);
   const [bookmarks, setBookmarks] = useState<number[]>([]);
+  const [zoomScale, setZoomScale] = useState(1);
 
   const flatListRef = useRef<FlatList>(null);
+  const initialDist = useRef<number | null>(null);
+  const baseScale = useRef<number>(1);
 
   // Load last read & bookmarks
   useEffect(() => {
@@ -108,13 +117,8 @@ export default function QuranReadScreen() {
     }
   }, [currentPage]);
 
-  const getPaddedPage = (num: number) => {
-    return String(num).padStart(3, "0");
-  };
-
   const isBookmarked = bookmarks.includes(currentPage);
 
-  // Generate list data: Array of pages [1..604]
   const pagesData = Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1);
 
   const renderPage = useCallback(({ item }: { item: number }) => (
@@ -124,24 +128,71 @@ export default function QuranReadScreen() {
       colors={colors}
       width={width}
       height={height}
+      zoomScale={zoomScale}
     />
-  ), [isNightMode, colors]);
+  ), [isNightMode, colors, zoomScale]);
+
+  // Touch gesture handlers for pinch to zoom
+  const handleTouchStart = (e: any) => {
+    const touches = e.nativeEvent.touches;
+    if (touches && touches.length === 2) {
+      const dx = touches[0].pageX - touches[1].pageX;
+      const dy = touches[0].pageY - touches[1].pageY;
+      initialDist.current = Math.sqrt(dx * dx + dy * dy);
+      baseScale.current = zoomScale;
+    }
+  };
+
+  const handleTouchMove = (e: any) => {
+    const touches = e.nativeEvent.touches;
+    if (touches && touches.length === 2 && initialDist.current !== null) {
+      const dx = touches[0].pageX - touches[1].pageX;
+      const dy = touches[0].pageY - touches[1].pageY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = (dist / initialDist.current) * baseScale.current;
+      setZoomScale(Math.min(Math.max(scale, 0.8), 3));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    initialDist.current = null;
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: isNightMode ? "#090D16" : "#FAF6F0" }]}>
+    <View style={[styles.container, { backgroundColor: isNightMode ? "#000000" : "#FFFFFF" }]}>
       {/* Top Header */}
-      <View style={[styles.header, { borderBottomColor: isNightMode ? "#1E293B" : "#E2E8F0" }]}>
+      <View style={[styles.header, { 
+        borderBottomColor: isNightMode ? "#1E293B" : "#E2E8F0",
+        backgroundColor: isNightMode ? "#000000" : "#FFFFFF"
+      }]}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={isNightMode ? "#FFF" : "#333"} />
         </Pressable>
         <Text style={[styles.title, { color: isNightMode ? "#FFF" : "#333" }]}>
           Page {currentPage} of {TOTAL_PAGES}
         </Text>
-        <View style={{ width: 28 }} />
+        
+        {/* Zoom Controls */}
+        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+          <Pressable onPress={() => setZoomScale(prev => Math.max(prev - 0.25, 0.8))} hitSlop={8}>
+            <MaterialCommunityIcons name="minus-box-outline" size={24} color={isNightMode ? "#FFF" : "#333"} />
+          </Pressable>
+          <Text style={{ color: isNightMode ? "#FFF" : "#333", fontSize: 13, fontWeight: "700" }}>
+            {Math.round(zoomScale * 100)}%
+          </Text>
+          <Pressable onPress={() => setZoomScale(prev => Math.min(prev + 0.25, 3))} hitSlop={8}>
+            <MaterialCommunityIcons name="plus-box-outline" size={24} color={isNightMode ? "#FFF" : "#333"} />
+          </Pressable>
+        </View>
       </View>
 
       {/* Page swiper */}
-      <View style={{ flex: 1 }}>
+      <View 
+        style={{ flex: 1 }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         <FlatList
           ref={flatListRef}
           horizontal
@@ -158,6 +209,7 @@ export default function QuranReadScreen() {
             index,
           })}
           showsHorizontalScrollIndicator={false}
+          scrollEnabled={zoomScale === 1}
         />
       </View>
 
@@ -166,8 +218,8 @@ export default function QuranReadScreen() {
         style={[
           styles.bottomBar,
           {
-            backgroundColor: isNightMode ? "#111827" : "#E6DFD5",
-            borderTopColor: isNightMode ? "#1F2937" : "#D1C7BD",
+            backgroundColor: isNightMode ? "#000000" : "#FFFFFF",
+            borderTopColor: isNightMode ? "#1E293B" : "#E2E8F0",
           },
         ]}
       >
@@ -225,13 +277,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: "700" },
   pageContainer: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
     paddingVertical: 12,
-  },
-  pageImage: {
-    width: "100%",
-    height: "100%",
   },
   bottomBar: {
     flexDirection: "row",

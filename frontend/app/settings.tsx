@@ -276,7 +276,7 @@ export default function SettingsScreen() {
 
             <Text style={[styles.sectionLabel, { color: colors.brand, marginTop: 12 }]}>FAQ</Text>
             <Text style={[styles.paragraph, { color: colors.onSurfaceSecondary }]}>
-              Q: Does Ruhani work fully offline?{"\n"}
+              Q: Does Islamic Hikmah work fully offline?{"\n"}
               A: Yes, all Du'as, Dhikr counts, and downloaded Quran contents are saved locally.
             </Text>
             <Text style={[styles.paragraph, { color: colors.onSurfaceSecondary }]}>
@@ -286,7 +286,7 @@ export default function SettingsScreen() {
 
             <Text style={[styles.sectionLabel, { color: colors.brand, marginTop: 16 }]}>Terms & Conditions</Text>
             <Text style={[styles.paragraph, { color: colors.onSurfaceMuted, fontSize: 12 }]}>
-              Ruhani is provided for educational and spiritual purposes. We do not store or collect any location or personal data on external servers.
+              Islamic Hikmah is provided for educational and spiritual purposes. We do not store or collect any location or personal data on external servers.
             </Text>
 
             <Pressable onPress={() => setActiveItem(null)} style={[styles.btn, { backgroundColor: colors.brand, marginTop: 24 }]}>
@@ -316,7 +316,7 @@ export default function SettingsScreen() {
           <Pressable
             key={item.id}
             onPress={() => handleItemPress(item)}
-            style={styles.row}
+            style={[styles.row, { backgroundColor: colors.surfaceSecondary }]}
             testID={`settings-item-${item.id}`}
           >
             <View style={[styles.iconWrap, { backgroundColor: colors.brand + "18" }]}>
@@ -333,7 +333,7 @@ export default function SettingsScreen() {
         ))}
 
         {/* Footer version */}
-        <Text style={[styles.version, { color: colors.onSurfaceMuted }]}>Ruhani v1.1.0</Text>
+        <Text style={[styles.version, { color: colors.onSurfaceMuted }]}>Islamic Hikmah v1.1.0</Text>
       </ScrollView>
 
       {/* Sub-option Sheet Modal */}
@@ -347,7 +347,7 @@ export default function SettingsScreen() {
           <Pressable style={{ flex: 1 }} onPress={() => setActiveItem(null)} />
           <View style={[styles.modalCard, { backgroundColor: colors.surfaceSecondary }]}>
             <View style={styles.modalHeader}>
-              <View style={styles.modalIndicator} />
+              <View style={[styles.modalIndicator, { backgroundColor: colors.onSurfaceMuted + "40" }]} />
               <Pressable onPress={() => setActiveItem(null)} style={styles.closeBtn}>
                 <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
               </Pressable>
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
   closeBtn: { alignSelf: "flex-end", position: "absolute", top: 8, right: 0, padding: 8 },
   modalContent: { paddingVertical: 12 },
   modalTitle: { fontSize: 20, fontWeight: "800", marginBottom: 20 },
-  optionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)" },
+  optionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "rgba(128,128,128,0.15)" },
   optionLabel: { fontSize: 15, fontWeight: "600" },
   optionSub: { fontSize: 12, marginTop: 4 },
   btn: { padding: 14, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },

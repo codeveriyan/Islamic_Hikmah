@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { LogBox, View } from "react-native";
@@ -39,6 +39,7 @@ export default function RootLayout() {
   });
 
   const player = useAudioPlayer(require("../assets/audio/azaan.mp3"));
+  const router = useRouter();
 
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener((notification) => {
@@ -49,6 +50,20 @@ export default function RootLayout() {
     });
     return () => subscription.remove();
   }, [player]);
+
+  useEffect(() => {
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const actionId = response.actionIdentifier;
+      if (actionId === "quran") {
+        router.push("/quran" as any);
+      } else if (actionId === "hadith") {
+        router.push("/hadith" as any);
+      } else if (actionId === "tasbih") {
+        router.push("/dhikr" as any);
+      }
+    });
+    return () => responseSub.remove();
+  }, [router]);
 
   const ready = (iconLoaded || iconError) && (fontsLoaded || fontsError);
 

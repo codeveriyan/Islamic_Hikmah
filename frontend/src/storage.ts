@@ -266,3 +266,110 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
   
   await AsyncStorage.setItem(PRAYER_NOTIF_KEY, JSON.stringify(newIds));
 };
+
+export const setupNotificationCategories = async () => {
+  if (Platform.OS === 'web') return;
+  try {
+    await Notifications.setNotificationCategoryAsync('prayer-actions', [
+      {
+        identifier: 'quran',
+        buttonTitle: 'Quran 📖',
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: 'hadith',
+        buttonTitle: 'Hadith 📚',
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: 'tasbih',
+        buttonTitle: 'Tasbih 📿',
+        options: { opensAppToForeground: true },
+      },
+    ]);
+  } catch (e) {
+    console.error("Failed to setup notification categories:", e);
+  }
+};
+
+export const updateStickyPrayerNotification = async (timings: Record<string, string>) => {
+  if (Platform.OS === 'web') return;
+
+  try {
+    // 1. Calculate next prayer details
+    const now = new Date();
+    const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
+    const parsed = PRAYERS.map((name) => {
+      const t = timings[name];
+      if (!t) return null;
+      const [h, m] = t.split(":").map(Number);
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      return { name, date: d, timeStr: t };
+    }).filter(Boolean) as { name: string; date: Date; timeStr: string }[];
+
+    if (parsed.length === 0) return;
+
+    let nextIdx = parsed.findIndex((p) => p.date > now);
+    let nextPrayer;
+    if (nextIdx === -1) {
+      const tomorrowFajr = new Date(parsed[0].date);
+      tomorrowFajr.setDate(tomorrowFajr.getDate() + 1);
+      nextPrayer = { name: "Fajr", date: tomorrowFajr, timeStr: parsed[0].timeStr };
+    } else {
+      nextPrayer = parsed[nextIdx];
+    }
+
+    const diffMs = nextPrayer.date.getTime() - now.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    const hours = Math.floor(diffSec / 3600);
+    const minutes = Math.floor((diffSec % 3600) / 60);
+
+    const format12H = (tStr: string) => {
+      const [hStr, mStr] = tStr.split(":");
+      let hrs = parseInt(hStr, 10);
+      const ampm = hrs >= 12 ? "PM" : "AM";
+      hrs = hrs % 12 || 12;
+      return `${hrs}:${mStr} ${ampm}`;
+    };
+
+    const time12 = format12H(nextPrayer.timeStr);
+
+    // Setup channel for Android to be silent during updates
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('sticky-prayer', {
+        name: 'Sticky Prayer Notification',
+        importance: Notifications.AndroidImportance.LOW,
+        showBadge: false,
+        enableVibrate: false,
+      });
+    }
+
+    await setupNotificationCategories();
+
+    const stickyIdKey = "ruhani:sticky-notif-id:v1";
+    const prevId = await AsyncStorage.getItem(stickyIdKey);
+    if (prevId) {
+      await Notifications.dismissNotificationAsync(prevId).catch(() => {});
+    }
+
+    const notifId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `Next Prayer: ${nextPrayer.name}`,
+        body: `${time12}   (starts in ${hours}h ${minutes}m)`,
+        categoryIdentifier: 'prayer-actions',
+        ongoing: true,
+        sticky: true,
+        priority: 'low',
+        color: '#C5A880',
+      } as any,
+      trigger: null,
+    });
+
+    if (notifId) {
+      await AsyncStorage.setItem(stickyIdKey, notifId);
+    }
+  } catch (e) {
+    console.error("Error presenting sticky notification:", e);
+  }
+};

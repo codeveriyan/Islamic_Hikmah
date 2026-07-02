@@ -42,7 +42,7 @@ export default function ReminderScreen() {
     for (const r of list) {
       if (!r.enabled) continue;
       await Notifications.scheduleNotificationAsync({
-        content: { title: "Ruhani Reminder", body: r.title, sound: true },
+        content: { title: "Islamic Hikmah Reminder", body: r.title, sound: true },
         trigger: { hour: r.hour, minute: r.minute, repeats: true } as any,
       });
     }
