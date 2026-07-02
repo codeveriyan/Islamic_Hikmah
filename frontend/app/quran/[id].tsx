@@ -86,35 +86,101 @@ export default function SurahDetail() {
         text: a.translation,
       }));
 
-      if (language === "ta") {
-        // Tamil translation isn't bundled locally. Show a cached copy instantly if we
-        // have one from a previous visit, otherwise fall back to English while we try
-        // to fetch and cache it. If offline and never cached, English stays shown.
-        const cacheKey = `islamic_hikmah:quran_ta_${surahId}`;
+      const englishTranslit = surah.ayahs.map((a) => ({
+        number: a.numberInSurah,
+        numberInSurah: a.numberInSurah,
+        text: a.transliteration,
+      }));
+
+      if (language !== "en") {
+        const cacheKey = `islamic_hikmah:quran_trans_${language}_${surahId}`;
         setTrans(englishTrans);
+        setTranslit(englishTranslit);
+
         AsyncStorage.getItem(cacheKey).then((cached) => {
           if (cached) {
             try {
-              setTrans(JSON.parse(cached));
+              const { trans: cachedTrans, translit: cachedTranslit } = JSON.parse(cached);
+              if (cachedTrans && cachedTranslit) {
+                setTrans(cachedTrans);
+                setTranslit(cachedTranslit);
+                return;
+              }
             } catch {
               // ignore malformed cache
             }
           }
-        });
-        fetch(`https://api.alquran.cloud/v1/surah/${surahId}/ta.tamil`)
-          .then((r) => r.json())
-          .then((t) => {
-            const ayahs = t.data?.ayahs || [];
-            if (ayahs.length) {
-              setTrans(ayahs);
-              AsyncStorage.setItem(cacheKey, JSON.stringify(ayahs)).catch(() => {});
+
+          // Fetch translations dynamically if not cached
+          const fetchQuranTranslations = async () => {
+            try {
+              const chunkSize = 20;
+              const transResults: Ayah[] = [...englishTrans];
+              const translitResults: Ayah[] = [...englishTranslit];
+
+              const chunkCount = Math.ceil(englishTrans.length / chunkSize);
+              for (let chunkIdx = 0; chunkIdx < chunkCount; chunkIdx++) {
+                const startIdx = chunkIdx * chunkSize;
+                const endIdx = Math.min(startIdx + chunkSize, englishTrans.length);
+
+                const transSlice = englishTrans.slice(startIdx, endIdx);
+                const translitSlice = englishTranslit.slice(startIdx, endIdx);
+
+                const transCombined = transSlice.map(a => a.text).join(" || ");
+                const translitCombined = translitSlice.map(a => a.text).join(" || ");
+
+                // Translate Translation
+                const resTrans = await fetch(
+                  `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(transCombined)}`
+                );
+                const dataTrans = await resTrans.json();
+                const translatedTransStr = dataTrans?.[0]?.map((x: any) => x[0]).join("") || transCombined;
+                const translatedTransParts = translatedTransStr.split(/\s*\|\|\s*/);
+
+                // Translate Transliteration
+                const resTranslit = await fetch(
+                  `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(translitCombined)}`
+                );
+                const dataTranslit = await resTranslit.json();
+                const translatedTranslitStr = dataTranslit?.[0]?.map((x: any) => x[0]).join("") || translitCombined;
+                const translatedTranslitParts = translatedTranslitStr.split(/\s*\|\|\s*/);
+
+                for (let offset = 0; offset < transSlice.length; offset++) {
+                  const globalIdx = startIdx + offset;
+                  if (translatedTransParts[offset]) {
+                    transResults[globalIdx] = {
+                      ...transResults[globalIdx],
+                      text: translatedTransParts[offset].trim()
+                    };
+                  }
+                  if (translatedTranslitParts[offset]) {
+                    translitResults[globalIdx] = {
+                      ...translitResults[globalIdx],
+                      text: translatedTranslitParts[offset].trim()
+                    };
+                  }
+                }
+              }
+
+              setTrans(transResults);
+              setTranslit(translitResults);
+              
+              // Save to cache
+              AsyncStorage.setItem(cacheKey, JSON.stringify({
+                trans: transResults,
+                translit: translitResults
+              })).catch(() => {});
+
+            } catch (e) {
+              console.error("Failed to translate Quran:", e);
             }
-          })
-          .catch(() => {
-            // offline — cached or English fallback above already applied
-          });
+          };
+
+          fetchQuranTranslations();
+        });
       } else {
         setTrans(englishTrans);
+        setTranslit(englishTranslit);
       }
     }
 
@@ -389,5 +455,5 @@ const styles = StyleSheet.create({
   ayahNumTxt: { fontWeight: "700" },
   arabic: { fontFamily: "Amiri", fontSize: 26, textAlign: "right", lineHeight: 48, marginTop: theme.spacing.md },
   translation: { marginTop: theme.spacing.md, lineHeight: 22 },
-  translit: { fontSize: 14, fontStyle: "italic", lineHeight: 22, marginTop: 8 },
+  translit: { fontSize: 14, fontStyle: "normal", lineHeight: 22, marginTop: 8 },
 });

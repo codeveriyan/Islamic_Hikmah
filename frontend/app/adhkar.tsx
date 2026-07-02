@@ -11,8 +11,48 @@ const ITEM_HEIGHT = 160;
 
 export default function AdhkarScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, fontSize, fontColor } = useTheme();
   const [selected, setSelected] = useState<AdhkarCategory | null>(null);
+
+  // Font Size Styles
+  const getArabicSize = () => {
+    if (fontSize === "small") return 20;
+    if (fontSize === "large") return 34;
+    return 26; // medium
+  };
+  const getArabicLineHeight = () => {
+    if (fontSize === "small") return 36;
+    if (fontSize === "large") return 54;
+    return 44; // medium
+  };
+  const getTranslitSize = () => {
+    if (fontSize === "small") return 12;
+    if (fontSize === "large") return 19;
+    return 15; // medium
+  };
+  const getTranslitLineHeight = () => {
+    if (fontSize === "small") return 20;
+    if (fontSize === "large") return 30;
+    return 24; // medium
+  };
+  const getTranslationSize = () => {
+    if (fontSize === "small") return 12;
+    if (fontSize === "large") return 19;
+    return 15; // medium
+  };
+  const getTranslationLineHeight = () => {
+    if (fontSize === "small") return 20;
+    if (fontSize === "large") return 30;
+    return 24; // medium
+  };
+
+  // Font Color Styles
+  const getTextColor = () => {
+    if (fontColor === "gold") return "#D97706";
+    if (fontColor === "green") return "#10B981";
+    if (fontColor === "sepia") return "#B45309";
+    return colors.onSurfaceSecondary;
+  };
 
   const renderItem = useCallback(({ item }: { item: AdhkarItem }) => (
     <View style={[styles.card, { backgroundColor: colors.surfaceSecondary }]}>
@@ -26,16 +66,16 @@ export default function AdhkarScreen() {
           <Text style={[styles.note, { color: colors.brand }]}>ℹ️ {item.note}</Text>
         )}
       </View>
-      <Text style={[styles.arabic, { color: colors.onSurface }]}>{item.arabic}</Text>
+      <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight() }]}>{item.arabic}</Text>
       {item.transliteration && (
-        <Text style={[styles.translit, { color: colors.onSurfaceSecondary }]}>{item.transliteration}</Text>
+        <Text style={[styles.translit, { color: colors.brand, fontSize: getTranslitSize(), lineHeight: getTranslitLineHeight() }]}>{item.transliteration}</Text>
       )}
-      <Text style={[styles.translation, { color: colors.onSurfaceMuted }]}>{item.translation}</Text>
+      <Text style={[styles.translation, { color: getTextColor(), fontSize: getTranslationSize(), lineHeight: getTranslationLineHeight() }]}>{item.translation}</Text>
       {item.reference && (
         <Text style={[styles.reference, { color: colors.brand }]}>— {item.reference}</Text>
       )}
     </View>
-  ), [colors]);
+  ), [colors, fontSize, fontColor]);
 
   if (selected) {
     return (

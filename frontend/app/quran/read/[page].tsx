@@ -150,7 +150,7 @@ export default function QuranReadScreen() {
       const dy = touches[0].pageY - touches[1].pageY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const scale = (dist / initialDist.current) * baseScale.current;
-      setZoomScale(Math.min(Math.max(scale, 0.8), 3));
+      setZoomScale(Math.min(Math.max(scale, 1), 3));
     }
   };
 
@@ -174,7 +174,7 @@ export default function QuranReadScreen() {
         
         {/* Zoom Controls */}
         <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-          <Pressable onPress={() => setZoomScale(prev => Math.max(prev - 0.25, 0.8))} hitSlop={8}>
+          <Pressable onPress={() => setZoomScale(prev => Math.max(prev - 0.25, 1))} hitSlop={8}>
             <MaterialCommunityIcons name="minus-box-outline" size={24} color={isNightMode ? "#FFF" : "#333"} />
           </Pressable>
           <Text style={{ color: isNightMode ? "#FFF" : "#333", fontSize: 13, fontWeight: "700" }}>
@@ -185,7 +185,7 @@ export default function QuranReadScreen() {
           </Pressable>
         </View>
       </View>
-
+ 
       {/* Page swiper */}
       <View 
         style={{ flex: 1 }}
@@ -209,7 +209,7 @@ export default function QuranReadScreen() {
             index,
           })}
           showsHorizontalScrollIndicator={false}
-          scrollEnabled={zoomScale === 1}
+          scrollEnabled={true}
         />
       </View>
 

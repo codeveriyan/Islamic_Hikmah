@@ -43,9 +43,13 @@ export default function RootLayout() {
 
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener((notification) => {
-      const title = notification.request.content.title || "";
-      if (title.includes("Prayer Time")) {
-        player.play();
+      try {
+        const title = notification.request.content.title || "";
+        if (title.includes("Prayer Time")) {
+          player.play();
+        }
+      } catch (err) {
+        console.warn("Failed to play foreground Adhan audio:", err);
       }
     });
     return () => subscription.remove();
@@ -53,13 +57,17 @@ export default function RootLayout() {
 
   useEffect(() => {
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const actionId = response.actionIdentifier;
-      if (actionId === "quran") {
-        router.push("/quran" as any);
-      } else if (actionId === "hadith") {
-        router.push("/hadith" as any);
-      } else if (actionId === "tasbih") {
-        router.push("/dhikr" as any);
+      try {
+        const actionId = response.actionIdentifier;
+        if (actionId === "Tracker" || actionId === "quran") {
+          router.push("/goals" as any);
+        } else if (actionId === "Azkar" || actionId === "hadith") {
+          router.push("/adhkar" as any);
+        } else if (actionId === "Qibla" || actionId === "tasbih") {
+          router.push("/qibla" as any);
+        }
+      } catch (err) {
+        console.warn("Error processing notification action:", err);
       }
     });
     return () => responseSub.remove();
