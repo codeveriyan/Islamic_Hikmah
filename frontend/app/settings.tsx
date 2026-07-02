@@ -57,7 +57,7 @@ const ITEMS: SettingItem[] = [
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { colors, mode, setMode, language, setLanguage } = useTheme();
+  const { colors, mode, setMode, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor } = useTheme();
   const [activeItem, setActiveItem] = useState<SettingItem | null>(null);
 
   // User preference states
@@ -72,7 +72,19 @@ export default function SettingsScreen() {
   const [tasbihVibe, setTasbihVibe] = useState(true);
 
   const [downloadWifi, setDownloadWifi] = useState(true);
-  const appLanguage = language === "ta" ? "Tamil (தமிழ்)" : "English";
+
+  const getLanguageName = (code: string) => {
+    switch (code) {
+      case "ta": return "Tamil (தமிழ்)";
+      case "hi": return "Hindi (हिन्दी)";
+      case "ur": return "Urdu (اردو)";
+      case "te": return "Telugu (తెలుగు)";
+      case "kn": return "Kannada (ಕನ್ನಡ)";
+      case "ml": return "Malayalam (മലയാളம்)";
+      default: return "English";
+    }
+  };
+  const appLanguage = getLanguageName(language);
   const [bgAzaan, setBgAzaan] = useState(true);
 
   useEffect(() => {
@@ -142,6 +154,23 @@ export default function SettingsScreen() {
         );
 
       case "appearance":
+        const getPreviewTransSize = () => {
+          if (fontSize === "small") return 12;
+          if (fontSize === "large") return 18;
+          return 14;
+        };
+        const getPreviewArabicSize = () => {
+          if (fontSize === "small") return 20;
+          if (fontSize === "large") return 32;
+          return 26;
+        };
+        const getPreviewTextColor = () => {
+          if (fontColor === "gold") return "#D97706";
+          if (fontColor === "green") return "#10B981";
+          if (fontColor === "sepia") return "#B45309";
+          return colors.onSurfaceSecondary;
+        };
+
         return (
           <View style={styles.modalContent}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Appearance Settings</Text>
@@ -156,22 +185,56 @@ export default function SettingsScreen() {
 
             <View style={styles.optionRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show English Translation</Text>
+                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show Translation</Text>
               </View>
               <Switch value={translationEnabled} onValueChange={setTranslationEnabled} trackColor={{ true: colors.brand }} />
             </View>
 
             <View style={styles.optionRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show English Transliteration</Text>
+                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show Transliteration</Text>
               </View>
               <Switch value={transliterationEnabled} onValueChange={setTransliterationEnabled} trackColor={{ true: colors.brand }} />
             </View>
+
+            <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted, marginTop: 16 }]}>Font Size</Text>
+            <View style={[styles.speedRow, { marginBottom: 12 }]}>
+              {(["small", "medium", "large"] as const).map((size) => (
+                <Pressable
+                  key={size}
+                  onPress={() => setFontSize(size)}
+                  style={[styles.speedBtn, { backgroundColor: fontSize === size ? colors.brand : colors.surfaceTertiary }]}
+                >
+                  <Text style={[styles.speedTxt, { color: fontSize === size ? colors.onBrandPrimary : colors.onSurface, textTransform: "capitalize" }]}>
+                    {size}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted }]}>Font Color</Text>
+            <View style={[styles.speedRow, { marginBottom: 16 }]}>
+              {(["default", "gold", "green", "sepia"] as const).map((col) => (
+                <Pressable
+                  key={col}
+                  onPress={() => setFontColor(col)}
+                  style={[styles.speedBtn, { backgroundColor: fontColor === col ? colors.brand : colors.surfaceTertiary }]}
+                >
+                  <Text style={[styles.speedTxt, { color: fontColor === col ? colors.onBrandPrimary : colors.onSurface, textTransform: "capitalize" }]}>
+                    {col}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
             
-            <View style={[styles.previewBox, { backgroundColor: colors.surfaceTertiary, marginTop: 16 }]}>
+            <View style={[styles.previewBox, { backgroundColor: colors.surfaceTertiary, marginTop: 8 }]}>
               <Text style={[styles.previewLabel, { color: colors.brand }]}>PREVIEW</Text>
-              <Text style={[styles.arabicPreview, { color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</Text>
-              {translationEnabled && <Text style={[styles.transPreview, { color: colors.onSurfaceMuted }]}>In the name of God, the Most Gracious, the Dispenser of Grace.</Text>}
+              <Text style={[styles.arabicPreview, { color: colors.onSurface, fontSize: getPreviewArabicSize() }]}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</Text>
+              {translationEnabled && (
+                <Text style={[styles.transPreview, { color: getPreviewTextColor(), fontSize: getPreviewTransSize() }]}>
+                  In the name of God, the Most Gracious, the Dispenser of Grace.
+                </Text>
+              )}
             </View>
           </View>
         );
@@ -250,7 +313,12 @@ export default function SettingsScreen() {
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Change Language</Text>
             {[
               { name: "English", code: "en" as const },
-              { name: "Tamil (தமிழ்)", code: "ta" as const }
+              { name: "Tamil (தமிழ்)", code: "ta" as const },
+              { name: "Hindi (हिन्दी)", code: "hi" as const },
+              { name: "Urdu (اردو)", code: "ur" as const },
+              { name: "Telugu (తెలుగు)", code: "te" as const },
+              { name: "Kannada (ಕನ್ನಡ)", code: "kn" as const },
+              { name: "Malayalam (മലയാളம்)", code: "ml" as const }
             ].map((lang) => (
               <Pressable
                 key={lang.code}

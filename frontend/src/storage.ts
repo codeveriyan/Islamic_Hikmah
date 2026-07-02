@@ -229,6 +229,17 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
   const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
   const bgAzaanEnabled = bgAzaanRaw !== "false";
   
+  // Set up channel for high importance and custom Adhan sound on Android
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('prayer-times', {
+      name: 'Prayer Time Notifications',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: bgAzaanEnabled ? 'azaan' : undefined,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
   const newIds: string[] = [];
   const activePrayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
   
@@ -256,6 +267,7 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
           hour: h,
           minute: m,
           repeats: true,
+          channelId: 'prayer-times',
         } as any,
       });
       newIds.push(id);
@@ -272,18 +284,18 @@ export const setupNotificationCategories = async () => {
   try {
     await Notifications.setNotificationCategoryAsync('prayer-actions', [
       {
-        identifier: 'quran',
-        buttonTitle: 'Quran 📖',
+        identifier: 'Tracker',
+        buttonTitle: 'Tracker',
         options: { opensAppToForeground: true },
       },
       {
-        identifier: 'hadith',
-        buttonTitle: 'Hadith 📚',
+        identifier: 'Azkar',
+        buttonTitle: 'Azkar',
         options: { opensAppToForeground: true },
       },
       {
-        identifier: 'tasbih',
-        buttonTitle: 'Tasbih 📿',
+        identifier: 'Qibla',
+        buttonTitle: 'Qibla',
         options: { opensAppToForeground: true },
       },
     ]);

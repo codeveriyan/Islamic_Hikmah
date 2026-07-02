@@ -36,12 +36,20 @@ const light = {
 };
 
 type Mode = "light" | "dark";
+type LangCode = "en" | "ta" | "hi" | "ur" | "te" | "kn" | "ml";
+type FontSize = "small" | "medium" | "large";
+type FontColor = "default" | "gold" | "green" | "sepia";
+
 type Ctx = {
   mode: Mode;
   colors: typeof dark;
   setMode: (m: Mode) => void;
-  language: "en" | "ta";
-  setLanguage: (lang: "en" | "ta") => void;
+  language: LangCode;
+  setLanguage: (lang: LangCode) => void;
+  fontSize: FontSize;
+  setFontSize: (size: FontSize) => void;
+  fontColor: FontColor;
+  setFontColor: (color: FontColor) => void;
 };
 
 const ThemeCtx = createContext<Ctx>({
@@ -50,18 +58,30 @@ const ThemeCtx = createContext<Ctx>({
   setMode: () => {},
   language: "en",
   setLanguage: () => {},
+  fontSize: "medium",
+  setFontSize: () => {},
+  fontColor: "default",
+  setFontColor: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setModeState] = useState<Mode>("dark");
-  const [language, setLanguageState] = useState<"en" | "ta">("en");
+  const [language, setLanguageState] = useState<LangCode>("en");
+  const [fontSize, setFontSizeState] = useState<FontSize>("medium");
+  const [fontColor, setFontColorState] = useState<FontColor>("default");
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then((v) => {
       if (v === "light" || v === "dark") setModeState(v);
     });
     AsyncStorage.getItem("islamic_hikmah:language_preference").then((l) => {
-      if (l === "en" || l === "ta") setLanguageState(l as "en" | "ta");
+      if (l) setLanguageState(l as LangCode);
+    });
+    AsyncStorage.getItem("islamic_hikmah:font_size_pref").then((s) => {
+      if (s) setFontSizeState(s as FontSize);
+    });
+    AsyncStorage.getItem("islamic_hikmah:font_color_pref").then((c) => {
+      if (c) setFontColorState(c as FontColor);
     });
   }, []);
 
@@ -70,14 +90,24 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     AsyncStorage.setItem(KEY, m);
   };
 
-  const setLanguage = (lang: "en" | "ta") => {
+  const setLanguage = (lang: LangCode) => {
     setLanguageState(lang);
     AsyncStorage.setItem("islamic_hikmah:language_preference", lang);
   };
 
+  const setFontSize = (size: FontSize) => {
+    setFontSizeState(size);
+    AsyncStorage.setItem("islamic_hikmah:font_size_pref", size);
+  };
+
+  const setFontColor = (color: FontColor) => {
+    setFontColorState(color);
+    AsyncStorage.setItem("islamic_hikmah:font_color_pref", color);
+  };
+
   const colors = mode === "dark" ? dark : light;
   return (
-    <ThemeCtx.Provider value={{ mode, colors, setMode, language, setLanguage }}>
+    <ThemeCtx.Provider value={{ mode, colors, setMode, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor }}>
       {children}
     </ThemeCtx.Provider>
   );

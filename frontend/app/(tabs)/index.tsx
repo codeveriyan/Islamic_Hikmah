@@ -16,7 +16,7 @@ import { CATEGORIES } from "@/src/data/duas";
 import { DEFAULT_GOALS, CATEGORY_COLORS } from "@/src/data/goals";
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
-  getActiveGoalIds, getPrayerSettings,
+  getActiveGoalIds, getPrayerSettings, updateStickyPrayerNotification,
 } from "@/src/storage";
 
 const { width } = Dimensions.get("window");
@@ -94,23 +94,78 @@ function format12Hour(timeStr: string): string {
 
 function getHijriDate() {
   try {
-    const str = new Intl.DateTimeFormat('en-TN-u-ca-islamic', {
-      day: 'numeric', month: 'long', year: 'numeric'
-    }).format(new Date());
-    const clean = str.replace(" AH", "").trim();
-    const parts = clean.split(" ");
-    if (parts.length >= 3) {
-      const day = parseInt(parts[0], 10);
-      if (!isNaN(day)) {
-        let suffix = "th";
-        if (day % 10 === 1 && day !== 11) suffix = "st";
-        else if (day % 10 === 2 && day !== 12) suffix = "nd";
-        else if (day % 10 === 3 && day !== 13) suffix = "rd";
-        return `${day}${suffix} ${parts[1]} ${parts[2]}`;
-      }
+    const date = new Date();
+    let g_y = date.getFullYear();
+    let g_m = date.getMonth();
+    let g_d = date.getDate();
+    
+    let myDate = new Date(Date.UTC(g_y, g_m, g_d, 12, 0, 0));
+    
+    let y = myDate.getUTCFullYear();
+    let m = myDate.getUTCMonth() + 1;
+    let d = myDate.getUTCDate();
+    
+    if (m <= 2) {
+      y -= 1;
+      m += 12;
     }
-    return clean;
-  } catch { return ""; }
+    let A = Math.floor(y / 100);
+    let B = 2 - A + Math.floor(A / 4);
+    // Added +1 day offset to align arithmetic calendar with standard Umm al-Qura calendar
+    let jd = Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5 + 1;
+    
+    let epoch = 1948439.5; 
+    let diff = jd - epoch;
+    let cycle = Math.floor(diff / 10631);
+    let rem = diff % 10631;
+    
+    let h_y = 30 * cycle + 1;
+    const leap_years = [2, 5, 7, 10, 13, 16, 18, 21, 24, 26, 29];
+    
+    for (let i = 1; i <= 30; i++) {
+      const is_leap = leap_years.includes(i);
+      const length = is_leap ? 355 : 354;
+      if (rem < length) {
+        h_y = 30 * cycle + i;
+        break;
+      }
+      rem -= length;
+    }
+    
+    const month_lengths = [30, 29, 30, 29, 30, 29, 30, 29, 30, 29, 30, 29];
+    const current_year_in_cycle = (h_y - 1) % 30 + 1;
+    if (leap_years.includes(current_year_in_cycle)) {
+      month_lengths[11] = 30;
+    }
+    
+    let h_m = 1;
+    for (let i = 0; i < 12; i++) {
+      if (rem < month_lengths[i]) {
+        h_m = i + 1;
+        break;
+      }
+      rem -= month_lengths[i];
+    }
+    
+    let h_d = Math.floor(rem) + 1;
+    
+    const monthNames = [
+      "Muharram", "Safar", "Rabi' al-Awwal", "Rabi' al-Thani",
+      "Jumada al-Awwal", "Jumada al-Thani", "Rajab", "Sha'ban",
+      "Ramadan", "Shawwal", "Dhu al-Qi'dah", "Dhu al-Hijjah"
+    ];
+    
+    const mName = monthNames[h_m - 1] || "Muharram";
+    
+    let suffix = "th";
+    if (h_d % 10 === 1 && h_d !== 11) suffix = "st";
+    else if (h_d % 10 === 2 && h_d !== 12) suffix = "nd";
+    else if (h_d % 10 === 3 && h_d !== 13) suffix = "rd";
+    
+    return `${h_d}${suffix} ${mName} ${h_y} AH`;
+  } catch {
+    return "";
+  }
 }
 
 function parseTime(t: string): Date {
@@ -199,6 +254,7 @@ export default function HomeScreen() {
   const [countdown, setCountdown] = useState("--:--:--");
   const [progress, setProgress] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastNotifMin = useRef<number | null>(null);
 
   // Goals
   const [completed, setCompleted] = useState<string[]>([]);
@@ -242,6 +298,13 @@ export default function HomeScreen() {
       const total = next.date.getTime() - current.date.getTime();
       const elapsed = now.getTime() - current.date.getTime();
       setProgress(Math.min(Math.max(elapsed / total, 0), 1));
+
+      // Throttle sticky notifications to once per minute (on minute changes)
+      const currentMinute = now.getMinutes();
+      if (lastNotifMin.current !== currentMinute) {
+        lastNotifMin.current = currentMinute;
+        updateStickyPrayerNotification(times).catch((e) => console.error(e));
+      }
     };
     tick();
     timerRef.current = setInterval(tick, 1000);
@@ -328,7 +391,7 @@ export default function HomeScreen() {
         {city ? (
           <View style={styles.locationRow}>
             <MaterialCommunityIcons name="map-marker" size={14} color={colors.brand} />
-            <Text style={[styles.locationTxt, { color: colors.onSurfaceMuted }]}>{city}</Text>
+            <Text style={[styles.locationTxt, { color: colors.onSurface }]}>{city}</Text>
           </View>
         ) : null}
 
@@ -427,7 +490,7 @@ export default function HomeScreen() {
               <Pressable key={c.id} onPress={() => handleCategoryPress(c.id)}
                 style={({ pressed }) => [styles.card, { width: CARD_WIDTH }, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
               >
-                <ImageBackground source={imgSource} style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
+                <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
                   <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
                     <View style={styles.cardLabelContainer}>
                       <Text style={styles.cardTitle}>{c.title.toUpperCase()}</Text>
@@ -455,13 +518,13 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
     marginHorizontal: theme.spacing.lg,
-    marginTop: theme.spacing.md,
-    marginBottom: -8,
+    marginTop: 10,
+    marginBottom: 6,
   },
   locationTxt: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "700",
   },
 
