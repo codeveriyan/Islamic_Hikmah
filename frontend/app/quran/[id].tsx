@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable } from "react-native";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -8,6 +8,7 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { toggleFavourite, getFavourites } from "@/src/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import { useIsFocused } from "@react-navigation/native";
 import quranData from "@/src/data/quran/quranData.json";
 
@@ -36,6 +37,17 @@ const RECITERS = [
   { id: "ar.abdulbasitmurattal", name: "Abdul Basit (Murattal)" },
 ] as const;
 
+const getGlobalAyahNumber = (surahNumber: number, ayahNumberInSurah: number): number => {
+  let globalNum = 0;
+  for (let s = 1; s < surahNumber; s++) {
+    const surah = QURAN.find((item) => item.number === s);
+    if (surah) {
+      globalNum += surah.totalAyahs;
+    }
+  }
+  return globalNum + ayahNumberInSurah;
+};
+
 export default function SurahDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -57,9 +69,37 @@ export default function SurahDetail() {
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
   const [translit, setTranslit] = useState<Ayah[]>([]);
 
+  // Speed and repeats states
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  const [repeatTimes, setRepeatTimes] = useState(1);
+  const [currentRepeat, setCurrentRepeat] = useState(1);
+
+  const flatListRef = useRef<FlatList>(null);
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
   const { colors, language } = useTheme();
+
+  // Speed sync effect
+  useEffect(() => {
+    if (player) {
+      player.setPlaybackRate(playbackSpeed);
+    }
+  }, [playbackSpeed, playingIdx]);
+
+  // Auto-scroll effect
+  useEffect(() => {
+    if (playingIdx !== null && flatListRef.current) {
+      setTimeout(() => {
+        try {
+          flatListRef.current?.scrollToIndex({
+            index: playingIdx,
+            animated: true,
+            viewPosition: 0.3,
+          });
+        } catch {}
+      }, 100);
+    }
+  }, [playingIdx]);
 
   // Effect 1: Load Surah text, cached translations, and run translation fetches
   useEffect(() => {
@@ -230,29 +270,27 @@ export default function SurahDetail() {
     };
   }, [id, language]);
 
-  // Effect 2: Load audio recitation streams from network
+  // Effect 2: Load audio recitation streams from local direct CDN URL generation
   useEffect(() => {
-    let active = true;
-    setAudioErr(false);
-
-    // Audio recitation is streamed from the network — this is the one part of the
-    // Quran screen that genuinely needs a connection, since bundling every reciter's
-    // full audio would make the app enormous. Text reading works with no network.
-    fetch(`https://api.alquran.cloud/v1/surah/${id}/${reciter}`)
-      .then((r) => r.json())
-      .then((au) => {
-        if (!active) return;
-        const ayahs = au.data?.ayahs || [];
-        setAudio(ayahs);
-        setAudioErr(ayahs.length === 0 || !ayahs[0]?.audio);
-      })
-      .catch(() => {
-        if (active) setAudioErr(true);
+    const surahId = Number(id);
+    const surah = QURAN.find((s) => s.number === surahId);
+    if (surah) {
+      const generatedAudio = surah.ayahs.map((a) => {
+        const globalNum = getGlobalAyahNumber(surahId, a.numberInSurah);
+        const bitrate = (reciter === "ar.abdulbasitmurattal" || reciter === "ar.abdulbasitmurattal") ? 192 : 128;
+        return {
+          number: a.numberInSurah,
+          numberInSurah: a.numberInSurah,
+          text: a.arabic,
+          audio: `https://cdn.islamic.network/quran/audio/${bitrate}/${reciter}/${globalNum}.mp3`,
+        };
       });
-
-    return () => {
-      active = false;
-    };
+      setAudio(generatedAudio);
+      setAudioErr(false);
+    } else {
+      setAudio([]);
+      setAudioErr(true);
+    }
   }, [id, reciter]);
 
   const isFocused = useIsFocused();
@@ -281,20 +319,35 @@ export default function SurahDetail() {
 
   useEffect(() => {
     if (status?.didJustFinish) {
-      if (continuous && playingIdx !== null && playingIdx + 1 < audio.length) {
-        const next = playingIdx + 1;
-        const url = audio[next]?.audio;
-        if (url) {
-          player.replace({ uri: url });
-          player.play();
-          setPlayingIdx(next);
-          return;
+      if (playingIdx !== null) {
+        if (currentRepeat < repeatTimes) {
+          const url = audio[playingIdx]?.audio;
+          if (url) {
+            setCurrentRepeat((c) => c + 1);
+            player.replace({ uri: url });
+            player.setPlaybackRate(playbackSpeed);
+            player.play();
+            return;
+          }
+        }
+        if (continuous && playingIdx + 1 < audio.length) {
+          const next = playingIdx + 1;
+          const url = audio[next]?.audio;
+          if (url) {
+            setCurrentRepeat(1);
+            player.replace({ uri: url });
+            player.setPlaybackRate(playbackSpeed);
+            player.play();
+            setPlayingIdx(next);
+            return;
+          }
         }
       }
       setPlayingIdx(null);
       setContinuous(false);
+      setCurrentRepeat(1);
     }
-  }, [status?.didJustFinish]);
+  }, [status?.didJustFinish, playingIdx, currentRepeat, repeatTimes, continuous, audio, player, playbackSpeed]);
 
   const playAyah = (i: number) => {
     const url = audio[i]?.audio;
@@ -305,8 +358,10 @@ export default function SurahDetail() {
       return;
     }
     player.replace({ uri: url });
+    player.setPlaybackRate(playbackSpeed);
     player.play();
     setPlayingIdx(i);
+    setCurrentRepeat(1);
   };
 
   const playAll = () => {
@@ -315,14 +370,17 @@ export default function SurahDetail() {
     const url = audio[0]?.audio;
     if (!url) return;
     player.replace({ uri: url });
+    player.setPlaybackRate(playbackSpeed);
     player.play();
     setPlayingIdx(0);
+    setCurrentRepeat(1);
   };
 
   const stopAll = () => {
     player.pause();
     setContinuous(false);
     setPlayingIdx(null);
+    setCurrentRepeat(1);
   };
 
   const onFavAyah = useCallback(async (i: number, a: Ayah) => {
@@ -392,39 +450,67 @@ export default function SurahDetail() {
       )}
 
       <View style={styles.playAllRow}>
-        <Pressable
-          onPress={continuous ? stopAll : playAll}
-          style={[styles.playAllBtn, { backgroundColor: audioErr ? colors.onSurfaceMuted : colors.brand }]}
-          disabled={audioErr}
-          testID="play-all-btn"
-        >
-          <MaterialCommunityIcons
-            name={continuous ? "stop" : "play"}
-            size={20}
-            color={colors.onBrandPrimary}
-          />
-          <Text style={[styles.playAllTxt, { color: colors.onBrandPrimary }]}>
-            {continuous ? "Stop" : "Play Full Surah"}
-          </Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Pressable
+            onPress={continuous ? stopAll : playAll}
+            style={[styles.playAllBtn, { backgroundColor: audioErr ? colors.onSurfaceMuted : colors.brand }]}
+            disabled={audioErr}
+            testID="play-all-btn"
+          >
+            <MaterialCommunityIcons
+              name={continuous ? "stop" : "play"}
+              size={20}
+              color={colors.onBrandPrimary}
+            />
+            <Text style={[styles.playAllTxt, { color: colors.onBrandPrimary }]}>
+              {continuous ? "Stop" : "Play Surah"}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setPlaybackSpeed((s) => (s === 1.0 ? 1.25 : s === 1.25 ? 1.5 : 1.0));
+            }}
+            style={[styles.badgeBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <Text style={[styles.badgeTxt, { color: colors.brand }]}>{playbackSpeed}x</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setRepeatTimes((r) => (r === 1 ? 2 : r === 2 ? 3 : 1));
+            }}
+            style={[styles.badgeBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <Text style={[styles.badgeTxt, { color: colors.brand }]}>🔂 {repeatTimes}x</Text>
+          </Pressable>
+        </View>
         {audioErr ? (
-          <Text style={[styles.bgHint, { color: theme.colors.error }]}>⚠️ Audio unavailable for this Qari</Text>
+          <Text style={[styles.bgHint, { color: theme.colors.error }]}>⚠️ Audio unavailable</Text>
         ) : (
-          <Text style={[styles.bgHint, { color: colors.onSurfaceMuted }]}>🔊 Plays in background</Text>
+          <Text style={[styles.bgHint, { color: colors.onSurfaceMuted }]}>🔊 Background Play</Text>
         )}
       </View>
 
       {loading ? (
         <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 40 }} />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}>
-          {arabic.map((a, i) => {
+        <FlatList
+          ref={flatListRef}
+          data={arabic}
+          keyExtractor={(a) => String(a.number)}
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
+          getItemLayout={(data, index) => (
+            { length: 180, offset: 180 * index, index }
+          )}
+          renderItem={({ item: a, index: i }) => {
             const isPlaying = playingIdx === i && status?.playing;
             const favId = `ayah-${id}-${a.numberInSurah}`;
             const isFav = favIds.has(favId);
             return (
               <View
-                key={a.number}
                 style={[
                   styles.ayah,
                   { backgroundColor: colors.surfaceSecondary },
@@ -480,8 +566,8 @@ export default function SurahDetail() {
                 )}
               </View>
             );
-          })}
-        </ScrollView>
+          }}
+        />
       )}
     </SafeAreaView>
   );
@@ -504,6 +590,17 @@ const styles = StyleSheet.create({
   playAllRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
   playAllBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: theme.radius.pill },
   playAllTxt: { fontWeight: "700" },
+  badgeBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeTxt: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
   bgHint: { fontSize: 11, flexShrink: 1, textAlign: "right" },
   ayah: { padding: theme.spacing.lg, borderRadius: theme.radius.lg, marginBottom: theme.spacing.md },
   ayahHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

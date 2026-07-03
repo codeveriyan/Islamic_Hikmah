@@ -270,7 +270,7 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
           hour: h,
           minute: m,
           channelId: 'prayer-times',
-        } as any,
+        },
       });
       newIds.push(id);
     } catch (e) {
@@ -393,3 +393,226 @@ export const updateStickyPrayerNotification = async (timings: Record<string, str
     console.error("Error presenting sticky notification:", e);
   }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Goal Notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GOAL_NOTIF_KEY = 'hikmah:goal-notif-ids:v1';
+const GOAL_NOTIF_TIMES_KEY = 'hikmah:goal-notif-times:v1';
+
+/**
+ * Per-goal notification times. Prayer goals use actual prayer timings;
+ * the rest have user-configurable defaults stored here.
+ */
+export type GoalNotifTimes = {
+  // Non-prayer goal times (24h: { hour, minute })
+  'quran-5min': { hour: number; minute: number };
+  'surah-mulk': { hour: number; minute: number };
+  'surah-kahaf': { hour: number; minute: number };
+  'morning-adhkar': { hour: number; minute: number };
+  'evening-adhkar': { hour: number; minute: number };
+  'sleep-adhkar': { hour: number; minute: number };
+  'fast-monday': { hour: number; minute: number };   // reminder sent Sunday evening
+  'fast-thursday': { hour: number; minute: number }; // reminder sent Wednesday evening
+  'nafl': { hour: number; minute: number };
+  'tahajjud': { hour: number; minute: number };
+};
+
+export const DEFAULT_GOAL_NOTIF_TIMES: GoalNotifTimes = {
+  'quran-5min':     { hour: 7,  minute: 0  },   // After Fajr
+  'surah-mulk':     { hour: 21, minute: 30 },   // Evening before sleep
+  'surah-kahaf':    { hour: 8,  minute: 0  },   // Friday morning
+  'morning-adhkar': { hour: 6,  minute: 30 },   // After Fajr
+  'evening-adhkar': { hour: 17, minute: 30 },   // Before Maghrib
+  'sleep-adhkar':   { hour: 22, minute: 0  },   // Bedtime
+  'fast-monday':    { hour: 20, minute: 0  },   // Sunday night reminder
+  'fast-thursday':  { hour: 20, minute: 0  },   // Wednesday night reminder
+  'nafl':           { hour: 12, minute: 30 },   // Midday
+  'tahajjud':       { hour: 3,  minute: 30 },   // Night prayer
+};
+
+export async function getGoalNotifTimes(): Promise<GoalNotifTimes> {
+  try {
+    const raw = await AsyncStorage.getItem(GOAL_NOTIF_TIMES_KEY);
+    if (raw) return { ...DEFAULT_GOAL_NOTIF_TIMES, ...JSON.parse(raw) };
+  } catch {}
+  return { ...DEFAULT_GOAL_NOTIF_TIMES };
+}
+
+export async function saveGoalNotifTimes(times: Partial<GoalNotifTimes>): Promise<void> {
+  const current = await getGoalNotifTimes();
+  await AsyncStorage.setItem(GOAL_NOTIF_TIMES_KEY, JSON.stringify({ ...current, ...times }));
+}
+
+export async function cancelGoalNotifications(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(GOAL_NOTIF_KEY);
+    if (raw) {
+      const ids = JSON.parse(raw) as string[];
+      for (const id of ids) {
+        await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+      }
+    }
+    await AsyncStorage.removeItem(GOAL_NOTIF_KEY);
+  } catch (e) {
+    console.error('Error cancelling goal notifications:', e);
+  }
+}
+
+type PrayerTimings = Record<string, string>;
+
+const GOAL_NOTIF_CONTENT: Record<string, { title: string; body: string }> = {
+  'fajr':           { title: '🌅 Fajr Prayer Time',         body: 'It\'s time for Fajr. Rise and pray.' },
+  'dhuhr':          { title: '☀️ Dhuhr Prayer Time',        body: 'Dhuhr time has come. Take a moment to pray.' },
+  'asr':            { title: '🌤 Asr Prayer Time',           body: 'Don\'t delay your Asr prayer.' },
+  'maghrib':        { title: '🌇 Maghrib Prayer Time',       body: 'Maghrib time is here. Pray before it ends.' },
+  'isha':           { title: '🌙 Isha Prayer Time',          body: 'Isha time has arrived. End your day with prayer.' },
+  'tahajjud':       { title: '✨ Tahajjud Time',             body: 'Rise for Tahajjud — the best night prayer.' },
+  'nafl':           { title: '🤲 Nafl Prayer Reminder',      body: 'Earn extra reward with a Nafl prayer today.' },
+  'quran-5min':     { title: '📖 Quran Reading Time',        body: 'Read Quran for just 5 minutes — even a little goes far.' },
+  'surah-mulk':     { title: '🌙 Recite Surah Al-Mulk',     body: 'Recite Surah Al-Mulk before you sleep tonight.' },
+  'surah-kahaf':    { title: '📗 Jumu\'ah: Surah Al-Kahf',  body: 'Today is Friday — recite Surah Al-Kahf.' },
+  'morning-adhkar': { title: '🌄 Morning Adhkar Time',       body: 'Start your day with the morning remembrances.' },
+  'evening-adhkar': { title: '🌆 Evening Adhkar Time',       body: 'Take a moment for the evening adhkar now.' },
+  'sleep-adhkar':   { title: '😴 Sleep Adhkar Reminder',     body: 'Read your sleep adhkar before you rest.' },
+  'fast-monday':    { title: '🌙 Sunnah Fast Tomorrow (Mon)',body: 'Prepare your intention — Monday fast starts at Fajr.' },
+  'fast-thursday':  { title: '🌙 Sunnah Fast Tomorrow (Thu)',body: 'Prepare your intention — Thursday fast starts at Fajr.' },
+};
+
+/**
+ * Schedule daily/weekly goal notifications for all active goals.
+ * - Prayer goals fire at the actual prayer time from `prayerTimings`
+ * - All other goals fire at the user-configured time from `GoalNotifTimes`
+ * - Weekly goals (fast-monday, fast-thursday, surah-kahaf) use WEEKLY trigger
+ *
+ * Call this whenever:
+ *   (a) active goal list changes (goals.tsx toggle)
+ *   (b) prayer timings are refreshed (prayer-times.tsx)
+ *   (c) user edits a goal notification time (goal-notif-settings.tsx)
+ */
+export async function scheduleGoalNotifications(
+  activeGoalIds: string[],
+  prayerTimings: PrayerTimings,
+  goalTimes?: GoalNotifTimes
+): Promise<{ success: boolean; error?: 'permission' | 'failed' }> {
+  if (Platform.OS === 'web') return { success: true };
+
+  await cancelGoalNotifications();
+
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== 'granted') {
+    const res = await Notifications.requestPermissionsAsync();
+    if (res.status !== 'granted') return { success: false, error: 'permission' };
+  }
+
+  const times = goalTimes ?? await getGoalNotifTimes();
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('goal-reminders', {
+      name: 'Goal & Habit Reminders',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0, 200, 100, 200],
+      sound: undefined,
+    });
+  }
+
+  const PRAYER_MAP: Record<string, string> = {
+    'fajr': 'Fajr', 'dhuhr': 'Dhuhr', 'asr': 'Asr',
+    'maghrib': 'Maghrib', 'isha': 'Isha',
+  };
+
+  // Weekly goals: day of week they fire (0=Sun)
+  // fast-monday reminder fires Sunday(0), fast-thursday fires Wednesday(3)
+  // surah-kahaf fires Friday(5)
+  const WEEKLY_MAP: Record<string, { dayOfWeek: number; timeKey: keyof GoalNotifTimes }> = {
+    'fast-monday':   { dayOfWeek: 0, timeKey: 'fast-monday' },
+    'fast-thursday': { dayOfWeek: 3, timeKey: 'fast-thursday' },
+    'surah-kahaf':   { dayOfWeek: 5, timeKey: 'surah-kahaf' },
+  };
+
+  const newIds: string[] = [];
+
+  for (const goalId of activeGoalIds) {
+    const content = GOAL_NOTIF_CONTENT[goalId];
+    if (!content) continue;
+
+    try {
+      // ── Prayer goals: use actual prayer timing ───────────────────────────
+      if (PRAYER_MAP[goalId]) {
+        const prayerKey = PRAYER_MAP[goalId];
+        const timeStr = prayerTimings[prayerKey];
+        if (!timeStr) continue;
+        const [h, m] = timeStr.split(':').map(Number);
+        if (isNaN(h) || isNaN(m)) continue;
+
+        const id = await Notifications.scheduleNotificationAsync({
+          content: { ...content, sound: undefined },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: h,
+            minute: m,
+            channelId: 'goal-reminders',
+          },
+        });
+        newIds.push(id);
+        continue;
+      }
+
+      // ── Tahajjud/Nafl: use configured times (daily) ──────────────────────
+      if (goalId === 'tahajjud' || goalId === 'nafl') {
+        const t = times[goalId as keyof GoalNotifTimes];
+        const id = await Notifications.scheduleNotificationAsync({
+          content: { ...content, sound: undefined },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: t.hour,
+            minute: t.minute,
+            channelId: 'goal-reminders',
+          },
+        });
+        newIds.push(id);
+        continue;
+      }
+
+      // ── Weekly goals ─────────────────────────────────────────────────────
+      if (WEEKLY_MAP[goalId]) {
+        const { dayOfWeek, timeKey } = WEEKLY_MAP[goalId];
+        const t = times[timeKey];
+        const id = await Notifications.scheduleNotificationAsync({
+          content: { ...content, sound: undefined },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+            weekday: dayOfWeek + 1, // expo-notifications: 1=Sun … 7=Sat
+            hour: t.hour,
+            minute: t.minute,
+            channelId: 'goal-reminders',
+          },
+        });
+        newIds.push(id);
+        continue;
+      }
+
+      // ── Daily non-prayer goals ────────────────────────────────────────────
+      const timeKey = goalId as keyof GoalNotifTimes;
+      if (times[timeKey]) {
+        const t = times[timeKey];
+        const id = await Notifications.scheduleNotificationAsync({
+          content: { ...content, sound: undefined },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: t.hour,
+            minute: t.minute,
+            channelId: 'goal-reminders',
+          },
+        });
+        newIds.push(id);
+      }
+    } catch (e) {
+      console.error(`Failed to schedule goal notification for ${goalId}:`, e);
+    }
+  }
+
+  await AsyncStorage.setItem(GOAL_NOTIF_KEY, JSON.stringify(newIds));
+  return { success: true };
+}

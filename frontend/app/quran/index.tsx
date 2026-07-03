@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { SURAH_START_PAGES_13 as SURAH_START_PAGES } from "@/src/data/surahPages13";
+import pageMapping from "@/src/data/quran/pageMapping.json";
 import { SURAH_LIST } from "@/src/data/surahList";
 
 type Surah = {
@@ -20,16 +20,28 @@ type Surah = {
 
 const ITEM_HEIGHT = 72;
 const JUZ_START_PAGES = [
-  2, 30, 58, 86, 114, 142, 170, 198, 226, 254, 
-  282, 310, 338, 366, 394, 422, 450, 478, 506, 534, 
-  562, 590, 618, 646, 674, 702, 730, 758, 786, 814
+  1, 22, 42, 62, 82, 102, 122, 142, 162, 182, 
+  202, 222, 242, 262, 282, 302, 322, 342, 362, 382, 
+  402, 422, 442, 462, 482, 502, 522, 542, 562, 582
 ];
+
+type QuranBookmark = {
+  page: number;
+  verse?: string;
+  timestamp?: number;
+};
 
 export default function QuranIndex() {
   const router = useRouter();
   const { colors } = useTheme();
   const [surahs, setSurahs] = useState<Surah[]>(SURAH_LIST);
   const [loading, setLoading] = useState(false);
+
+  // Dynamic Surah start page calculation from Medina pageMapping database
+  const surahStartPages = useCallback((surahNum: number): number => {
+    const firstPage = pageMapping.find((p) => p.ayahs.some((a) => a.surah === surahNum));
+    return firstPage ? firstPage.page : 1;
+  }, []);
   
   // Tabs: "read" vs "listen"
   const [activeTab, setActiveTab] = useState<"read" | "listen">("read");
@@ -39,9 +51,7 @@ export default function QuranIndex() {
 
   const [q, setQ] = useState("");
   const [lastReadPage, setLastReadPage] = useState<number>(1);
-  const [bookmarkedPages, setBookmarkedPages] = useState<number[]>([]);
-
-
+  const [bookmarkedPages, setBookmarkedPages] = useState<QuranBookmark[]>([]);
 
   // Load last read & bookmarks on focus/render
   useEffect(() => {
@@ -49,7 +59,20 @@ export default function QuranIndex() {
       if (val) setLastReadPage(Number(val));
     });
     AsyncStorage.getItem("islamic_hikmah:bookmarked_pages").then((raw) => {
-      if (raw) setBookmarkedPages(JSON.parse(raw));
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          const migrated: QuranBookmark[] = parsed.map((item: any) => {
+            if (typeof item === "number") {
+              return { page: item, timestamp: Date.now() };
+            }
+            return item;
+          });
+          setBookmarkedPages(migrated);
+        } catch {
+          setBookmarkedPages([]);
+        }
+      }
     });
   }, [activeTab]);
 
@@ -82,7 +105,7 @@ export default function QuranIndex() {
 
   // Render Surah item for reading (Traditional Majeed styling)
   const renderReadSurah = useCallback(({ item }: { item: Surah }) => {
-    const startPage = SURAH_START_PAGES[item.number] || 1;
+    const startPage = surahStartPages(item.number);
     return (
       <Pressable
         onPress={() => router.push(`/quran/read/${startPage}` as any)}
@@ -272,18 +295,22 @@ export default function QuranIndex() {
                   <Text style={[styles.noFavTxt, { color: colors.onSurfaceMuted }]}>No bookmarked pages yet.</Text>
                 </View>
               ) : (
-                bookmarkedPages.map((pageNum) => (
+                bookmarkedPages.map((b) => (
                   <Pressable
-                    key={pageNum}
-                    onPress={() => router.push(`/quran/read/${pageNum}` as any)}
+                    key={b.page}
+                    onPress={() => router.push(`/quran/read/${b.page}` as any)}
                     style={({ pressed }) => [styles.row, { backgroundColor: colors.surfaceSecondary }, pressed && { opacity: 0.8 }]}
                   >
                     <View style={[styles.numBadge, { backgroundColor: colors.brand + "22" }]}>
                       <Text style={[styles.numTxt, { color: colors.brand }]}>📖</Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Page {pageNum}</Text>
-                      <Text style={[styles.rowSub, { color: colors.onSurfaceMuted }]}>Tap to open page</Text>
+                      <Text style={[styles.rowTitle, { color: colors.onSurface }]}>
+                        Page {b.page} {b.verse ? ` - ${b.verse}` : ""}
+                      </Text>
+                      <Text style={[styles.rowSub, { color: colors.onSurfaceMuted }]}>
+                        {b.verse ? `Verse: ${b.verse}` : "Tap to open page"}
+                      </Text>
                     </View>
                     <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
                   </Pressable>
