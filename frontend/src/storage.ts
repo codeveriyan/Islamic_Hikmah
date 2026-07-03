@@ -214,17 +214,19 @@ export const cancelPrevPrayerNotifications = async () => {
   }
 };
 
-export const schedulePrayerNotifications = async (timings: Record<string, string>, adhanEnabled: Record<string, boolean>) => {
-  if (Platform.OS === "web") return;
+export const schedulePrayerNotifications = async (timings: Record<string, string>, adhanEnabled: Record<string, boolean>): Promise<{ success: boolean; error?: 'permission' | 'failed' }> => {
+  if (Platform.OS === "web") return { success: true };
   
   await cancelPrevPrayerNotifications();
   
   const { status } = await Notifications.getPermissionsAsync();
   if (status !== "granted") {
     const res = await Notifications.requestPermissionsAsync();
-    if (res.status !== "granted") return;
+    if (res.status !== "granted") {
+      return { success: false, error: 'permission' };
+    }
   }
-
+  
   // Check if background Azaan is enabled (defaults to true)
   const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
   const bgAzaanEnabled = bgAzaanRaw !== "false";
@@ -277,6 +279,12 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
   }
   
   await AsyncStorage.setItem(PRAYER_NOTIF_KEY, JSON.stringify(newIds));
+  
+  const hasEnabled = activePrayers.some(p => adhanEnabled[p] ?? true);
+  if (hasEnabled && newIds.length === 0) {
+    return { success: false, error: 'failed' };
+  }
+  return { success: true };
 };
 
 export const setupNotificationCategories = async () => {
