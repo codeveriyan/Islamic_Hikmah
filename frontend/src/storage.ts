@@ -266,9 +266,9 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
           sound: bgAzaanEnabled ? (Platform.OS === "android" ? "azaan" : "azaan.wav") : true,
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
           hour: h,
           minute: m,
-          repeats: true,
           channelId: 'prayer-times',
         } as any,
       });

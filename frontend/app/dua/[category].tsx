@@ -6,10 +6,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { getCategory } from "@/src/data/duas";
+import { getCategory, CATEGORIES } from "@/src/data/duas";
+import { EMOTIONS } from "@/src/data/emotions";
 import { toggleFavourite, getFavourites, Favourite } from "@/src/storage";
 import { transliterateToTamil } from "@/src/transliterator";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import { ARTICLES } from "@/src/data/articles";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -17,7 +19,22 @@ export default function DuaCategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const router = useRouter();
   const { colors, language, fontSize, fontColor } = useTheme();
-  const cat = getCategory(String(category));
+  const emotion = EMOTIONS.find((e) => e.id === category);
+  let cat: ReturnType<typeof getCategory>;
+  if (emotion) {
+    const allDuas = CATEGORIES.flatMap((c) => c.duas.map((d) => ({ ...d, categoryId: c.id })));
+    const matchingDuas = allDuas.filter((d) => emotion.duaIds.includes(d.id));
+    cat = {
+      id: emotion.id,
+      title: emotion.label,
+      duas: matchingDuas,
+      group: "other",
+      gradient: emotion.gradient,
+      icon: "emoticon-outline",
+    };
+  } else {
+    cat = getCategory(String(category));
+  }
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [translatedTexts, setTranslatedTexts] = useState<Record<string, { translation: string; transliteration?: string }>>({});
   
@@ -107,7 +124,11 @@ export default function DuaCategoryScreen() {
         }
         window.speechSynthesis?.cancel();
       } else {
-        player.pause();
+        try {
+          player.pause();
+        } catch (e) {
+          // Native player was already released by expo-audio's own unmount cleanup, safe to ignore.
+        }
       }
     };
   }, [player]);
@@ -534,6 +555,27 @@ export default function DuaCategoryScreen() {
                     This supplication is taken from authentic collections. Consistently reciting it brings immense rewards and spiritual protection.
                   </Text>
                 )}
+                <Pressable
+                  onPress={() => {
+                    setShowInfo(false);
+                    const articleId = CATEGORY_ARTICLES[cat.id] || "a4";
+                    router.push(`/article/${articleId}` as any);
+                  }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: 12,
+                    paddingTop: 8,
+                    borderTopWidth: 1,
+                    borderTopColor: colors.border,
+                  }}
+                >
+                  <MaterialCommunityIcons name="book-open-outline" size={18} color={colors.brand} />
+                  <Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700", flex: 1 }} numberOfLines={1}>
+                    Article: {ARTICLES.find((a) => a.id === (CATEGORY_ARTICLES[cat.id] || "a4"))?.title}
+                  </Text>
+                </Pressable>
               </ScrollView>
             </View>
           )}
@@ -651,7 +693,14 @@ export default function DuaCategoryScreen() {
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100 }}>
         {/* PlayStore Replicated Related Articles Row */}
-        <Pressable style={[styles.relatedArticlesCard, { backgroundColor: colors.surfaceSecondary }]}>
+        <Pressable 
+          style={[styles.relatedArticlesCard, { backgroundColor: colors.surfaceSecondary }]}
+          onPress={() => {
+            const articleId = CATEGORY_ARTICLES[cat.id] || "a4";
+            router.push(`/article/${articleId}` as any);
+          }}
+          testID="related-articles-btn"
+        >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
             <MaterialCommunityIcons name="book-open-outline" size={24} color={colors.brand} />
             <Text style={[styles.relatedArticlesText, { color: colors.onSurface }]}>Related Articles</Text>
@@ -720,7 +769,16 @@ const CATEGORY_IMAGES: Record<string, any> = {
   "daily-life": { uri: "https://images.unsplash.com/photo-1517842645767-c639042777db?w=500&auto=format&fit=crop&q=80" },
   adhan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
   wudu: { uri: "https://images.unsplash.com/photo-1548813730-e8f20cc74a4a?w=500&auto=format&fit=crop&q=80" },
-  masjid: { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
+};
+
+const CATEGORY_ARTICLES: Record<string, string> = {
+  morning: "a1",
+  evening: "a1",
+  sleep: "a1",
+  tahajjud: "a2",
+  salah: "a3",
+  "after-salah": "a3",
+  ramadan: "a5",
 };
 
 const styles = StyleSheet.create({
