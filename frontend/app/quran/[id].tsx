@@ -61,12 +61,11 @@ export default function SurahDetail() {
   const status = useAudioPlayerStatus(player);
   const { colors, language } = useTheme();
 
+  // Effect 1: Load Surah text, cached translations, and run translation fetches
   useEffect(() => {
+    let active = true;
     setLoading(true);
-    setAudioErr(false);
 
-    // Arabic text, transliteration, and English translation always come from the
-    // bundled offline dataset — no network required to read the Quran.
     const surahId = Number(id);
     const surah = QURAN.find((s) => s.number === surahId);
 
@@ -75,9 +74,6 @@ export default function SurahDetail() {
       setArName(surah.arabicName);
       setArabic(
         surah.ayahs.map((a) => ({ number: a.numberInSurah, numberInSurah: a.numberInSurah, text: a.arabic }))
-      );
-      setTranslit(
-        surah.ayahs.map((a) => ({ number: a.numberInSurah, numberInSurah: a.numberInSurah, text: a.transliteration }))
       );
 
       const englishTrans = surah.ayahs.map((a) => ({
@@ -98,12 +94,14 @@ export default function SurahDetail() {
         setTranslit(englishTranslit);
 
         AsyncStorage.getItem(cacheKey).then((cached) => {
+          if (!active) return;
           if (cached) {
             try {
               const { trans: cachedTrans, translit: cachedTranslit } = JSON.parse(cached);
               if (cachedTrans && cachedTranslit) {
                 setTrans(cachedTrans);
                 setTranslit(cachedTranslit);
+                setLoading(false);
                 return;
               }
             } catch {
@@ -120,6 +118,7 @@ export default function SurahDetail() {
 
               const chunkCount = Math.ceil(englishTrans.length / chunkSize);
               for (let chunkIdx = 0; chunkIdx < chunkCount; chunkIdx++) {
+                if (!active) return;
                 const startIdx = chunkIdx * chunkSize;
                 const endIdx = Math.min(startIdx + chunkSize, englishTrans.length);
 
@@ -135,7 +134,25 @@ export default function SurahDetail() {
                 );
                 const dataTrans = await resTrans.json();
                 const translatedTransStr = dataTrans?.[0]?.map((x: any) => x[0]).join("") || transCombined;
-                const translatedTransParts = translatedTransStr.split(/\s*\|\|\s*/);
+                let translatedTransParts = translatedTransStr.split(/\s*\|\|\s*/);
+
+                // Validation: Mismatched delimiters fallback to individual ayah translation
+                if (translatedTransParts.length !== transSlice.length) {
+                  translatedTransParts = [];
+                  for (const ayah of transSlice) {
+                    if (!active) return;
+                    try {
+                      const res = await fetch(
+                        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
+                      );
+                      const data = await res.json();
+                      const txt = data?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
+                      translatedTransParts.push(txt);
+                    } catch {
+                      translatedTransParts.push(ayah.text);
+                    }
+                  }
+                }
 
                 // Translate Transliteration
                 const resTranslit = await fetch(
@@ -143,7 +160,25 @@ export default function SurahDetail() {
                 );
                 const dataTranslit = await resTranslit.json();
                 const translatedTranslitStr = dataTranslit?.[0]?.map((x: any) => x[0]).join("") || translitCombined;
-                const translatedTranslitParts = translatedTranslitStr.split(/\s*\|\|\s*/);
+                let translatedTranslitParts = translatedTranslitStr.split(/\s*\|\|\s*/);
+
+                // Validation: Mismatched delimiters fallback to individual transliteration translation
+                if (translatedTranslitParts.length !== translitSlice.length) {
+                  translatedTranslitParts = [];
+                  for (const ayah of translitSlice) {
+                    if (!active) return;
+                    try {
+                      const res = await fetch(
+                        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
+                      );
+                      const data = await res.json();
+                      const txt = data?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
+                      translatedTranslitParts.push(txt);
+                    } catch {
+                      translatedTranslitParts.push(ayah.text);
+                    }
+                  }
+                }
 
                 for (let offset = 0; offset < transSlice.length; offset++) {
                   const globalIdx = startIdx + offset;
@@ -162,9 +197,11 @@ export default function SurahDetail() {
                 }
               }
 
+              if (!active) return;
               setTrans(transResults);
               setTranslit(translitResults);
-              
+              setLoading(false);
+
               // Save to cache
               AsyncStorage.setItem(cacheKey, JSON.stringify({
                 trans: transResults,
@@ -173,6 +210,7 @@ export default function SurahDetail() {
 
             } catch (e) {
               console.error("Failed to translate Quran:", e);
+              if (active) setLoading(false);
             }
           };
 
@@ -181,10 +219,21 @@ export default function SurahDetail() {
       } else {
         setTrans(englishTrans);
         setTranslit(englishTranslit);
+        setLoading(false);
       }
+    } else {
+      setLoading(false);
     }
 
-    setLoading(false);
+    return () => {
+      active = false;
+    };
+  }, [id, language]);
+
+  // Effect 2: Load audio recitation streams from network
+  useEffect(() => {
+    let active = true;
+    setAudioErr(false);
 
     // Audio recitation is streamed from the network — this is the one part of the
     // Quran screen that genuinely needs a connection, since bundling every reciter's
@@ -192,12 +241,19 @@ export default function SurahDetail() {
     fetch(`https://api.alquran.cloud/v1/surah/${id}/${reciter}`)
       .then((r) => r.json())
       .then((au) => {
+        if (!active) return;
         const ayahs = au.data?.ayahs || [];
         setAudio(ayahs);
         setAudioErr(ayahs.length === 0 || !ayahs[0]?.audio);
       })
-      .catch(() => setAudioErr(true));
-  }, [id, reciter, language]);
+      .catch(() => {
+        if (active) setAudioErr(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id, reciter]);
 
   const isFocused = useIsFocused();
 

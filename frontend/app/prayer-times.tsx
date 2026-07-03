@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Switch, Modal, ScrollView, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Switch, Modal, ScrollView, Platform, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -63,6 +63,14 @@ export default function PrayerTimesScreen() {
   const [settings, setSettings] = useState<PrayerSettings>({ method: 1, juristic: 0, adhanEnabled: {} });
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [showJuristicPicker, setShowJuristicPicker] = useState(false);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const load = async (s?: PrayerSettings) => {
     setLoading(true);
@@ -78,7 +86,14 @@ export default function PrayerTimesScreen() {
       setTimes(timings);
       if (timings) {
         await AsyncStorage.setItem("last_fetched_timings", JSON.stringify(timings));
-        await schedulePrayerNotifications(timings, usedSettings.adhanEnabled);
+        const res = await schedulePrayerNotifications(timings, usedSettings.adhanEnabled);
+        if (!res.success && res.error === 'permission' && Platform.OS !== 'web') {
+          Alert.alert(
+            "Notification Permission Required",
+            "Notification permissions are currently denied. Please enable them in settings to receive Adhan alerts.",
+            [{ text: "OK" }]
+          );
+        }
       }
       
       let hijriStr = "";
@@ -112,7 +127,7 @@ export default function PrayerTimesScreen() {
     return times[p] || "";
   }, [times]);
 
-  const now = new Date();
+
   const nextPrayer = (() => {
     if (!times) return null;
     for (const p of PRAYERS) {
@@ -130,7 +145,14 @@ export default function PrayerTimesScreen() {
     setSettings(newSettings);
     await savePrayerSettings(newSettings);
     if (times) {
-      await schedulePrayerNotifications(times, newSettings.adhanEnabled);
+      const res = await schedulePrayerNotifications(times, newSettings.adhanEnabled);
+      if (!res.success && res.error === 'permission' && Platform.OS !== 'web') {
+        Alert.alert(
+          "Notification Permission Required",
+          "Notification permissions are currently denied. Please enable them in settings to receive Adhan alerts.",
+          [{ text: "OK" }]
+        );
+      }
     }
   }, [settings, times]);
 

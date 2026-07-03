@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -102,7 +102,14 @@ export default function SettingsScreen() {
       if (timingsRaw) {
         const timings = JSON.parse(timingsRaw);
         const settings = await getPrayerSettings();
-        await schedulePrayerNotifications(timings, settings.adhanEnabled);
+        const res = await schedulePrayerNotifications(timings, settings.adhanEnabled);
+        if (!res.success && res.error === 'permission' && Platform.OS !== 'web') {
+          Alert.alert(
+            "Notification Permission Required",
+            "Notification permissions are currently denied. Please enable them in settings to receive Adhan alerts.",
+            [{ text: "OK" }]
+          );
+        }
       }
     } catch (e) {
       console.error("Failed to reschedule background azaan:", e);

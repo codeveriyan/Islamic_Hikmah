@@ -31,6 +31,9 @@ export default function QiblaScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Magnetometer subscription reference
+  const magnetometerSub = useRef<any>(null);
+
   // FIX 3: Smooth animation using Animated API with useNativeDriver
   const animatedRotation = useRef(new Animated.Value(0)).current;
   const currentRotation = useRef(0);
@@ -51,59 +54,70 @@ export default function QiblaScreen() {
     }).start();
   };
 
-  useEffect(() => {
-    let sub: any;
-    (async () => {
-      try {
-        let loc = await getSavedLocation();
-        if (!loc) {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status !== "granted") {
-            setErr("Location permission needed for Qibla direction.");
-            setLoading(false);
-            return;
-          }
-          const p = await Location.getCurrentPositionAsync({});
-          let cityName = "";
-          try {
-            const rev = await Location.reverseGeocodeAsync(p.coords);
-            cityName = rev?.[0]?.city || rev?.[0]?.region || "";
-          } catch {}
-          loc = { lat: p.coords.latitude, lon: p.coords.longitude, city: cityName };
-          await setSavedLocation(loc);
-        } else if (!loc.city) {
-          // Self-heal: cached location is missing city, re-geocode it
-          try {
-            const rev = await Location.reverseGeocodeAsync({ latitude: loc.lat, longitude: loc.lon });
-            const cityName = rev?.[0]?.city || rev?.[0]?.region || "";
-            if (cityName) {
-              loc = { ...loc, city: cityName };
-              await setSavedLocation(loc);
-            }
-          } catch {}
+  const setupQibla = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      let loc = await getSavedLocation();
+      if (!loc) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setErr("Location permission needed for Qibla direction.");
+          setLoading(false);
+          return;
         }
-        setCity(loc.city || "");
-        const qiblaDir = bearingTo(loc.lat, loc.lon);
-        setQibla(qiblaDir);
-
-        Magnetometer.setUpdateInterval(100);
-        sub = Magnetometer.addListener((d) => {
-          // Correct compass heading formula: standard atan2(x, y) convention
-          // for a phone lying flat, with 0° = North, increasing clockwise (East).
-          let angle = Math.atan2(d.x, d.y) * (180 / Math.PI);
-          angle = (angle + 360) % 360;
-          setHeading(angle);
-          // Smooth rotation to qibla direction relative to heading
-          const arrowTarget = (qiblaDir - angle + 360) % 360;
-          smoothRotateTo(arrowTarget);
-        });
-      } catch {
-        setErr("Compass unavailable on this device.");
-      } finally {
-        setLoading(false);
+        const p = await Location.getCurrentPositionAsync({});
+        let cityName = "";
+        try {
+          const rev = await Location.reverseGeocodeAsync(p.coords);
+          cityName = rev?.[0]?.city || rev?.[0]?.region || "";
+        } catch {}
+        loc = { lat: p.coords.latitude, lon: p.coords.longitude, city: cityName };
+        await setSavedLocation(loc);
+      } else if (!loc.city) {
+        // Self-heal: cached location is missing city, re-geocode it
+        try {
+          const rev = await Location.reverseGeocodeAsync({ latitude: loc.lat, longitude: loc.lon });
+          const cityName = rev?.[0]?.city || rev?.[0]?.region || "";
+          if (cityName) {
+            loc = { ...loc, city: cityName };
+            await setSavedLocation(loc);
+          }
+        } catch {}
       }
-    })();
-    return () => sub?.remove();
+      setCity(loc.city || "");
+      const qiblaDir = bearingTo(loc.lat, loc.lon);
+      setQibla(qiblaDir);
+
+      Magnetometer.setUpdateInterval(100);
+      if (magnetometerSub.current) {
+        magnetometerSub.current.remove();
+      }
+      magnetometerSub.current = Magnetometer.addListener((d) => {
+        // Correct compass heading formula: standard atan2(x, y) convention
+        // for a phone lying flat, with 0° = North, increasing clockwise (East).
+        let angle = Math.atan2(d.x, d.y) * (180 / Math.PI);
+        angle = (angle + 360) % 360;
+        setHeading(angle);
+        // Smooth rotation to qibla direction relative to heading
+        const arrowTarget = (qiblaDir - angle + 360) % 360;
+        smoothRotateTo(arrowTarget);
+      });
+      setErr(null);
+    } catch {
+      setErr("Compass unavailable on this device.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setupQibla();
+    return () => {
+      if (magnetometerSub.current) {
+        magnetometerSub.current.remove();
+      }
+    };
   }, []);
 
   const arrowRot = qibla !== null ? (qibla - heading + 360) % 360 : 0;
@@ -131,21 +145,13 @@ export default function QiblaScreen() {
           <MaterialCommunityIcons name="compass-off" size={64} color={theme.colors.onSurfaceMuted} />
           <Text style={styles.err}>{err}</Text>
           <Pressable
-            onPress={() => {
-              setLoading(true);
-              setErr(null);
-              Location.requestForegroundPermissionsAsync().then(({ status }) => {
-                if (status === "granted") {
-                  // Re-trigger the effect by reloading
-                  setQibla(null);
-                  setLoading(false);
-                  // Force re-run via state flag would need restructuring; simplest is to ask user to reopen
-                  setErr(null);
-                } else {
-                  setErr("Location permission needed for Qibla direction. Please enable it in your phone Settings.");
-                  setLoading(false);
-                }
-              });
+            onPress={async () => {
+              const { status } = await Location.requestForegroundPermissionsAsync();
+              if (status === "granted") {
+                await setupQibla();
+              } else {
+                setErr("Location permission needed for Qibla direction. Please enable it in your phone Settings.");
+              }
             }}
             style={[styles.retryBtn, { backgroundColor: colors.brand }]}
           >
