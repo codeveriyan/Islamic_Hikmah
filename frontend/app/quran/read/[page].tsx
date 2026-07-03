@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 
 const { width, height } = Dimensions.get("window");
-const TOTAL_PAGES = 604;
+const TOTAL_PAGES = 850;
 
 const QuranPageItem = ({
   item,
@@ -26,27 +26,41 @@ const QuranPageItem = ({
   zoomScale: number;
 }) => {
   const [itemLoading, setItemLoading] = useState(true);
-  const pageStr = String(item).padStart(3, "0");
-  const imageUrl = `https://quran.islam-db.com/public/data/pages/quranpages_1024/images/page${pageStr}.png`;
+  const imageUrl = `https://archive.org/download/13-line-quran-with-beautiful-color-coded-tajweed-rules-pdf/page/n${item - 1}_w1024.jpg`;
 
   return (
-    <View style={[styles.pageContainer, { width, height: height - 180, backgroundColor: isNightMode ? "#000000" : "#FFFFFF" }]}>
+    <View style={[styles.pageContainer, { width, height: height - 180, backgroundColor: isNightMode ? "#0F172A" : "#FFFFFF" }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}
       >
-        <Image
-          source={{ uri: imageUrl }}
-          style={{
-            width: width * 0.96 * zoomScale,
-            height: (height - 210) * zoomScale,
-            resizeMode: "contain",
-            ...(Platform.OS === "web" && isNightMode ? { filter: "brightness(0) invert(1)" } : {}),
-          } as any}
-          onLoadStart={() => setItemLoading(true)}
-          onLoadEnd={() => setItemLoading(false)}
-        />
+        <View style={{ position: "relative" }}>
+          <Image
+            source={{ uri: imageUrl }}
+            style={{
+              width: width * 0.96 * zoomScale,
+              height: (height - 210) * zoomScale,
+              resizeMode: "contain",
+              ...(Platform.OS === "web" && isNightMode ? { filter: "invert(1) hue-rotate(180deg) brightness(0.95)" } : {}),
+            } as any}
+            onLoadStart={() => setItemLoading(true)}
+            onLoadEnd={() => setItemLoading(false)}
+          />
+          {isNightMode && Platform.OS !== "web" && (
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.45)",
+              }}
+              pointerEvents="none"
+            />
+          )}
+        </View>
         {itemLoading && (
           <ActivityIndicator
             size="large"

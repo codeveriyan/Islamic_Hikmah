@@ -6,7 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { SURAH_START_PAGES } from "@/src/data/surahPages";
+import { SURAH_START_PAGES_13 as SURAH_START_PAGES } from "@/src/data/surahPages13";
 import { SURAH_LIST } from "@/src/data/surahList";
 
 type Surah = {
@@ -20,9 +20,9 @@ type Surah = {
 
 const ITEM_HEIGHT = 72;
 const JUZ_START_PAGES = [
-  1, 22, 42, 62, 82, 102, 122, 142, 162, 182, 
-  202, 222, 242, 262, 282, 302, 322, 342, 362, 382, 
-  402, 422, 442, 462, 482, 502, 522, 542, 562, 582
+  2, 30, 58, 86, 114, 142, 170, 198, 226, 254, 
+  282, 310, 338, 366, 394, 422, 450, 478, 506, 534, 
+  562, 590, 618, 646, 674, 702, 730, 758, 786, 814
 ];
 
 export default function QuranIndex() {
