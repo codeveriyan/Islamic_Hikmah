@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Switch, Modal, FlatList } from "react-native";
+import { useEffect, useState, useRef } from "react";
+import { View, Text, StyleSheet, Pressable, Switch, Modal, FlatList, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,6 +7,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import * as FileSystem from "expo-file-system/legacy";
 
 type FontOption = {
   id: "indopak" | "uthmani" | "naskh";
@@ -29,6 +30,229 @@ export default function PersonaliseScreen() {
   const [fontSize, setFontSize] = useState<number>(24);
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
+
+  // Offline Download States
+  const [isDownloaded, setIsDownloaded] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadCount, setDownloadCount] = useState(0);
+  const downloadActive = useRef(false);
+
+  const getQuranPagesDirectory = () => {
+    return `${FileSystem.documentDirectory}quran_pages/`;
+  };
+
+  const checkDownloadStatus = async () => {
+    if (Platform.OS === "web") {
+      try {
+        if ("caches" in window) {
+          const cache = await window.caches.open("quran-pages");
+          const keys = await cache.keys();
+          setDownloadCount(keys.length);
+          if (keys.length >= 850) {
+            setIsDownloaded(true);
+          } else {
+            setIsDownloaded(false);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check web cache status:", e);
+      }
+      return;
+    }
+    try {
+      const dir = getQuranPagesDirectory();
+      const info = await FileSystem.getInfoAsync(dir);
+      if (!info.exists) {
+        setIsDownloaded(false);
+        setDownloadCount(0);
+        return;
+      }
+      const files = await FileSystem.readDirectoryAsync(dir);
+      const jpegs = files.filter(f => f.startsWith('n') && f.endsWith('.jpg'));
+      setDownloadCount(jpegs.length);
+      if (jpegs.length >= 850) {
+        setIsDownloaded(true);
+      } else {
+        setIsDownloaded(false);
+      }
+    } catch (e) {
+      console.warn("Failed to check download status:", e);
+    }
+  };
+
+  useEffect(() => {
+    checkDownloadStatus();
+  }, []);
+
+  const handleDownloadOffline = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (isDownloading) return;
+    
+    setIsDownloading(true);
+    downloadActive.current = true;
+
+    if (Platform.OS === "web") {
+      try {
+        if (!("caches" in window)) {
+          alert("Offline caching is not supported by your browser.");
+          setIsDownloading(false);
+          downloadActive.current = false;
+          return;
+        }
+        const cache = await window.caches.open("quran-pages");
+        let count = 0;
+        
+        const keys = await cache.keys();
+        const cachedUrls = new Set(keys.map(k => k.url));
+
+        for (let i = 0; i < 850; i++) {
+          if (!downloadActive.current) {
+            break;
+          }
+
+          const remoteUrl = `https://archive.org/download/13-line-quran-with-beautiful-color-coded-tajweed-rules-pdf/page/n${i}_w1024.jpg`;
+          
+          if (cachedUrls.has(remoteUrl)) {
+            count++;
+            setDownloadCount(count);
+            setDownloadProgress(Math.round((count / 850) * 100));
+            continue;
+          }
+
+          try {
+            await cache.add(remoteUrl);
+            count++;
+            setDownloadCount(count);
+            setDownloadProgress(Math.round((count / 850) * 100));
+          } catch (downloadErr) {
+            console.warn(`Failed to cache page ${i}:`, downloadErr);
+            try {
+              await new Promise(r => setTimeout(r, 1000));
+              await cache.add(remoteUrl);
+              count++;
+              setDownloadCount(count);
+              setDownloadProgress(Math.round((count / 850) * 100));
+            } catch {
+              // skip
+            }
+          }
+        }
+
+        if (downloadActive.current) {
+          await checkDownloadStatus();
+          alert("Tajweed Quran offline download complete!");
+        }
+      } catch (e) {
+        console.warn("Failed to download offline pages on web:", e);
+        alert("Download encountered an error. Please try again.");
+      } finally {
+        setIsDownloading(false);
+        downloadActive.current = false;
+      }
+      return;
+    }
+    
+    try {
+      const dir = getQuranPagesDirectory();
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
+
+      let count = 0;
+      const files = await FileSystem.readDirectoryAsync(dir);
+      const existingSet = new Set(files);
+
+      for (let i = 0; i < 850; i++) {
+        if (!downloadActive.current) {
+          break;
+        }
+
+        const fileName = `n${i}.jpg`;
+        const localPath = `${dir}${fileName}`;
+        
+        if (existingSet.has(fileName)) {
+          count++;
+          setDownloadCount(count);
+          setDownloadProgress(Math.round((count / 850) * 100));
+          continue;
+        }
+
+        const remoteUrl = `https://archive.org/download/13-line-quran-with-beautiful-color-coded-tajweed-rules-pdf/page/n${i}_w1024.jpg`;
+        
+        try {
+          const downloadRes = await FileSystem.downloadAsync(remoteUrl, localPath);
+          if (downloadRes.status === 200) {
+            count++;
+            setDownloadCount(count);
+            setDownloadProgress(Math.round((count / 850) * 100));
+          }
+        } catch (downloadErr) {
+          console.warn(`Failed to download page ${i}:`, downloadErr);
+          try {
+            await new Promise(r => setTimeout(r, 1000));
+            const retryRes = await FileSystem.downloadAsync(remoteUrl, localPath);
+            if (retryRes.status === 200) {
+              count++;
+              setDownloadCount(count);
+              setDownloadProgress(Math.round((count / 850) * 100));
+            }
+          } catch {
+            // skip for now
+          }
+        }
+      }
+
+      if (downloadActive.current) {
+        await checkDownloadStatus();
+        alert("Tajweed Quran offline download complete!");
+      }
+    } catch (e) {
+      console.warn("Failed to download offline pages:", e);
+      alert("Download encountered an error. Please try again.");
+    } finally {
+      setIsDownloading(false);
+      downloadActive.current = false;
+    }
+  };
+
+  const cancelDownload = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    downloadActive.current = false;
+    setIsDownloading(false);
+  };
+
+  const handleDeleteOffline = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (Platform.OS === "web") {
+      try {
+        if ("caches" in window) {
+          await window.caches.delete("quran-pages");
+          setIsDownloaded(false);
+          setDownloadCount(0);
+          setDownloadProgress(0);
+          alert("Downloaded pages deleted from local cache.");
+        }
+      } catch (e) {
+        console.warn("Failed to delete web cache:", e);
+      }
+      return;
+    }
+    try {
+      const dir = getQuranPagesDirectory();
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (dirInfo.exists) {
+        await FileSystem.deleteAsync(dir, { idempotent: true });
+      }
+      setIsDownloaded(false);
+      setDownloadCount(0);
+      setDownloadProgress(0);
+      alert("Downloaded pages deleted from local storage.");
+    } catch (e) {
+      console.warn("Failed to delete offline pages:", e);
+    }
+  };
 
   // Dialog state
   const [modalVisible, setModalVisible] = useState(false);
@@ -209,6 +433,24 @@ export default function PersonaliseScreen() {
             trackColor={{ false: "#E2E8F0", true: colors.brand }}
             thumbColor="#FFF"
           />
+        </View>
+
+        {/* Offline Mode Row */}
+        <View style={[styles.row, { borderBottomColor: colors.border }]}>
+          <View style={styles.rowLeft}>
+            <MaterialCommunityIcons name="cloud-check" size={22} color={colors.brandSecondary} />
+            <View style={{ marginLeft: 0 }}>
+              <Text style={[styles.rowLabel, { color: colors.onSurface, fontSize: 15 }]}>
+                Offline Medina Mushaf
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>
+                Text and page layouts are fully offline. No download needed.
+              </Text>
+            </View>
+          </View>
+          <View style={styles.rowRight}>
+            <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />
+          </View>
         </View>
 
         {/* Report Feedback Row */}

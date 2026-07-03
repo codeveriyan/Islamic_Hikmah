@@ -9,7 +9,7 @@ import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { resolveUserLocation, getPrayerSettings, savePrayerSettings, PrayerSettings, schedulePrayerNotifications } from "@/src/storage";
+import { resolveUserLocation, getPrayerSettings, savePrayerSettings, PrayerSettings, schedulePrayerNotifications, scheduleGoalNotifications, getActiveGoalIds, getGoalNotifTimes } from "@/src/storage";
 
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Qiyam"];
 const PRAYER_ICONS: Record<string, string> = {
@@ -93,6 +93,14 @@ export default function PrayerTimesScreen() {
             "Notification permissions are currently denied. Please enable them in settings to receive Adhan alerts.",
             [{ text: "OK" }]
           );
+        }
+        // Also keep goal notifications in sync with the latest prayer times
+        try {
+          const activeIds = await getActiveGoalIds();
+          const goalTimes = await getGoalNotifTimes();
+          await scheduleGoalNotifications(activeIds, timings, goalTimes);
+        } catch (e) {
+          console.error("Failed to reschedule goal notifications after prayer refresh:", e);
         }
       }
       
