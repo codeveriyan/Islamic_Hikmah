@@ -11,6 +11,7 @@ const ITEMS = [
   { id: "names", label: "99 Names of Allah", icon: "mosque", route: "/names" },
   { id: "prayer", label: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times" },
   { id: "qibla", label: "Qibla Finder", icon: "compass", route: "/qibla" },
+  { id: "calendar", label: "Hijri Calendar", icon: "calendar-month", route: "/hijri-calendar" },
   { id: "fav", label: "Favourites", icon: "heart", route: "/(tabs)/favourites" },
   { id: "articles", label: "Our Publications", icon: "newspaper-variant", route: "/(tabs)/articles" },
   { id: "emotions", label: "Emotions", icon: "emoticon", route: "/(tabs)/emotions" },

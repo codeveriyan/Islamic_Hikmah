@@ -2,10 +2,10 @@ import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { EMOTIONS } from "@/src/data/emotions";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 export default function EmotionsScreen() {
   const router = useRouter();
@@ -13,31 +13,24 @@ export default function EmotionsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
-      {/* Play Store Replicated Header */}
-      <View style={[styles.headerRow, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <MaterialCommunityIcons name="menu" size={24} color={colors.onSurface} style={{ opacity: 0.8 }} />
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Pressable onPress={() => router.push("/menu")} hitSlop={10} testID="emotions-menu">
+          <MaterialCommunityIcons name="menu" size={26} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.onSurface }]}>Emotions</Text>
-        <Pressable onPress={() => alert("Configure your notification or reminders in Settings tab.")} hitSlop={10}>
-          <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} style={{ opacity: 0.8 }} />
+        <Text style={[styles.title, { color: colors.onSurface }]}>Emotions</Text>
+        <Pressable onPress={() => router.push("/settings")} hitSlop={10} testID="emotions-settings">
+          <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 64 }} showsVerticalScrollIndicator={false}>
-        {/* Centered Feeling Text */}
-        <Text style={[styles.feelingText, { color: colors.onSurface }]}>I am feeling ...</Text>
-
-        {/* Rectangular Pastel Grid */}
+      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 32 }}>
+        <Text style={[styles.prompt, { color: colors.onSurface }]}>I am feeling ...</Text>
         <View style={styles.grid}>
           {EMOTIONS.map((e) => (
             <Pressable
               key={e.id}
-              onPress={() => router.push(`/dua/${e.id}` as any)}
-              style={({ pressed }) => [
-                styles.tile,
-                pressed && { opacity: 0.85 },
-              ]}
+              onPress={() => router.push(`/emotion/${e.id}` as any)}
+              style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]}
               testID={`emotion-${e.id}`}
             >
               <LinearGradient
@@ -58,49 +51,45 @@ export default function EmotionsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerRow: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: {
-    fontSize: 18,
+  title: { fontSize: 18, fontWeight: "700" },
+  prompt: {
+    fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
+    marginBottom: theme.spacing.lg,
   },
-  feelingText: {
-    fontSize: 18,
-    fontWeight: "600",
-    textAlign: "center",
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  tile: {
-    width: "48%",
-    height: 72,
-    borderRadius: theme.radius.md,
-    overflow: "hidden",
-  },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.md },
+  tile: { width: "47%", aspectRatio: 1.4, borderRadius: theme.radius.lg, overflow: "hidden" },
   tileGrad: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: theme.radius.md,
-    paddingHorizontal: 8,
+    borderRadius: theme.radius.lg,
   },
-  label: {
-    color: "#1F2937",
-    fontSize: 15,
-    fontWeight: "700",
-    textAlign: "center",
+  label: { color: "#333", fontSize: 15, fontWeight: "700" },
+  sugg: { marginTop: theme.spacing.xl },
+  suggTitle: { fontSize: 18, fontWeight: "700" },
+  suggSub: { marginTop: 4, marginBottom: theme.spacing.md },
+  suggCard: {
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    marginBottom: theme.spacing.md,
   },
+  suggCardTitle: { fontSize: 13, fontWeight: "700" },
+  suggArabic: {
+    fontFamily: "NotoNaskhArabic",
+    fontSize: 20,
+    textAlign: "right",
+    marginTop: 10,
+    lineHeight: 32,
+  },
+  suggTrans: { marginTop: 8, fontSize: 13, lineHeight: 18 },
 });

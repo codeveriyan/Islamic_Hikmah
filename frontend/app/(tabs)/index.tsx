@@ -379,11 +379,20 @@ export default function HomeScreen() {
         </Pressable>
         <View style={{ alignItems: "center" }}>
           <Text style={[styles.headerTitle, { color: colors.brand }]}>الحكمة الإسلامية</Text>
-          {hijri ? <Text style={[styles.hijriDate, { color: colors.onSurfaceMuted }]}>{hijri}</Text> : null}
+          {hijri ? (
+            <Pressable onPress={() => router.push("/hijri-calendar" as any)} hitSlop={6}>
+              <Text style={[styles.hijriDate, { color: colors.onSurfaceMuted }]}>{hijri}</Text>
+            </Pressable>
+          ) : null}
         </View>
-        <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
-          <MaterialCommunityIcons name="cog-outline" size={26} color={colors.onSurface} />
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <Pressable onPress={() => router.push("/search" as any)} hitSlop={10} testID="home-search">
+            <MaterialCommunityIcons name="magnify" size={26} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={26} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} removeClippedSubviews>

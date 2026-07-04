@@ -1,14 +1,13 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable } from "react-native";
+import { useEffect, useState, useCallback } from "react";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { toggleFavourite, getFavourites } from "@/src/storage";
+import { toggleFavourite, getFavourites, addQuranBookmark, removeQuranBookmark, getQuranBookmarks, saveQuranLastRead } from "@/src/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Haptics from "expo-haptics";
 import { useIsFocused } from "@react-navigation/native";
 import quranData from "@/src/data/quran/quranData.json";
 
@@ -37,17 +36,6 @@ const RECITERS = [
   { id: "ar.abdulbasitmurattal", name: "Abdul Basit (Murattal)" },
 ] as const;
 
-const getGlobalAyahNumber = (surahNumber: number, ayahNumberInSurah: number): number => {
-  let globalNum = 0;
-  for (let s = 1; s < surahNumber; s++) {
-    const surah = QURAN.find((item) => item.number === s);
-    if (surah) {
-      globalNum += surah.totalAyahs;
-    }
-  }
-  return globalNum + ayahNumberInSurah;
-};
-
 export default function SurahDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -69,42 +57,43 @@ export default function SurahDetail() {
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
   const [translit, setTranslit] = useState<Ayah[]>([]);
 
-  // Speed and repeats states
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [repeatTimes, setRepeatTimes] = useState(1);
-  const [currentRepeat, setCurrentRepeat] = useState(1);
-
-  const flatListRef = useRef<FlatList>(null);
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
   const { colors, language } = useTheme();
 
-  // Speed sync effect
-  useEffect(() => {
-    if (player) {
-      player.setPlaybackRate(playbackSpeed);
-    }
-  }, [playbackSpeed, playingIdx]);
+  const [audioRequested, setAudioRequested] = useState(false);
 
-  // Auto-scroll effect
+  // Bookmarks
+  const [bookmarkedAyahs, setBookmarkedAyahs] = useState<Set<number>>(new Set());
+
+  // Load bookmarks for this surah on mount/surah change
   useEffect(() => {
-    if (playingIdx !== null && flatListRef.current) {
-      setTimeout(() => {
-        try {
-          flatListRef.current?.scrollToIndex({
-            index: playingIdx,
-            animated: true,
-            viewPosition: 0.3,
-          });
-        } catch {}
-      }, 100);
+    const surahId = Number(id);
+    getQuranBookmarks().then((bms) => {
+      const ayahNums = new Set(
+        bms.filter((b) => b.surahNumber === surahId).map((b) => b.ayahNumber)
+      );
+      setBookmarkedAyahs(ayahNums);
+    });
+  }, [id]);
+
+  const toggleAyahBookmark = useCallback(async (ayahNumber: number) => {
+    const surahId = Number(id);
+    const isBookmarked = bookmarkedAyahs.has(ayahNumber);
+    if (isBookmarked) {
+      await removeQuranBookmark(surahId, ayahNumber);
+      setBookmarkedAyahs((prev) => { const s = new Set(prev); s.delete(ayahNumber); return s; });
+    } else {
+      await addQuranBookmark({ surahNumber: surahId, surahName: name, ayahNumber });
+      setBookmarkedAyahs((prev) => new Set(prev).add(ayahNumber));
     }
-  }, [playingIdx]);
+  }, [id, name, bookmarkedAyahs]);
 
   // Effect 1: Load Surah text, cached translations, and run translation fetches
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setAudioRequested(false); // reset audio state on surah change
 
     const surahId = Number(id);
     const surah = QURAN.find((s) => s.number === surahId);
@@ -149,105 +138,99 @@ export default function SurahDetail() {
             }
           }
 
-          // Fetch translations dynamically if not cached
+          // Fetch translations dynamically if not cached.
+          // All chunks are fired in PARALLEL (Promise.all) instead of sequentially,
+          // so a 286-ayah surah goes from ~30 sequential calls to 15 parallel pairs.
           const fetchQuranTranslations = async () => {
             try {
               const chunkSize = 20;
               const transResults: Ayah[] = [...englishTrans];
               const translitResults: Ayah[] = [...englishTranslit];
-
               const chunkCount = Math.ceil(englishTrans.length / chunkSize);
-              for (let chunkIdx = 0; chunkIdx < chunkCount; chunkIdx++) {
+
+              const translateChunk = async (chunkIdx: number) => {
                 if (!active) return;
                 const startIdx = chunkIdx * chunkSize;
                 const endIdx = Math.min(startIdx + chunkSize, englishTrans.length);
-
                 const transSlice = englishTrans.slice(startIdx, endIdx);
                 const translitSlice = englishTranslit.slice(startIdx, endIdx);
 
-                const transCombined = transSlice.map(a => a.text).join(" || ");
-                const translitCombined = translitSlice.map(a => a.text).join(" || ");
+                const transCombined = transSlice.map((a) => a.text).join(" || ");
+                const translitCombined = translitSlice.map((a) => a.text).join(" || ");
 
-                // Translate Translation
-                const resTrans = await fetch(
-                  `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(transCombined)}`
-                );
-                const dataTrans = await resTrans.json();
-                const translatedTransStr = dataTrans?.[0]?.map((x: any) => x[0]).join("") || transCombined;
+                // Fire both fetches for this chunk simultaneously
+                const [resTrans, resTranslit] = await Promise.all([
+                  fetch(
+                    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(transCombined)}`
+                  ).then((r) => r.json()),
+                  fetch(
+                    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(translitCombined)}`
+                  ).then((r) => r.json()),
+                ]);
+
+                const translatedTransStr = resTrans?.[0]?.map((x: any) => x[0]).join("") || transCombined;
                 let translatedTransParts = translatedTransStr.split(/\s*\|\|\s*/);
 
-                // Validation: Mismatched delimiters fallback to individual ayah translation
                 if (translatedTransParts.length !== transSlice.length) {
-                  translatedTransParts = [];
-                  for (const ayah of transSlice) {
-                    if (!active) return;
-                    try {
-                      const res = await fetch(
-                        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
-                      );
-                      const data = await res.json();
-                      const txt = data?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
-                      translatedTransParts.push(txt);
-                    } catch {
-                      translatedTransParts.push(ayah.text);
-                    }
-                  }
+                  translatedTransParts = await Promise.all(
+                    transSlice.map(async (ayah) => {
+                      try {
+                        const r = await fetch(
+                          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
+                        );
+                        const d = await r.json();
+                        return d?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
+                      } catch {
+                        return ayah.text;
+                      }
+                    })
+                  );
                 }
 
-                // Translate Transliteration
-                const resTranslit = await fetch(
-                  `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(translitCombined)}`
-                );
-                const dataTranslit = await resTranslit.json();
-                const translatedTranslitStr = dataTranslit?.[0]?.map((x: any) => x[0]).join("") || translitCombined;
+                const translatedTranslitStr = resTranslit?.[0]?.map((x: any) => x[0]).join("") || translitCombined;
                 let translatedTranslitParts = translatedTranslitStr.split(/\s*\|\|\s*/);
 
-                // Validation: Mismatched delimiters fallback to individual transliteration translation
                 if (translatedTranslitParts.length !== translitSlice.length) {
-                  translatedTranslitParts = [];
-                  for (const ayah of translitSlice) {
-                    if (!active) return;
-                    try {
-                      const res = await fetch(
-                        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
-                      );
-                      const data = await res.json();
-                      const txt = data?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
-                      translatedTranslitParts.push(txt);
-                    } catch {
-                      translatedTranslitParts.push(ayah.text);
-                    }
-                  }
+                  translatedTranslitParts = await Promise.all(
+                    translitSlice.map(async (ayah) => {
+                      try {
+                        const r = await fetch(
+                          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
+                        );
+                        const d = await r.json();
+                        return d?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
+                      } catch {
+                        return ayah.text;
+                      }
+                    })
+                  );
                 }
 
                 for (let offset = 0; offset < transSlice.length; offset++) {
                   const globalIdx = startIdx + offset;
                   if (translatedTransParts[offset]) {
-                    transResults[globalIdx] = {
-                      ...transResults[globalIdx],
-                      text: translatedTransParts[offset].trim()
-                    };
+                    transResults[globalIdx] = { ...transResults[globalIdx], text: translatedTransParts[offset].trim() };
                   }
                   if (translatedTranslitParts[offset]) {
-                    translitResults[globalIdx] = {
-                      ...translitResults[globalIdx],
-                      text: translatedTranslitParts[offset].trim()
-                    };
+                    translitResults[globalIdx] = { ...translitResults[globalIdx], text: translatedTranslitParts[offset].trim() };
                   }
                 }
-              }
+              };
+
+              // Run all chunks in parallel
+              await Promise.all(
+                Array.from({ length: chunkCount }, (_, i) => translateChunk(i))
+              );
 
               if (!active) return;
               setTrans(transResults);
               setTranslit(translitResults);
               setLoading(false);
 
-              // Save to cache
-              AsyncStorage.setItem(cacheKey, JSON.stringify({
-                trans: transResults,
-                translit: translitResults
-              })).catch(() => {});
-
+              AsyncStorage.setItem(
+                cacheKey,
+                JSON.stringify({ trans: transResults, translit: translitResults })
+              ).catch(() => {});
             } catch (e) {
               console.error("Failed to translate Quran:", e);
               if (active) setLoading(false);
@@ -270,28 +253,31 @@ export default function SurahDetail() {
     };
   }, [id, language]);
 
-  // Effect 2: Load audio recitation streams from local direct CDN URL generation
+  // Effect 2: Load audio recitation — deferred until user presses Play.
+  // Previously this fetched on every screen open, blocking the initial render
+  // with a network round-trip even when the user only wants to read.
+  // Now it only fires once the user taps Play Surah or a per-ayah play button.
   useEffect(() => {
-    const surahId = Number(id);
-    const surah = QURAN.find((s) => s.number === surahId);
-    if (surah) {
-      const generatedAudio = surah.ayahs.map((a) => {
-        const globalNum = getGlobalAyahNumber(surahId, a.numberInSurah);
-        const bitrate = (reciter === "ar.abdulbasitmurattal" || reciter === "ar.abdulbasitmurattal") ? 192 : 128;
-        return {
-          number: a.numberInSurah,
-          numberInSurah: a.numberInSurah,
-          text: a.arabic,
-          audio: `https://cdn.islamic.network/quran/audio/${bitrate}/${reciter}/${globalNum}.mp3`,
-        };
+    if (!audioRequested) return;
+    let active = true;
+    setAudioErr(false);
+
+    fetch(`https://api.alquran.cloud/v1/surah/${id}/${reciter}`)
+      .then((r) => r.json())
+      .then((au) => {
+        if (!active) return;
+        const ayahs = au.data?.ayahs || [];
+        setAudio(ayahs);
+        setAudioErr(ayahs.length === 0 || !ayahs[0]?.audio);
+      })
+      .catch(() => {
+        if (active) setAudioErr(true);
       });
-      setAudio(generatedAudio);
-      setAudioErr(false);
-    } else {
-      setAudio([]);
-      setAudioErr(true);
-    }
-  }, [id, reciter]);
+
+    return () => {
+      active = false;
+    };
+  }, [id, reciter, audioRequested]);
 
   const isFocused = useIsFocused();
 
@@ -319,37 +305,32 @@ export default function SurahDetail() {
 
   useEffect(() => {
     if (status?.didJustFinish) {
-      if (playingIdx !== null) {
-        if (currentRepeat < repeatTimes) {
-          const url = audio[playingIdx]?.audio;
-          if (url) {
-            setCurrentRepeat((c) => c + 1);
-            player.replace({ uri: url });
-            player.setPlaybackRate(playbackSpeed);
-            player.play();
-            return;
-          }
-        }
-        if (continuous && playingIdx + 1 < audio.length) {
-          const next = playingIdx + 1;
-          const url = audio[next]?.audio;
-          if (url) {
-            setCurrentRepeat(1);
-            player.replace({ uri: url });
-            player.setPlaybackRate(playbackSpeed);
-            player.play();
-            setPlayingIdx(next);
-            return;
-          }
+      if (continuous && playingIdx !== null && playingIdx + 1 < audio.length) {
+        const next = playingIdx + 1;
+        const url = audio[next]?.audio;
+        if (url) {
+          player.replace({ uri: url });
+          player.play();
+          setPlayingIdx(next);
+          return;
         }
       }
       setPlayingIdx(null);
       setContinuous(false);
-      setCurrentRepeat(1);
     }
-  }, [status?.didJustFinish, playingIdx, currentRepeat, repeatTimes, continuous, audio, player, playbackSpeed]);
+  }, [status?.didJustFinish]);
+
+  const [audioLoading, setAudioLoading] = useState(false);
 
   const playAyah = (i: number) => {
+    // If audio not yet loaded, trigger the fetch first
+    if (!audioRequested) {
+      setAudioLoading(true);
+      setAudioRequested(true);
+      // Store pending ayah index — effect will load audio, then we play via useEffect below
+      setPendingPlayIdx(i);
+      return;
+    }
     const url = audio[i]?.audio;
     if (!url) return;
     if (playingIdx === i && status?.playing) {
@@ -358,29 +339,47 @@ export default function SurahDetail() {
       return;
     }
     player.replace({ uri: url });
-    player.setPlaybackRate(playbackSpeed);
     player.play();
     setPlayingIdx(i);
-    setCurrentRepeat(1);
   };
 
+  const [pendingPlayIdx, setPendingPlayIdx] = useState<number | null>(null);
+
+  // Once audio loads after a deferred request, auto-play the pending index
+  useEffect(() => {
+    if (audio.length > 0 && pendingPlayIdx !== null) {
+      setAudioLoading(false);
+      const url = audio[pendingPlayIdx]?.audio;
+      if (url) {
+        player.replace({ uri: url });
+        player.play();
+        setPlayingIdx(pendingPlayIdx);
+      }
+      setPendingPlayIdx(null);
+    }
+  }, [audio]);
+
   const playAll = () => {
+    if (!audioRequested) {
+      setAudioLoading(true);
+      setAudioRequested(true);
+      setPendingPlayIdx(0);
+      setContinuous(true);
+      return;
+    }
     if (audio.length === 0 || !audio[0]?.audio) return;
     setContinuous(true);
     const url = audio[0]?.audio;
     if (!url) return;
     player.replace({ uri: url });
-    player.setPlaybackRate(playbackSpeed);
     player.play();
     setPlayingIdx(0);
-    setCurrentRepeat(1);
   };
 
   const stopAll = () => {
     player.pause();
     setContinuous(false);
     setPlayingIdx(null);
-    setCurrentRepeat(1);
   };
 
   const onFavAyah = useCallback(async (i: number, a: Ayah) => {
@@ -410,6 +409,12 @@ export default function SurahDetail() {
           <Text style={[styles.subtitle, { color: colors.brand }]}>{arName}</Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Pressable onPress={() => router.push("/")} hitSlop={10} testID="quran-home">
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/quran/bookmarks" as any)} hitSlop={10} testID="quran-bookmarks">
+            <MaterialCommunityIcons name="bookmark-multiple-outline" size={24} color={colors.onSurface} />
+          </Pressable>
           <Pressable onPress={() => setShowReciters((s) => !s)} hitSlop={10} testID="reciter-toggle">
             <MaterialCommunityIcons name="account-music" size={26} color={colors.brand} />
           </Pressable>
@@ -450,67 +455,43 @@ export default function SurahDetail() {
       )}
 
       <View style={styles.playAllRow}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <Pressable
-            onPress={continuous ? stopAll : playAll}
-            style={[styles.playAllBtn, { backgroundColor: audioErr ? colors.onSurfaceMuted : colors.brand }]}
-            disabled={audioErr}
-            testID="play-all-btn"
-          >
+        <Pressable
+          onPress={continuous ? stopAll : playAll}
+          style={[styles.playAllBtn, { backgroundColor: audioErr ? colors.onSurfaceMuted : colors.brand }]}
+          disabled={audioErr || audioLoading}
+          testID="play-all-btn"
+        >
+          {audioLoading ? (
+            <ActivityIndicator size="small" color={colors.onBrandPrimary} />
+          ) : (
             <MaterialCommunityIcons
               name={continuous ? "stop" : "play"}
               size={20}
               color={colors.onBrandPrimary}
             />
-            <Text style={[styles.playAllTxt, { color: colors.onBrandPrimary }]}>
-              {continuous ? "Stop" : "Play Surah"}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-              setPlaybackSpeed((s) => (s === 1.0 ? 1.25 : s === 1.25 ? 1.5 : 1.0));
-            }}
-            style={[styles.badgeBtn, { backgroundColor: colors.surfaceSecondary }]}
-          >
-            <Text style={[styles.badgeTxt, { color: colors.brand }]}>{playbackSpeed}x</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-              setRepeatTimes((r) => (r === 1 ? 2 : r === 2 ? 3 : 1));
-            }}
-            style={[styles.badgeBtn, { backgroundColor: colors.surfaceSecondary }]}
-          >
-            <Text style={[styles.badgeTxt, { color: colors.brand }]}>🔂 {repeatTimes}x</Text>
-          </Pressable>
-        </View>
+          )}
+          <Text style={[styles.playAllTxt, { color: colors.onBrandPrimary }]}>
+            {audioLoading ? "Loading audio…" : continuous ? "Stop" : "Play Full Surah"}
+          </Text>
+        </Pressable>
         {audioErr ? (
-          <Text style={[styles.bgHint, { color: theme.colors.error }]}>⚠️ Audio unavailable</Text>
+          <Text style={[styles.bgHint, { color: theme.colors.error }]}>⚠️ Audio unavailable for this Qari</Text>
         ) : (
-          <Text style={[styles.bgHint, { color: colors.onSurfaceMuted }]}>🔊 Background Play</Text>
+          <Text style={[styles.bgHint, { color: colors.onSurfaceMuted }]}>🔊 Plays in background</Text>
         )}
       </View>
 
       {loading ? (
         <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 40 }} />
       ) : (
-        <FlatList
-          ref={flatListRef}
-          data={arabic}
-          keyExtractor={(a) => String(a.number)}
-          contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
-          getItemLayout={(data, index) => (
-            { length: 180, offset: 180 * index, index }
-          )}
-          renderItem={({ item: a, index: i }) => {
+        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}>
+          {arabic.map((a, i) => {
             const isPlaying = playingIdx === i && status?.playing;
             const favId = `ayah-${id}-${a.numberInSurah}`;
             const isFav = favIds.has(favId);
             return (
               <View
+                key={a.number}
                 style={[
                   styles.ayah,
                   { backgroundColor: colors.surfaceSecondary },
@@ -528,6 +509,26 @@ export default function SurahDetail() {
                         name={isPlaying ? "pause-circle" : "play-circle"}
                         size={28}
                         color={audioErr ? colors.onSurfaceMuted : colors.brand}
+                      />
+                    </Pressable>
+                    {/* Bookmark button — saves this ayah as a reading position */}
+                    <Pressable
+                      onPress={async () => {
+                        await toggleAyahBookmark(a.numberInSurah);
+                        // Also save as last-read position
+                        await saveQuranLastRead({
+                          surahNumber: Number(id),
+                          surahName: name,
+                          ayahNumber: a.numberInSurah,
+                        });
+                      }}
+                      hitSlop={10}
+                      testID={`bookmark-ayah-${a.numberInSurah}`}
+                    >
+                      <MaterialCommunityIcons
+                        name={bookmarkedAyahs.has(a.numberInSurah) ? "bookmark" : "bookmark-outline"}
+                        size={24}
+                        color={bookmarkedAyahs.has(a.numberInSurah) ? colors.brand : colors.onSurfaceMuted}
                       />
                     </Pressable>
                     <Pressable
@@ -548,7 +549,7 @@ export default function SurahDetail() {
                     styles.arabic,
                     {
                       color: colors.onSurface,
-                      fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "Amiri" : "System",
+                      fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
                       fontSize: fontSize,
                       lineHeight: fontSize * 1.8,
                     },
@@ -566,8 +567,8 @@ export default function SurahDetail() {
                 )}
               </View>
             );
-          }}
-        />
+          })}
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -590,23 +591,12 @@ const styles = StyleSheet.create({
   playAllRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
   playAllBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: theme.radius.pill },
   playAllTxt: { fontWeight: "700" },
-  badgeBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: theme.radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badgeTxt: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
   bgHint: { fontSize: 11, flexShrink: 1, textAlign: "right" },
   ayah: { padding: theme.spacing.lg, borderRadius: theme.radius.lg, marginBottom: theme.spacing.md },
   ayahHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   ayahNum: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   ayahNumTxt: { fontWeight: "700" },
-  arabic: { fontFamily: "Amiri", fontSize: 26, textAlign: "right", lineHeight: 48, marginTop: theme.spacing.md },
+  arabic: { fontFamily: "NotoNaskhArabic", fontSize: 26, textAlign: "right", lineHeight: 48, marginTop: theme.spacing.md },
   translation: { marginTop: theme.spacing.md, lineHeight: 22 },
   translit: { fontSize: 14, fontStyle: "normal", lineHeight: 22, marginTop: 8 },
 });

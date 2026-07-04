@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, Pressable, Switch, Modal, FlatList, Platform } from "react-native";
+import { useEffect, useState } from "react";
+import { View, Text, StyleSheet, Pressable, Switch, Modal, FlatList, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,18 +7,46 @@ import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import * as FileSystem from "expo-file-system/legacy";
 
 type FontOption = {
   id: "indopak" | "uthmani" | "naskh";
   label: string;
+  description: string;
   preview: string;
 };
 
+// indopak → AmiriBold: Naskh style matching South Asian printed Qurans
+// uthmani → ScheherazadeNew: purpose-built Uthmani script, correct harakat & ligatures
+// naskh   → NotoNaskhArabic: clean modern Naskh, best for duas & general Arabic
+const LANGUAGES = [
+  { id: "en" as const, label: "English",                flag: "🇬🇧" },
+  { id: "ta" as const, label: "Tamil (தமிழ்)",          flag: "🇮🇳" },
+  { id: "hi" as const, label: "Hindi (हिन्दी)",           flag: "🇮🇳" },
+  { id: "ur" as const, label: "Urdu (اردو)",             flag: "🇵🇰" },
+  { id: "te" as const, label: "Telugu (తెలుగు)",         flag: "🇮🇳" },
+  { id: "kn" as const, label: "Kannada (ಕನ್ನಡ)",        flag: "🇮🇳" },
+  { id: "ml" as const, label: "Malayalam (മലയാളം)",      flag: "🇮🇳" },
+];
+
 const FONTS: FontOption[] = [
-  { id: "indopak", label: "Indo Pak", preview: "بِسْمِ اللهِ الرَّحْمٰنِ الرَّحِيْمِ" },
-  { id: "uthmani", label: "Uthmani", preview: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ" },
-  { id: "naskh", label: "Naskh Arabic", preview: "بسم الله الرحمن الرحيم" },
+  {
+    id: "indopak",
+    label: "Indo Pak",
+    description: "Traditional South Asian print style",
+    preview: "بِسْمِ اللهِ الرَّحْمُٰنِ الرَّحِيْمِ",
+  },
+  {
+    id: "uthmani",
+    label: "Uthmani",
+    description: "Official Saudi mushaf script (Scheherazade)",
+    preview: "بِسْمِ اللَهِ الرَّحْمَٰنِ الرَّحِيمِ",
+  },
+  {
+    id: "naskh",
+    label: "Naskh Arabic",
+    description: "Clean modern Arabic — best for duas",
+    preview: "بِسْمِ اللَهِ الرَّحْمَنِ الرَّحِيمِ",
+  },
 ];
 
 export default function PersonaliseScreen() {
@@ -30,229 +58,7 @@ export default function PersonaliseScreen() {
   const [fontSize, setFontSize] = useState<number>(24);
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
-
-  // Offline Download States
-  const [isDownloaded, setIsDownloaded] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadCount, setDownloadCount] = useState(0);
-  const downloadActive = useRef(false);
-
-  const getQuranPagesDirectory = () => {
-    return `${FileSystem.documentDirectory}quran_pages/`;
-  };
-
-  const checkDownloadStatus = async () => {
-    if (Platform.OS === "web") {
-      try {
-        if ("caches" in window) {
-          const cache = await window.caches.open("quran-pages");
-          const keys = await cache.keys();
-          setDownloadCount(keys.length);
-          if (keys.length >= 850) {
-            setIsDownloaded(true);
-          } else {
-            setIsDownloaded(false);
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to check web cache status:", e);
-      }
-      return;
-    }
-    try {
-      const dir = getQuranPagesDirectory();
-      const info = await FileSystem.getInfoAsync(dir);
-      if (!info.exists) {
-        setIsDownloaded(false);
-        setDownloadCount(0);
-        return;
-      }
-      const files = await FileSystem.readDirectoryAsync(dir);
-      const jpegs = files.filter(f => f.startsWith('n') && f.endsWith('.jpg'));
-      setDownloadCount(jpegs.length);
-      if (jpegs.length >= 850) {
-        setIsDownloaded(true);
-      } else {
-        setIsDownloaded(false);
-      }
-    } catch (e) {
-      console.warn("Failed to check download status:", e);
-    }
-  };
-
-  useEffect(() => {
-    checkDownloadStatus();
-  }, []);
-
-  const handleDownloadOffline = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    if (isDownloading) return;
-    
-    setIsDownloading(true);
-    downloadActive.current = true;
-
-    if (Platform.OS === "web") {
-      try {
-        if (!("caches" in window)) {
-          alert("Offline caching is not supported by your browser.");
-          setIsDownloading(false);
-          downloadActive.current = false;
-          return;
-        }
-        const cache = await window.caches.open("quran-pages");
-        let count = 0;
-        
-        const keys = await cache.keys();
-        const cachedUrls = new Set(keys.map(k => k.url));
-
-        for (let i = 0; i < 850; i++) {
-          if (!downloadActive.current) {
-            break;
-          }
-
-          const remoteUrl = `https://archive.org/download/13-line-quran-with-beautiful-color-coded-tajweed-rules-pdf/page/n${i}_w1024.jpg`;
-          
-          if (cachedUrls.has(remoteUrl)) {
-            count++;
-            setDownloadCount(count);
-            setDownloadProgress(Math.round((count / 850) * 100));
-            continue;
-          }
-
-          try {
-            await cache.add(remoteUrl);
-            count++;
-            setDownloadCount(count);
-            setDownloadProgress(Math.round((count / 850) * 100));
-          } catch (downloadErr) {
-            console.warn(`Failed to cache page ${i}:`, downloadErr);
-            try {
-              await new Promise(r => setTimeout(r, 1000));
-              await cache.add(remoteUrl);
-              count++;
-              setDownloadCount(count);
-              setDownloadProgress(Math.round((count / 850) * 100));
-            } catch {
-              // skip
-            }
-          }
-        }
-
-        if (downloadActive.current) {
-          await checkDownloadStatus();
-          alert("Tajweed Quran offline download complete!");
-        }
-      } catch (e) {
-        console.warn("Failed to download offline pages on web:", e);
-        alert("Download encountered an error. Please try again.");
-      } finally {
-        setIsDownloading(false);
-        downloadActive.current = false;
-      }
-      return;
-    }
-    
-    try {
-      const dir = getQuranPagesDirectory();
-      const dirInfo = await FileSystem.getInfoAsync(dir);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      }
-
-      let count = 0;
-      const files = await FileSystem.readDirectoryAsync(dir);
-      const existingSet = new Set(files);
-
-      for (let i = 0; i < 850; i++) {
-        if (!downloadActive.current) {
-          break;
-        }
-
-        const fileName = `n${i}.jpg`;
-        const localPath = `${dir}${fileName}`;
-        
-        if (existingSet.has(fileName)) {
-          count++;
-          setDownloadCount(count);
-          setDownloadProgress(Math.round((count / 850) * 100));
-          continue;
-        }
-
-        const remoteUrl = `https://archive.org/download/13-line-quran-with-beautiful-color-coded-tajweed-rules-pdf/page/n${i}_w1024.jpg`;
-        
-        try {
-          const downloadRes = await FileSystem.downloadAsync(remoteUrl, localPath);
-          if (downloadRes.status === 200) {
-            count++;
-            setDownloadCount(count);
-            setDownloadProgress(Math.round((count / 850) * 100));
-          }
-        } catch (downloadErr) {
-          console.warn(`Failed to download page ${i}:`, downloadErr);
-          try {
-            await new Promise(r => setTimeout(r, 1000));
-            const retryRes = await FileSystem.downloadAsync(remoteUrl, localPath);
-            if (retryRes.status === 200) {
-              count++;
-              setDownloadCount(count);
-              setDownloadProgress(Math.round((count / 850) * 100));
-            }
-          } catch {
-            // skip for now
-          }
-        }
-      }
-
-      if (downloadActive.current) {
-        await checkDownloadStatus();
-        alert("Tajweed Quran offline download complete!");
-      }
-    } catch (e) {
-      console.warn("Failed to download offline pages:", e);
-      alert("Download encountered an error. Please try again.");
-    } finally {
-      setIsDownloading(false);
-      downloadActive.current = false;
-    }
-  };
-
-  const cancelDownload = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    downloadActive.current = false;
-    setIsDownloading(false);
-  };
-
-  const handleDeleteOffline = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    if (Platform.OS === "web") {
-      try {
-        if ("caches" in window) {
-          await window.caches.delete("quran-pages");
-          setIsDownloaded(false);
-          setDownloadCount(0);
-          setDownloadProgress(0);
-          alert("Downloaded pages deleted from local cache.");
-        }
-      } catch (e) {
-        console.warn("Failed to delete web cache:", e);
-      }
-      return;
-    }
-    try {
-      const dir = getQuranPagesDirectory();
-      const dirInfo = await FileSystem.getInfoAsync(dir);
-      if (dirInfo.exists) {
-        await FileSystem.deleteAsync(dir, { idempotent: true });
-      }
-      setIsDownloaded(false);
-      setDownloadCount(0);
-      setDownloadProgress(0);
-      alert("Downloaded pages deleted from local storage.");
-    } catch (e) {
-      console.warn("Failed to delete offline pages:", e);
-    }
-  };
+  const [tajweedEnabled, setTajweedEnabled] = useState<boolean>(true);
 
   // Dialog state
   const [modalVisible, setModalVisible] = useState(false);
@@ -296,8 +102,8 @@ export default function PersonaliseScreen() {
 
   const getFontFamily = (type: string) => {
     if (type === "indopak") return "AmiriBold";
-    if (type === "uthmani") return "Amiri";
-    return "System";
+    if (type === "uthmani") return "ScheherazadeNew";
+    return "NotoNaskhArabic";
   };
 
   const activeFontLabel = FONTS.find((f) => f.id === fontType)?.label || "Indo Pak";
@@ -309,7 +115,7 @@ export default function PersonaliseScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onBrandPrimary} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onBrandPrimary }]}>Personalise</Text>
+        <Text style={[styles.title, { color: colors.onBrandPrimary }]}>Quick Settings</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -395,7 +201,7 @@ export default function PersonaliseScreen() {
           </View>
           <View style={styles.rowRight}>
             <Text style={[styles.rowVal, { color: colors.brand }]}>
-              {language === "ta" ? "Tamil (தமிழ்)" : "English"}
+              {LANGUAGES.find((l) => l.id === language)?.label ?? "English"}
             </Text>
             <MaterialCommunityIcons name="chevron-down" size={20} color={colors.onSurfaceMuted} />
           </View>
@@ -435,24 +241,6 @@ export default function PersonaliseScreen() {
           />
         </View>
 
-        {/* Offline Mode Row */}
-        <View style={[styles.row, { borderBottomColor: colors.border }]}>
-          <View style={styles.rowLeft}>
-            <MaterialCommunityIcons name="cloud-check" size={22} color={colors.brandSecondary} />
-            <View style={{ marginLeft: 0 }}>
-              <Text style={[styles.rowLabel, { color: colors.onSurface, fontSize: 15 }]}>
-                Offline Medina Mushaf
-              </Text>
-              <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>
-                Text and page layouts are fully offline. No download needed.
-              </Text>
-            </View>
-          </View>
-          <View style={styles.rowRight}>
-            <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />
-          </View>
-        </View>
-
         {/* Report Feedback Row */}
         <Pressable
           onPress={() => alert("Thank you for your feedback! If you notice any typos, please report to support@islamichikmah.com.")}
@@ -463,6 +251,31 @@ export default function PersonaliseScreen() {
             <Text style={[styles.rowLabel, { color: colors.onSurface }]}>Report typo / issue</Text>
           </View>
           <MaterialCommunityIcons name="information-outline" size={18} color={colors.onSurfaceMuted} />
+        </Pressable>
+
+        {/* More Settings — navigates to the full app Settings page */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            router.push("/settings");
+          }}
+          style={[
+            styles.row,
+            {
+              borderBottomColor: "transparent",
+              backgroundColor: colors.brand + "12",
+              borderRadius: theme.radius.lg,
+              marginTop: 8,
+            },
+          ]}
+        >
+          <View style={styles.rowLeft}>
+            <MaterialCommunityIcons name="cog-outline" size={22} color={colors.brand} />
+            <Text style={[styles.rowLabel, { color: colors.brand, fontWeight: "700" }]}>
+              More Settings
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={22} color={colors.brand} />
         </Pressable>
       </View>
 
@@ -489,30 +302,36 @@ export default function PersonaliseScreen() {
                   fontType === font.id && { backgroundColor: "rgba(16, 185, 129, 0.08)" },
                 ]}
               >
-                {/* Left Arabic calligraphy preview */}
+                {/* Arabic preview rendered in each font's own typeface */}
                 <Text
-                  style={[
-                    styles.modalArabicText,
-                    {
-                      fontFamily: getFontFamily(font.id),
-                      color: fontType === font.id ? colors.brand : "#333",
-                    },
-                  ]}
+                  style={{
+                    fontFamily: getFontFamily(font.id),
+                    color: fontType === font.id ? colors.brand : colors.onSurface,
+                    fontSize: 20,
+                    lineHeight: 36,
+                    textAlign: "right",
+                    flexShrink: 1,
+                  }}
                 >
-                  {font.id === "naskh" ? "بسم الله" : font.id === "uthmani" ? "بِسْمِ اللَّهِ" : "بِسْمِ اللهِ"}
+                  {font.preview}
                 </Text>
-                {/* Right Font Name Label */}
-                <Text
-                  style={[
-                    styles.modalLabelText,
-                    {
-                      color: fontType === font.id ? colors.brand : "#555",
-                      fontWeight: fontType === font.id ? "700" : "500",
-                    },
-                  ]}
-                >
-                  {font.label}
-                </Text>
+                {/* Font name + description */}
+                <View style={{ marginLeft: 12, flex: 1, justifyContent: "center" }}>
+                  <Text
+                    style={[
+                      styles.modalLabelText,
+                      {
+                        color: fontType === font.id ? colors.brand : colors.onSurface,
+                        fontWeight: fontType === font.id ? "700" : "500",
+                      },
+                    ]}
+                  >
+                    {font.label}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>
+                    {font.description}
+                  </Text>
+                </View>
               </Pressable>
             ))}
           </View>
@@ -527,12 +346,10 @@ export default function PersonaliseScreen() {
         onRequestClose={() => setLangModalVisible(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setLangModalVisible(false)}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: 8 }]}>
             <Text style={styles.modalTitle}>Translation Language</Text>
-            {[
-              { id: "en" as const, label: "English" },
-              { id: "ta" as const, label: "Tamil (தமிழ்)" },
-            ].map((lang) => (
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+            {LANGUAGES.map((lang) => (
               <Pressable
                 key={lang.id}
                 onPress={() => {
@@ -542,14 +359,16 @@ export default function PersonaliseScreen() {
                 }}
                 style={[
                   styles.modalItem,
-                  language === lang.id && { backgroundColor: "rgba(16, 185, 129, 0.08)" },
+                  language === lang.id && { backgroundColor: colors.brand + "14" },
                 ]}
               >
+                <Text style={{ fontSize: 22, marginRight: 10 }}>{lang.flag}</Text>
                 <Text
                   style={[
                     styles.modalLabelText,
                     {
-                      color: language === lang.id ? colors.brand : "#333",
+                      flex: 1,
+                      color: language === lang.id ? colors.brand : colors.onSurface,
                       fontWeight: language === lang.id ? "700" : "500",
                     },
                   ]}
@@ -561,6 +380,7 @@ export default function PersonaliseScreen() {
                 )}
               </Pressable>
             ))}
+            </ScrollView>
           </View>
         </Pressable>
       </Modal>

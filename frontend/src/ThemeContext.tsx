@@ -5,32 +5,36 @@ const KEY = "islamic-hikmah:theme:v1";
 
 const dark = {
   mode: "dark" as Mode,
-  surface: "#0B1120",
-  surfaceSecondary: "#151E32",
-  surfaceTertiary: "#1E293B",
-  onSurface: "#F8FAFC",
-  onSurfaceMuted: "#94A3B8",
-  onSurfaceSecondary: "#E2E8F0",
-  border: "#1E293B",
-  brand: "#C5A880",
-  onBrandPrimary: "#1A150D",
-  brandSecondary: "#14B8A6",
+  // Rich deep navy blue — matches the reference "A Life With Allah" app style.
+  // NOT pure black (#000) or near-black (#0B1120) — a warm deep blue makes
+  // Arabic text far easier to read and feels more premium.
+  surface: "#0D2137",           // main background — deep navy
+  surfaceSecondary: "#112840",  // card backgrounds — slightly lighter navy
+  surfaceTertiary: "#163351",   // borders, dividers — mid navy
+  onSurface: "#FFFFFF",         // primary text — pure white for max contrast
+  onSurfaceMuted: "#8BAFC8",    // secondary text — muted blue-white
+  onSurfaceSecondary: "#C8DFF0",// body text — light blue-white
+  border: "#1A3A55",            // subtle borders
+  brand: "#C5A880",             // gold accent (kept)
+  onBrandPrimary: "#0D2137",    // text on gold buttons
+  brandSecondary: "#14B8A6",    // teal accent (kept)
   error: "#EF4444",
   success: "#10B981",
 };
 
 const light = {
   mode: "light" as Mode,
-  surface: "#F8FAFC",
-  surfaceSecondary: "#FFFFFF",
-  surfaceTertiary: "#E2E8F0",
-  onSurface: "#0B1120",
-  onSurfaceMuted: "#64748B",
-  onSurfaceSecondary: "#334155",
-  border: "#E2E8F0",
-  brand: "#A07C4F",
-  onBrandPrimary: "#FFFFFF",
-  brandSecondary: "#0F766E",
+  // Pure white background with crisp near-black text — clean and readable.
+  surface: "#FFFFFF",           // pure white main background
+  surfaceSecondary: "#F5F7FA",  // very light grey for cards
+  surfaceTertiary: "#E8EDF2",   // slightly darker for dividers
+  onSurface: "#0F172A",         // near-black text — maximum contrast
+  onSurfaceMuted: "#4B5563",    // secondary text — dark grey
+  onSurfaceSecondary: "#1E293B",// body text — dark slate
+  border: "#E2E8F0",            // light grey borders
+  brand: "#A07C4F",             // warm gold accent
+  onBrandPrimary: "#FFFFFF",    // white text on gold
+  brandSecondary: "#0F766E",    // teal accent
   error: "#DC2626",
   success: "#059669",
 };
