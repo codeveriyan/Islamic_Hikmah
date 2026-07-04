@@ -1,16 +1,16 @@
 export const theme = {
   colors: {
-    surface: '#0B1120',
-    surfaceSecondary: '#151E32',
-    surfaceTertiary: '#1E293B',
-    onSurface: '#F8FAFC',
-    onSurfaceMuted: '#94A3B8',
-    onSurfaceSecondary: '#E2E8F0',
-    border: '#1E293B',
-    borderStrong: '#334155',
+    surface: '#0D2137',
+    surfaceSecondary: '#112840',
+    surfaceTertiary: '#163351',
+    onSurface: '#FFFFFF',
+    onSurfaceMuted: '#8BAFC8',
+    onSurfaceSecondary: '#C8DFF0',
+    border: '#1A3A55',
+    borderStrong: '#1E4570',
     brand: '#C5A880',
     brandPrimary: '#C5A880',
-    onBrandPrimary: '#1A150D',
+    onBrandPrimary: '#0D2137',
     brandSecondary: '#14B8A6',
     brandAccent: '#10B981',
     error: '#EF4444',
@@ -22,7 +22,7 @@ export const theme = {
   font: {
     display: 'Outfit_600SemiBold',
     text: 'Figtree_400Regular',
-    arabic: 'Amiri',
+    arabic: 'NotoNaskhArabic',
   },
 };
 

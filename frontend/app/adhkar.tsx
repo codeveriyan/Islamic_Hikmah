@@ -88,7 +88,9 @@ export default function AdhkarScreen() {
             <Text style={[styles.title, { color: colors.onSurface }]}>{selected.title}</Text>
             <Text style={[styles.arabicTitle, { color: colors.brand }]}>{selected.arabicTitle}</Text>
           </View>
-          <View style={{ width: 28 }} />
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
         </View>
         <FlatList
           data={selected.items}

@@ -547,7 +547,7 @@ export async function scheduleGoalNotifications(
         if (isNaN(h) || isNaN(m)) continue;
 
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined },
+          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: h,
@@ -563,7 +563,7 @@ export async function scheduleGoalNotifications(
       if (goalId === 'tahajjud' || goalId === 'nafl') {
         const t = times[goalId as keyof GoalNotifTimes];
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined },
+          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: t.hour,
@@ -580,7 +580,7 @@ export async function scheduleGoalNotifications(
         const { dayOfWeek, timeKey } = WEEKLY_MAP[goalId];
         const t = times[timeKey];
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined },
+          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
             weekday: dayOfWeek + 1, // expo-notifications: 1=Sun … 7=Sat
@@ -598,7 +598,7 @@ export async function scheduleGoalNotifications(
       if (times[timeKey]) {
         const t = times[timeKey];
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined },
+          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: t.hour,
@@ -615,4 +615,67 @@ export async function scheduleGoalNotifications(
 
   await AsyncStorage.setItem(GOAL_NOTIF_KEY, JSON.stringify(newIds));
   return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quran Bookmarks & Last Read Position
+// ─────────────────────────────────────────────────────────────────────────────
+
+const QURAN_BOOKMARKS_KEY = 'hikmah:quran-bookmarks:v1';
+const QURAN_LAST_READ_KEY = 'hikmah:quran-last-read:v1';
+
+export type QuranBookmark = {
+  surahNumber: number;
+  surahName: string;
+  ayahNumber: number;
+  note?: string;
+  savedAt: number; // timestamp
+};
+
+export type QuranLastRead = {
+  surahNumber: number;
+  surahName: string;
+  ayahNumber: number;
+  readAt: number;
+};
+
+export async function getQuranBookmarks(): Promise<QuranBookmark[]> {
+  try {
+    const raw = await AsyncStorage.getItem(QURAN_BOOKMARKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export async function addQuranBookmark(b: Omit<QuranBookmark, 'savedAt'>): Promise<void> {
+  const existing = await getQuranBookmarks();
+  // Remove duplicate if same surah+ayah already bookmarked
+  const filtered = existing.filter(
+    (e) => !(e.surahNumber === b.surahNumber && e.ayahNumber === b.ayahNumber)
+  );
+  filtered.unshift({ ...b, savedAt: Date.now() });
+  await AsyncStorage.setItem(QURAN_BOOKMARKS_KEY, JSON.stringify(filtered));
+}
+
+export async function removeQuranBookmark(surahNumber: number, ayahNumber: number): Promise<void> {
+  const existing = await getQuranBookmarks();
+  const filtered = existing.filter(
+    (e) => !(e.surahNumber === surahNumber && e.ayahNumber === ayahNumber)
+  );
+  await AsyncStorage.setItem(QURAN_BOOKMARKS_KEY, JSON.stringify(filtered));
+}
+
+export async function isQuranBookmarked(surahNumber: number, ayahNumber: number): Promise<boolean> {
+  const existing = await getQuranBookmarks();
+  return existing.some((e) => e.surahNumber === surahNumber && e.ayahNumber === ayahNumber);
+}
+
+export async function getQuranLastRead(): Promise<QuranLastRead | null> {
+  try {
+    const raw = await AsyncStorage.getItem(QURAN_LAST_READ_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export async function saveQuranLastRead(lr: Omit<QuranLastRead, 'readAt'>): Promise<void> {
+  await AsyncStorage.setItem(QURAN_LAST_READ_KEY, JSON.stringify({ ...lr, readAt: Date.now() }));
 }

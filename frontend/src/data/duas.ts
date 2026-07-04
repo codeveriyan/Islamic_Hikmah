@@ -24,7 +24,7 @@ export type DuaCategory = {
 export const CATEGORIES: DuaCategory[] = [
   {
     "id": "ummah",
-    "title": "Du'as for the Ummah",
+    "title": "Dua's for the Ummah",
     "group": "main",
     "gradient": [
       "#C2410C",

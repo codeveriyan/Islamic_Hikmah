@@ -222,9 +222,14 @@ export default function PrayerTimesScreen() {
               <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
             </Pressable>
             <Text style={styles.title}>Prayer Times</Text>
-            <Pressable onPress={() => router.push("/qibla" as any)} hitSlop={10}>
-              <MaterialCommunityIcons name="compass" size={26} color="#fff" />
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
+              <Pressable onPress={() => router.push("/qibla" as any)} hitSlop={10}>
+                <MaterialCommunityIcons name="compass" size={26} color="#fff" />
+              </Pressable>
+              <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+                <MaterialCommunityIcons name="cog-outline" size={24} color="#fff" />
+              </Pressable>
+            </View>
           </View>
           <View style={styles.heroContent}>
             <Text style={styles.heroDate}>{date}</Text>

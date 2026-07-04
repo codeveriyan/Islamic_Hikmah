@@ -6,12 +6,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { getCategory, CATEGORIES } from "@/src/data/duas";
-import { EMOTIONS } from "@/src/data/emotions";
+import { getCategory } from "@/src/data/duas";
 import { toggleFavourite, getFavourites, Favourite } from "@/src/storage";
 import { transliterateToTamil } from "@/src/transliterator";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { ARTICLES } from "@/src/data/articles";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -19,22 +17,7 @@ export default function DuaCategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const router = useRouter();
   const { colors, language, fontSize, fontColor } = useTheme();
-  const emotion = EMOTIONS.find((e) => e.id === category);
-  let cat: ReturnType<typeof getCategory>;
-  if (emotion) {
-    const allDuas = CATEGORIES.flatMap((c) => c.duas.map((d) => ({ ...d, categoryId: c.id })));
-    const matchingDuas = allDuas.filter((d) => emotion.duaIds.includes(d.id));
-    cat = {
-      id: emotion.id,
-      title: emotion.label,
-      duas: matchingDuas,
-      group: "other",
-      gradient: emotion.gradient,
-      icon: "emoticon-outline",
-    };
-  } else {
-    cat = getCategory(String(category));
-  }
+  const cat = getCategory(String(category));
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [translatedTexts, setTranslatedTexts] = useState<Record<string, { translation: string; transliteration?: string }>>({});
   
@@ -124,10 +107,17 @@ export default function DuaCategoryScreen() {
         }
         window.speechSynthesis?.cancel();
       } else {
+        // expo-audio's own internal effect (registered by useAudioPlayer above)
+        // releases the native player on unmount. Effect cleanups run in the
+        // same top-to-bottom order as they were declared, so that release can
+        // fire before this cleanup does — leaving `player` pointing at an
+        // already-released native shared object. Calling any method on it at
+        // that point throws "Cannot use shared object that was already
+        // released" and crashes the app. Swallow that specific race safely.
         try {
           player.pause();
         } catch (e) {
-          // Native player was already released by expo-audio's own unmount cleanup, safe to ignore.
+          // Player was already released by expo-audio's own teardown — safe to ignore.
         }
       }
     };
@@ -479,8 +469,13 @@ export default function DuaCategoryScreen() {
               <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
             </Pressable>
             <Text style={[styles.readerHeaderTitle, { color: colors.onSurface }]}>{cat.title}</Text>
-            <View style={[styles.pageIndicator, { backgroundColor: colors.brand + "22" }]}>
-              <Text style={[styles.pageIndicatorText, { color: colors.brand }]}>{activeDuaIndex + 1} / {cat.duas.length}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={[styles.pageIndicator, { backgroundColor: colors.brand + "22" }]}>
+                <Text style={[styles.pageIndicatorText, { color: colors.brand }]}>{activeDuaIndex + 1} / {cat.duas.length}</Text>
+              </View>
+              <Pressable onPress={() => router.push("/")} hitSlop={10} testID="dua-reader-home">
+                <MaterialCommunityIcons name="home-outline" size={22} color={colors.onSurface} />
+              </Pressable>
             </View>
           </View>
 
@@ -555,27 +550,6 @@ export default function DuaCategoryScreen() {
                     This supplication is taken from authentic collections. Consistently reciting it brings immense rewards and spiritual protection.
                   </Text>
                 )}
-                <Pressable
-                  onPress={() => {
-                    setShowInfo(false);
-                    const articleId = CATEGORY_ARTICLES[cat.id] || "a4";
-                    router.push(`/article/${articleId}` as any);
-                  }}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 8,
-                    marginTop: 12,
-                    paddingTop: 8,
-                    borderTopWidth: 1,
-                    borderTopColor: colors.border,
-                  }}
-                >
-                  <MaterialCommunityIcons name="book-open-outline" size={18} color={colors.brand} />
-                  <Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700", flex: 1 }} numberOfLines={1}>
-                    Article: {ARTICLES.find((a) => a.id === (CATEGORY_ARTICLES[cat.id] || "a4"))?.title}
-                  </Text>
-                </Pressable>
               </ScrollView>
             </View>
           )}
@@ -684,7 +658,9 @@ export default function DuaCategoryScreen() {
                 <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
               </Pressable>
               <Text style={styles.heroTitle}>{cat.title}</Text>
-              <View style={{ width: 28 }} />
+              <Pressable onPress={() => router.push("/")} hitSlop={10} testID="dua-home">
+                <MaterialCommunityIcons name="home-outline" size={24} color="#fff" />
+              </Pressable>
             </View>
             <Text style={styles.heroSub}>{cat.duas.length} Du{`'`}a{cat.duas.length === 1 ? "" : "s"}</Text>
           </SafeAreaView>
@@ -693,14 +669,7 @@ export default function DuaCategoryScreen() {
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100 }}>
         {/* PlayStore Replicated Related Articles Row */}
-        <Pressable 
-          style={[styles.relatedArticlesCard, { backgroundColor: colors.surfaceSecondary }]}
-          onPress={() => {
-            const articleId = CATEGORY_ARTICLES[cat.id] || "a4";
-            router.push(`/article/${articleId}` as any);
-          }}
-          testID="related-articles-btn"
-        >
+        <Pressable style={[styles.relatedArticlesCard, { backgroundColor: colors.surfaceSecondary }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
             <MaterialCommunityIcons name="book-open-outline" size={24} color={colors.brand} />
             <Text style={[styles.relatedArticlesText, { color: colors.onSurface }]}>Related Articles</Text>
@@ -769,16 +738,7 @@ const CATEGORY_IMAGES: Record<string, any> = {
   "daily-life": { uri: "https://images.unsplash.com/photo-1517842645767-c639042777db?w=500&auto=format&fit=crop&q=80" },
   adhan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
   wudu: { uri: "https://images.unsplash.com/photo-1548813730-e8f20cc74a4a?w=500&auto=format&fit=crop&q=80" },
-};
-
-const CATEGORY_ARTICLES: Record<string, string> = {
-  morning: "a1",
-  evening: "a1",
-  sleep: "a1",
-  tahajjud: "a2",
-  salah: "a3",
-  "after-salah": "a3",
-  ramadan: "a5",
+  masjid: { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
 };
 
 const styles = StyleSheet.create({
@@ -813,7 +773,7 @@ const styles = StyleSheet.create({
   
   readerCardScroll: { flexGrow: 1, justifyContent: "center" },
   readerCard: { borderRadius: theme.radius.lg, padding: theme.spacing.lg, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 2 },
-  arabic: { fontFamily: "Amiri", textAlign: "right", marginTop: theme.spacing.md },
+  arabic: { fontFamily: "NotoNaskhArabic", textAlign: "right", marginTop: theme.spacing.md },
   translit: { fontStyle: "italic", marginTop: theme.spacing.md, lineHeight: 21 },
   translation: { marginTop: theme.spacing.sm, lineHeight: 22 },
   

@@ -1,7 +1,7 @@
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox, View, AppState, Pressable, Text } from "react-native";
+import { AppState, LogBox, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -17,7 +17,7 @@ LogBox.ignoreAllLogs(true);
 
 SplashScreen.preventAutoHideAsync();
 
-function ThemedStack() {
+function ThemedStack({ azaanPlaying, onStopAzaan }: { azaanPlaying: boolean; onStopAzaan: () => void }) {
   const { colors, mode } = useTheme();
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -28,6 +28,29 @@ function ThemedStack() {
           contentStyle: { backgroundColor: colors.surface },
         }}
       />
+      {azaanPlaying ? (
+        <Pressable
+          onPress={onStopAzaan}
+          style={{
+            position: "absolute",
+            bottom: 32,
+            left: 24,
+            right: 24,
+            backgroundColor: colors.brand,
+            borderRadius: 999,
+            paddingVertical: 14,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          <MaterialCommunityIcons name="volume-off" size={20} color={colors.onBrandPrimary} />
+          <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 15 }}>
+            Tap to stop Azaan
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -37,25 +60,18 @@ export default function RootLayout() {
   const [fontsLoaded, fontsError] = useFonts({
     Amiri: require("../assets/fonts/Amiri-Regular.ttf"),
     AmiriBold: require("../assets/fonts/Amiri-Bold.ttf"),
+    // ScheherazadeNew — SIL Open Font License, purpose-built for Quranic Uthmani script.
+    // Used for the "Uthmani" font option. Far better harakat and ligature support than Amiri.
+    ScheherazadeNew: require("../assets/fonts/ScheherazadeNew-Regular.ttf"),
+    // NotoNaskhArabic — Google Noto font family, covers full Arabic Unicode range cleanly.
+    // Used for the "Naskh" font option. Clear, modern, great for all-purpose Arabic text
+    // including duas and hadith where a less stylised font is preferable.
+    NotoNaskhArabic: require("../assets/fonts/NotoNaskhArabic-Regular.ttf"),
   });
 
   const player = useAudioPlayer(require("../assets/audio/azaan.mp3"));
-  const status = useAudioPlayerStatus(player);
+  const playerStatus = useAudioPlayerStatus(player);
   const router = useRouter();
-
-  // AppState listener to stop Adhan when app goes to background / screen lock
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "background" || nextAppState === "inactive") {
-        try {
-          if (player.playing) {
-            player.pause();
-          }
-        } catch (e) {}
-      }
-    });
-    return () => sub.remove();
-  }, [player]);
 
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener((notification) => {
@@ -70,6 +86,26 @@ export default function RootLayout() {
     });
     return () => subscription.remove();
   }, [player]);
+
+  // Stop the foreground Azaan playback as soon as the user leaves the app
+  // (home button / app switcher / lock screen), same behavior as a phone alarm.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        try {
+          if (player.playing) player.pause();
+        } catch {}
+      }
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  const stopAzaan = () => {
+    try {
+      player.pause();
+      player.seekTo(0);
+    } catch {}
+  };
 
   useEffect(() => {
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -103,57 +139,11 @@ export default function RootLayout() {
 
   if (!ready) return null;
 
-  const isPlaying = status?.playing || false;
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <View style={{ flex: 1 }}>
-            <ThemedStack />
-            {isPlaying && (
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 50,
-                  left: 20,
-                  right: 20,
-                  backgroundColor: "#1E293B",
-                  borderRadius: 12,
-                  padding: 16,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 4,
-                  elevation: 8,
-                  zIndex: 99999,
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <MaterialCommunityIcons name="volume-high" size={24} color="#10B981" />
-                  <Text style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 14 }}>Adhan is playing</Text>
-                </View>
-                <Pressable
-                  onPress={() => {
-                    try {
-                      player.pause();
-                    } catch (e) {}
-                  }}
-                  style={{
-                    backgroundColor: "#EF4444",
-                    paddingHorizontal: 16,
-                    paddingVertical: 8,
-                    borderRadius: 8,
-                  }}
-                >
-                  <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>Stop</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
+          <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
