@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable } from "react-native";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Modal, FlatList } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -10,6 +10,7 @@ import { toggleFavourite, getFavourites, addQuranBookmark, removeQuranBookmark, 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useIsFocused } from "@react-navigation/native";
 import quranData from "@/src/data/quran/quranData.json";
+import { JUZ_DATA, getJuzForAyah } from "@/src/data/juzData";
 
 type Ayah = {
   number: number;
@@ -60,6 +61,16 @@ export default function SurahDetail() {
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
   const { colors, language } = useTheme();
+
+  // Reading mode — default / sepia / dark (loaded from AsyncStorage, set in Quick Settings)
+  const [readingMode, setReadingMode] = useState<"default" | "sepia" | "dark">("default");
+
+  // Juz modal
+  const [showJuzModal, setShowJuzModal] = useState(false);
+
+  // Scroll ref for auto-scrolling to highlighted ayah
+  const scrollRef = useRef<ScrollView>(null);
+  const ayahYPositions = useRef<Record<number, number>>({});
 
   const [audioRequested, setAudioRequested] = useState(false);
 
@@ -300,48 +311,132 @@ export default function SurahDetail() {
       AsyncStorage.getItem("islamic_hikmah:quran_show_transliteration").then((val) => {
         if (val !== null) setShowTransliteration(val === "true");
       });
+      AsyncStorage.getItem("islamic_hikmah:quran_reading_mode").then((val) => {
+        if (val) setReadingMode(val as any);
+      });
     }
   }, [isFocused]);
 
+  // ── Dual-player pre-buffer system ──────────────────────────────────────────
+  // Root cause of the gaps: player.replace() on every ayah transition destroys
+  // the current audio session, starts a new network request, waits for buffering,
+  // and only then plays — creating a 0.5–2s dead silence between ayahs.
+  //
+  // Fix: use TWO expo-audio players (A and B). While player A plays ayah N,
+  // player B silently pre-loads ayah N+1. When A finishes, we immediately start
+  // B (which is already buffered) and use A to pre-load N+2. The swap is
+  // instant since the next URL is already in the native audio buffer.
+  //
+  // playerRef tracks which of the two players is currently "active".
+  const playerB = useAudioPlayer(null);
+  const statusB = useAudioPlayerStatus(playerB);
+
+  // 0 = player (A) is active, 1 = playerB (B) is active
+  const activePlayerRef = useRef<0 | 1>(0);
+  const continuousRef = useRef(false);
+  const playingIdxRef = useRef<number | null>(null);
+  const audioRef = useRef<Ayah[]>([]);
+
+  // Keep refs in sync with state so effect closures always see current values
+  useEffect(() => { continuousRef.current = continuous; }, [continuous]);
+  useEffect(() => { playingIdxRef.current = playingIdx; }, [playingIdx]);
+  useEffect(() => { audioRef.current = audio; }, [audio]);
+
+  // Pre-load the next ayah URL into the inactive player while the current plays
+  const preloadNext = useCallback((currentIdx: number) => {
+    const nextIdx = currentIdx + 1;
+    const nextUrl = audioRef.current[nextIdx]?.audio;
+    if (!nextUrl) return;
+    const inactive = activePlayerRef.current === 0 ? playerB : player;
+    try {
+      inactive.replace({ uri: nextUrl });
+      // Don't call play() — just buffer it silently
+    } catch {}
+  }, [player, playerB]);
+
+  // Handle finish for player A
   useEffect(() => {
-    if (status?.didJustFinish) {
-      if (continuous && playingIdx !== null && playingIdx + 1 < audio.length) {
-        const next = playingIdx + 1;
-        const url = audio[next]?.audio;
-        if (url) {
-          player.replace({ uri: url });
-          player.play();
-          setPlayingIdx(next);
-          return;
-        }
-      }
+    if (!status?.didJustFinish) return;
+    if (!continuousRef.current) { setPlayingIdx(null); return; }
+    const current = playingIdxRef.current;
+    if (current === null) return;
+    const next = current + 1;
+    if (next >= audioRef.current.length) {
       setPlayingIdx(null);
       setContinuous(false);
+      return;
     }
+    // Player B was pre-buffering next ayah — swap and play it immediately
+    activePlayerRef.current = 1;
+    try { playerB.play(); } catch {}
+    setPlayingIdx(next);
+    // Pre-load next+1 into player A
+    preloadNext(next);
   }, [status?.didJustFinish]);
+
+  // Handle finish for player B
+  useEffect(() => {
+    if (!statusB?.didJustFinish) return;
+    if (!continuousRef.current) { setPlayingIdx(null); return; }
+    const current = playingIdxRef.current;
+    if (current === null) return;
+    const next = current + 1;
+    if (next >= audioRef.current.length) {
+      setPlayingIdx(null);
+      setContinuous(false);
+      return;
+    }
+    // Player A was pre-buffering next ayah — swap and play it immediately
+    activePlayerRef.current = 0;
+    try { player.play(); } catch {}
+    setPlayingIdx(next);
+    // Pre-load next+1 into player B
+    preloadNext(next);
+  }, [statusB?.didJustFinish]);
+
+  // Auto-scroll to the currently playing ayah
+  useEffect(() => {
+    if (playingIdx !== null && ayahYPositions.current[playingIdx] !== undefined) {
+      scrollRef.current?.scrollTo({ y: Math.max(0, ayahYPositions.current[playingIdx] - 100), animated: true });
+    }
+  }, [playingIdx]);
 
   const [audioLoading, setAudioLoading] = useState(false);
 
-  const playAyah = (i: number) => {
+  // Get whichever player is currently active
+  const activePlayer = useCallback(
+    () => (activePlayerRef.current === 0 ? player : playerB),
+    [player, playerB]
+  );
+
+  const playAyah = useCallback((i: number) => {
     // If audio not yet loaded, trigger the fetch first
     if (!audioRequested) {
       setAudioLoading(true);
       setAudioRequested(true);
-      // Store pending ayah index — effect will load audio, then we play via useEffect below
       setPendingPlayIdx(i);
       return;
     }
     const url = audio[i]?.audio;
     if (!url) return;
-    if (playingIdx === i && status?.playing) {
-      player.pause();
-      setPlayingIdx(null);
+    // Toggle pause/resume if same ayah
+    if (playingIdx === i) {
+      const ap = activePlayer();
+      if (status?.playing || statusB?.playing) { try { ap.pause(); } catch {} }
+      else { try { ap.play(); } catch {} }
       return;
     }
-    player.replace({ uri: url });
-    player.play();
+    // New ayah — use player A, reset active ref
+    activePlayerRef.current = 0;
+    try {
+      player.replace({ uri: url });
+      player.play();
+    } catch {}
     setPlayingIdx(i);
-  };
+    setContinuous(false);
+    // Pre-buffer next ayah into player B immediately
+    preloadNext(i);
+  }, [audioRequested, audio, playingIdx, status, statusB, player, playerB, preloadNext]);
 
   const [pendingPlayIdx, setPendingPlayIdx] = useState<number | null>(null);
 
@@ -351,15 +446,20 @@ export default function SurahDetail() {
       setAudioLoading(false);
       const url = audio[pendingPlayIdx]?.audio;
       if (url) {
-        player.replace({ uri: url });
-        player.play();
+        activePlayerRef.current = 0;
+        try {
+          player.replace({ uri: url });
+          player.play();
+        } catch {}
         setPlayingIdx(pendingPlayIdx);
+        // Pre-buffer the next ayah if in continuous mode
+        preloadNext(pendingPlayIdx);
       }
       setPendingPlayIdx(null);
     }
   }, [audio]);
 
-  const playAll = () => {
+  const playAll = useCallback(() => {
     if (!audioRequested) {
       setAudioLoading(true);
       setAudioRequested(true);
@@ -368,19 +468,24 @@ export default function SurahDetail() {
       return;
     }
     if (audio.length === 0 || !audio[0]?.audio) return;
-    setContinuous(true);
-    const url = audio[0]?.audio;
-    if (!url) return;
-    player.replace({ uri: url });
-    player.play();
+    // Start from ayah 0 on player A
+    activePlayerRef.current = 0;
+    try {
+      player.replace({ uri: audio[0].audio });
+      player.play();
+    } catch {}
     setPlayingIdx(0);
-  };
+    setContinuous(true);
+    // Immediately pre-buffer ayah 1 into player B
+    preloadNext(0);
+  }, [audioRequested, audio, player, preloadNext]);
 
-  const stopAll = () => {
-    player.pause();
-    setContinuous(false);
+  const stopAll = useCallback(() => {
+    try { player.pause(); } catch {}
+    try { playerB.pause(); } catch {}
     setPlayingIdx(null);
-  };
+    setContinuous(false);
+  }, [player, playerB]);
 
   const onFavAyah = useCallback(async (i: number, a: Ayah) => {
     const favId = `ayah-${id}-${a.numberInSurah}`;
@@ -398,28 +503,48 @@ export default function SurahDetail() {
 
   const currentReciterName = RECITERS.find((r) => r.id === reciter)?.name;
 
+  // Reading mode color palette
+  const READING_COLORS = {
+    default: { bg: colors.surface, card: colors.surfaceSecondary, arabic: colors.onSurface, trans: colors.onSurfaceMuted, translit: colors.brand },
+    sepia:   { bg: "#F5ECD7", card: "#EDE0C4", arabic: "#2C1A0E", trans: "#6B4423", translit: "#8B5E2A" },
+    dark:    { bg: "#0D2137", card: "#112840", arabic: "#FFFFFF", trans: "#8BAFC8", translit: "#C5A880" },
+  };
+  const rc = READING_COLORS[readingMode];
+
+  // Current Juz for display in header
+  const currentJuz = arabic.length > 0 ? getJuzForAyah(Number(id), 1) : null;
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.container, { backgroundColor: rc.bg }]} edges={["top"]}>
+      <View style={[styles.header, { backgroundColor: rc.bg }]}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="surah-back">
-          <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
+          <MaterialCommunityIcons name="chevron-left" size={28} color={rc.arabic} />
         </Pressable>
         <View style={{ flex: 1, alignItems: "center" }}>
-          <Text style={[styles.title, { color: colors.onSurface }]}>{name}</Text>
+          <Text style={[styles.title, { color: rc.arabic }]}>{name}</Text>
           <Text style={[styles.subtitle, { color: colors.brand }]}>{arName}</Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          {/* Juz badge — tap to open Juz navigator */}
+          {currentJuz && (
+            <Pressable
+              onPress={() => setShowJuzModal(true)}
+              style={{ backgroundColor: colors.brand + "22", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}
+            >
+              <Text style={{ color: colors.brand, fontSize: 11, fontWeight: "700" }}>Juz {currentJuz}</Text>
+            </Pressable>
+          )}
           <Pressable onPress={() => router.push("/")} hitSlop={10} testID="quran-home">
-            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+            <MaterialCommunityIcons name="home-outline" size={24} color={rc.arabic} />
           </Pressable>
           <Pressable onPress={() => router.push("/quran/bookmarks" as any)} hitSlop={10} testID="quran-bookmarks">
-            <MaterialCommunityIcons name="bookmark-multiple-outline" size={24} color={colors.onSurface} />
+            <MaterialCommunityIcons name="bookmark-multiple-outline" size={24} color={rc.arabic} />
           </Pressable>
           <Pressable onPress={() => setShowReciters((s) => !s)} hitSlop={10} testID="reciter-toggle">
             <MaterialCommunityIcons name="account-music" size={26} color={colors.brand} />
           </Pressable>
           <Pressable onPress={() => router.push("/quran/personalise")} hitSlop={10} style={{ padding: 2 }}>
-            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+            <MaterialCommunityIcons name="cog-outline" size={24} color={rc.arabic} />
           </Pressable>
         </View>
       </View>
@@ -484,24 +609,30 @@ export default function SurahDetail() {
       {loading ? (
         <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 40 }} />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
+          style={{ backgroundColor: rc.bg }}
+        >
           {arabic.map((a, i) => {
             const isPlaying = playingIdx === i && status?.playing;
+            const isHighlighted = playingIdx === i; // highlight even when paused mid-ayah
             const favId = `ayah-${id}-${a.numberInSurah}`;
             const isFav = favIds.has(favId);
             return (
               <View
                 key={a.number}
+                onLayout={(e) => { ayahYPositions.current[i] = e.nativeEvent.layout.y; }}
                 style={[
                   styles.ayah,
-                  { backgroundColor: colors.surfaceSecondary },
-                  isPlaying && { borderWidth: 1, borderColor: colors.brand },
+                  { backgroundColor: isHighlighted ? colors.brand + "22" : rc.card },
+                  isHighlighted && { borderWidth: 2, borderColor: colors.brand },
                 ]}
                 testID={`ayah-${a.numberInSurah}`}
               >
                 <View style={styles.ayahHead}>
-                  <View style={[styles.ayahNum, { backgroundColor: colors.brand + "22" }]}>
-                    <Text style={[styles.ayahNumTxt, { color: colors.brand }]}>{a.numberInSurah}</Text>
+                  <View style={[styles.ayahNum, { backgroundColor: isHighlighted ? colors.brand : colors.brand + "22" }]}>
+                    <Text style={[styles.ayahNumTxt, { color: isHighlighted ? "#fff" : colors.brand }]}>{a.numberInSurah}</Text>
                   </View>
                   <View style={{ flexDirection: "row", gap: 16 }}>
                     <Pressable onPress={() => playAyah(i)} hitSlop={10} disabled={audioErr} testID={`play-${a.numberInSurah}`}>
@@ -511,16 +642,10 @@ export default function SurahDetail() {
                         color={audioErr ? colors.onSurfaceMuted : colors.brand}
                       />
                     </Pressable>
-                    {/* Bookmark button — saves this ayah as a reading position */}
                     <Pressable
                       onPress={async () => {
                         await toggleAyahBookmark(a.numberInSurah);
-                        // Also save as last-read position
-                        await saveQuranLastRead({
-                          surahNumber: Number(id),
-                          surahName: name,
-                          ayahNumber: a.numberInSurah,
-                        });
+                        await saveQuranLastRead({ surahNumber: Number(id), surahName: name, ayahNumber: a.numberInSurah });
                       }}
                       hitSlop={10}
                       testID={`bookmark-ayah-${a.numberInSurah}`}
@@ -531,11 +656,7 @@ export default function SurahDetail() {
                         color={bookmarkedAyahs.has(a.numberInSurah) ? colors.brand : colors.onSurfaceMuted}
                       />
                     </Pressable>
-                    <Pressable
-                      onPress={() => onFavAyah(i, a)}
-                      hitSlop={10}
-                      testID={`fav-ayah-${a.numberInSurah}`}
-                    >
+                    <Pressable onPress={() => onFavAyah(i, a)} hitSlop={10} testID={`fav-ayah-${a.numberInSurah}`}>
                       <MaterialCommunityIcons
                         name={isFav ? "heart" : "heart-outline"}
                         size={24}
@@ -548,7 +669,7 @@ export default function SurahDetail() {
                   style={[
                     styles.arabic,
                     {
-                      color: colors.onSurface,
+                      color: rc.arabic,
                       fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
                       fontSize: fontSize,
                       lineHeight: fontSize * 1.8,
@@ -558,18 +679,67 @@ export default function SurahDetail() {
                   {a.text}
                 </Text>
                 {showTransliteration && (
-                  <Text style={[styles.translit, { color: colors.brand }]}>
+                  <Text style={[styles.translit, { color: rc.translit }]}>
                     {translit[i]?.text}
                   </Text>
                 )}
                 {showTranslation && (
-                  <Text style={[styles.translation, { color: colors.onSurfaceMuted }]}>{trans[i]?.text}</Text>
+                  <Text style={[styles.translation, { color: rc.trans }]}>{trans[i]?.text}</Text>
                 )}
               </View>
             );
           })}
         </ScrollView>
       )}
+
+      {/* ── Juz Navigator Modal ─────────────────────────────────────── */}
+      <Modal
+        visible={showJuzModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowJuzModal(false)}
+      >
+        <Pressable style={{ flex: 1, backgroundColor: "#00000066" }} onPress={() => setShowJuzModal(false)}>
+          <View style={[styles.juzModal, { backgroundColor: rc.bg }]}>
+            <View style={styles.juzModalHeader}>
+              <Text style={[styles.juzModalTitle, { color: rc.arabic }]}>Jump to Juz</Text>
+              <Pressable onPress={() => setShowJuzModal(false)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={22} color={rc.arabic} />
+              </Pressable>
+            </View>
+            <FlatList
+              data={JUZ_DATA}
+              keyExtractor={(j) => String(j.juz)}
+              numColumns={3}
+              contentContainerStyle={{ padding: 12, gap: 8 }}
+              columnWrapperStyle={{ gap: 8, marginBottom: 8 }}
+              renderItem={({ item: j }) => {
+                const isCurrent = currentJuz === j.juz;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      setShowJuzModal(false);
+                      router.push(`/quran/${j.surahNumber}` as any);
+                    }}
+                    style={[
+                      styles.juzCell,
+                      { backgroundColor: isCurrent ? colors.brand : rc.card,
+                        borderColor: isCurrent ? colors.brand : colors.border },
+                    ]}
+                  >
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: isCurrent ? "#fff" : colors.brand }}>
+                      {j.juz}
+                    </Text>
+                    <Text style={{ fontSize: 10, color: isCurrent ? "#ffffffCC" : rc.trans, marginTop: 2, textAlign: "center" }}>
+                      {j.nameEn}
+                    </Text>
+                  </Pressable>
+                );
+              }}
+            />
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -599,4 +769,8 @@ const styles = StyleSheet.create({
   arabic: { fontFamily: "NotoNaskhArabic", fontSize: 26, textAlign: "right", lineHeight: 48, marginTop: theme.spacing.md },
   translation: { marginTop: theme.spacing.md, lineHeight: 22 },
   translit: { fontSize: 14, fontStyle: "normal", lineHeight: 22, marginTop: 8 },
+  juzModal: { position: "absolute", bottom: 0, left: 0, right: 0, maxHeight: "70%", borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 32 },
+  juzModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#33445566" },
+  juzModalTitle: { fontSize: 17, fontWeight: "700" },
+  juzCell: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1 },
 });

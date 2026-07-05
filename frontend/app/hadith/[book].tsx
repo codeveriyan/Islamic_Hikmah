@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Share } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Share, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
@@ -7,6 +7,7 @@ import { theme } from "@/src/theme";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { HADITH_BOOKS } from "./index";
+import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
 
 type Hadith = {
   hadithnumber: number;
@@ -15,11 +16,12 @@ type Hadith = {
 };
 
 export default function HadithDetailScreen() {
-  const { book } = useLocalSearchParams<{ book: string }>();
+  const { book, chapter } = useLocalSearchParams<{ book: string; chapter?: string }>();
   const router = useRouter();
   const { colors, language } = useTheme();
 
   const bookMeta = useMemo(() => HADITH_BOOKS.find((b) => b.id === book), [book]);
+  const chapters = useMemo(() => HADITH_CHAPTERS[String(book)] || [], [book]);
 
   const getLanguageName = (code: string) => {
     switch (code) {
@@ -36,6 +38,7 @@ export default function HadithDetailScreen() {
   const [hadiths, setHadiths] = useState<Hadith[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [selectedChapterId, setSelectedChapterId] = useState("all");
   
   // Pagination
   const [limit, setLimit] = useState(15);
@@ -48,6 +51,16 @@ export default function HadithDetailScreen() {
   useEffect(() => {
     setTranslatedTexts({});
   }, [language]);
+
+  useEffect(() => {
+    const requestedChapter = Array.isArray(chapter) ? chapter[0] : chapter;
+    if (requestedChapter && chapters.some((item) => item.id === requestedChapter)) {
+      setSelectedChapterId(requestedChapter);
+    } else {
+      setSelectedChapterId("all");
+    }
+    setLimit(15);
+  }, [chapter, chapters]);
 
   // Load the full book once (English and Arabic in parallel)
   useEffect(() => {
@@ -140,13 +153,18 @@ export default function HadithDetailScreen() {
 
   // Filter Hadiths based on query
   const filtered = useMemo(() => {
-    if (!q) return hadiths;
+    const selectedChapter = chapters.find((item) => item.id === selectedChapterId);
+    const chapterHadiths = selectedChapter
+      ? hadiths.filter((h) => h.hadithnumber >= selectedChapter.first && h.hadithnumber <= selectedChapter.last)
+      : hadiths;
+
+    if (!q) return chapterHadiths;
     const isNum = !isNaN(Number(q));
     if (isNum) {
-      return hadiths.filter((h) => h.hadithnumber === Number(q));
+      return chapterHadiths.filter((h) => h.hadithnumber === Number(q));
     }
-    return hadiths.filter((h) => h.text.toLowerCase().includes(q.toLowerCase()));
-  }, [hadiths, q]);
+    return chapterHadiths.filter((h) => h.text.toLowerCase().includes(q.toLowerCase()));
+  }, [hadiths, q, chapters, selectedChapterId]);
 
   // Paginated subset
   const paginated = useMemo(() => {
@@ -157,6 +175,12 @@ export default function HadithDetailScreen() {
     if (limit < filtered.length) {
       setLimit((l) => l + 15);
     }
+  };
+
+  const selectChapter = (chapterId: string) => {
+    setSelectedChapterId(chapterId);
+    setLimit(15);
+    Haptics.selectionAsync().catch(() => {});
   };
 
   // Render individual Hadith card
@@ -270,6 +294,76 @@ export default function HadithDetailScreen() {
         )}
       </View>
 
+      {chapters.length > 0 && (
+        <View style={styles.chapterSection}>
+          <Text style={[styles.chapterTitle, { color: colors.onSurfaceMuted }]}>Chapters</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chapterChipsRow}
+          >
+            <Pressable
+              onPress={() => selectChapter("all")}
+              style={[
+                styles.chapterChip,
+                {
+                  backgroundColor: selectedChapterId === "all" ? colors.brand : colors.surfaceSecondary,
+                  borderColor: selectedChapterId === "all" ? colors.brand : colors.border,
+                },
+              ]}
+            >
+              <Text style={[
+                styles.chapterChipText,
+                { color: selectedChapterId === "all" ? colors.onBrandPrimary : colors.onSurface },
+              ]}>
+                All Hadith
+              </Text>
+              <Text style={[
+                styles.chapterRange,
+                { color: selectedChapterId === "all" ? colors.onBrandPrimary : colors.onSurfaceMuted },
+              ]}>
+                {hadiths.length}
+              </Text>
+            </Pressable>
+
+            {chapters.map((item) => {
+              const isActive = selectedChapterId === item.id;
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => selectChapter(item.id)}
+                  style={[
+                    styles.chapterChip,
+                    {
+                      backgroundColor: isActive ? colors.brand : colors.surfaceSecondary,
+                      borderColor: isActive ? colors.brand : colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.chapterChipText,
+                      { color: isActive ? colors.onBrandPrimary : colors.onSurface },
+                    ]}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.chapterRange,
+                      { color: isActive ? colors.onBrandPrimary : colors.onSurfaceMuted },
+                    ]}
+                  >
+                    {item.first}-{item.last}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {loading ? (
         <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
       ) : (
@@ -320,6 +414,31 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   search: { flex: 1, paddingVertical: 12, fontSize: 14 },
+  chapterSection: {
+    marginTop: 6,
+    marginBottom: 8,
+    paddingLeft: theme.spacing.lg,
+  },
+  chapterTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  chapterChipsRow: {
+    gap: 8,
+    paddingRight: theme.spacing.lg,
+  },
+  chapterChip: {
+    maxWidth: 240,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    gap: 2,
+  },
+  chapterChipText: { fontSize: 13, fontWeight: "800", maxWidth: 190 },
+  chapterRange: { fontSize: 11, fontWeight: "700" },
   hadithCard: {
     padding: theme.spacing.lg,
     borderRadius: theme.radius.lg,
