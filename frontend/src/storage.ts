@@ -547,7 +547,7 @@ export async function scheduleGoalNotifications(
         if (isNaN(h) || isNaN(m)) continue;
 
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
+          content: { ...content, sound: undefined },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: h,
@@ -563,7 +563,7 @@ export async function scheduleGoalNotifications(
       if (goalId === 'tahajjud' || goalId === 'nafl') {
         const t = times[goalId as keyof GoalNotifTimes];
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
+          content: { ...content, sound: undefined },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: t.hour,
@@ -580,7 +580,7 @@ export async function scheduleGoalNotifications(
         const { dayOfWeek, timeKey } = WEEKLY_MAP[goalId];
         const t = times[timeKey];
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
+          content: { ...content, sound: undefined },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
             weekday: dayOfWeek + 1, // expo-notifications: 1=Sun … 7=Sat
@@ -598,7 +598,7 @@ export async function scheduleGoalNotifications(
       if (times[timeKey]) {
         const t = times[timeKey];
         const id = await Notifications.scheduleNotificationAsync({
-          content: { ...content, sound: undefined, channelId: 'goal-reminders' },
+          content: { ...content, sound: undefined },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: t.hour,
@@ -679,3 +679,4 @@ export async function getQuranLastRead(): Promise<QuranLastRead | null> {
 export async function saveQuranLastRead(lr: Omit<QuranLastRead, 'readAt'>): Promise<void> {
   await AsyncStorage.setItem(QURAN_LAST_READ_KEY, JSON.stringify({ ...lr, readAt: Date.now() }));
 }
+

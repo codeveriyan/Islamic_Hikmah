@@ -84,7 +84,6 @@ export default function SettingsScreen() {
       default: return "English";
     }
   };
-  const appLanguage = getLanguageName(language);
   const [bgAzaan, setBgAzaan] = useState(true);
 
   useEffect(() => {
@@ -352,14 +351,14 @@ export default function SettingsScreen() {
             <Text style={[styles.sectionLabel, { color: colors.brand, marginTop: 12 }]}>FAQ</Text>
             <Text style={[styles.paragraph, { color: colors.onSurfaceSecondary }]}>
               Q: Does Islamic Hikmah work fully offline?{"\n"}
-              A: Yes, all Du'as, Dhikr counts, and downloaded Quran contents are saved locally.
+              A: Yes, all Du&apos;as, Dhikr counts, and downloaded Quran contents are saved locally.
             </Text>
             <Text style={[styles.paragraph, { color: colors.onSurfaceSecondary }]}>
               Q: How are prayer times calculated?{"\n"}
               A: Based on your current GPS location and chosen calculation method (e.g. MWL, Umm Al-Qura).
             </Text>
 
-            <Text style={[styles.sectionLabel, { color: colors.brand, marginTop: 16 }]}>Terms & Conditions</Text>
+            <Text style={[styles.sectionLabel, { color: colors.brand, marginTop: 16 }]}>Terms &amp; Conditions</Text>
             <Text style={[styles.paragraph, { color: colors.onSurfaceMuted, fontSize: 12 }]}>
               Islamic Hikmah is provided for educational and spiritual purposes. We do not store or collect any location or personal data on external servers.
             </Text>
