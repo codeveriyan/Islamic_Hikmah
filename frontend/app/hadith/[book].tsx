@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicat
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { theme } from "@/src/theme";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -19,6 +20,7 @@ export default function HadithDetailScreen() {
   const { book, chapter } = useLocalSearchParams<{ book: string; chapter?: string }>();
   const router = useRouter();
   const { colors, language } = useTheme();
+  const arabicFontFamily = useArabicFont();
 
   const bookMeta = useMemo(() => HADITH_BOOKS.find((b) => b.id === book), [book]);
   const chapters = useMemo(() => HADITH_CHAPTERS[String(book)] || [], [book]);
@@ -203,7 +205,7 @@ export default function HadithDetailScreen() {
 
         {/* Arabic Text (Default) */}
         {item.arabicText ? (
-          <Text style={[styles.arabicText, { color: colors.onSurface }]}>{item.arabicText}</Text>
+          <Text style={[styles.arabicText, { color: colors.onSurface, fontFamily: arabicFontFamily }]}>{item.arabicText}</Text>
         ) : null}
 
         {/* English Text (Default) */}

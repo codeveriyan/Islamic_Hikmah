@@ -43,6 +43,7 @@ type Mode = "light" | "dark";
 type LangCode = "en" | "ta" | "hi" | "ur" | "te" | "kn" | "ml";
 type FontSize = "small" | "medium" | "large";
 type FontColor = "default" | "gold" | "green" | "sepia";
+export type ArabicFontType = "indopak" | "uthmani" | "naskh";
 
 type Ctx = {
   mode: Mode;
@@ -54,6 +55,8 @@ type Ctx = {
   setFontSize: (size: FontSize) => void;
   fontColor: FontColor;
   setFontColor: (color: FontColor) => void;
+  arabicFont: ArabicFontType;
+  setArabicFont: (f: ArabicFontType) => void;
 };
 
 const ThemeCtx = createContext<Ctx>({
@@ -66,6 +69,8 @@ const ThemeCtx = createContext<Ctx>({
   setFontSize: () => {},
   fontColor: "default",
   setFontColor: () => {},
+  arabicFont: "indopak",
+  setArabicFont: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -73,6 +78,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [language, setLanguageState] = useState<LangCode>("en");
   const [fontSize, setFontSizeState] = useState<FontSize>("medium");
   const [fontColor, setFontColorState] = useState<FontColor>("default");
+  const [arabicFont, setArabicFontState] = useState<ArabicFontType>("indopak");
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then((v) => {
@@ -86,6 +92,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     AsyncStorage.getItem("islamic_hikmah:font_color_pref").then((c) => {
       if (c) setFontColorState(c as FontColor);
+    });
+    AsyncStorage.getItem("islamic_hikmah:quran_font_type").then((f) => {
+      if (f) setArabicFontState(f as ArabicFontType);
     });
   }, []);
 
@@ -109,9 +118,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     AsyncStorage.setItem("islamic_hikmah:font_color_pref", color);
   };
 
+  const setArabicFont = (f: ArabicFontType) => {
+    setArabicFontState(f);
+    AsyncStorage.setItem("islamic_hikmah:quran_font_type", f);
+  };
+
   const colors = mode === "dark" ? dark : light;
   return (
-    <ThemeCtx.Provider value={{ mode, colors, setMode, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor }}>
+    <ThemeCtx.Provider value={{ mode, colors, setMode, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor, arabicFont, setArabicFont }}>
       {children}
     </ThemeCtx.Provider>
   );
