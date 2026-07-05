@@ -6,7 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { getCategory } from "@/src/data/duas";
+import { CATEGORIES, getCategory } from "@/src/data/duas";
 import { toggleFavourite, getFavourites, Favourite } from "@/src/storage";
 import { transliterateToTamil } from "@/src/transliterator";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
@@ -47,6 +47,29 @@ export default function DuaCategoryScreen() {
   const currentTime = Platform.OS === "web" ? webCurrentTime : (status?.currentTime || 0);
   const duration = Platform.OS === "web" ? webDuration : (status?.duration || 0);
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  const stopCurrentAudio = () => {
+    if (Platform.OS === "web") {
+      webAudioInstance.current?.pause();
+      window.speechSynthesis?.cancel();
+    } else {
+      try {
+        player.pause();
+      } catch {}
+    }
+    setPlayingId(null);
+    setIsPlayingAll(false);
+  };
+
+  const switchCategory = (nextCategoryId: string) => {
+    if (!cat || nextCategoryId === cat.id) return;
+    stopCurrentAudio();
+    setShowInfo(false);
+    setActiveDuaIndex(0);
+    setViewMode("list");
+    setCounts({});
+    router.replace(`/dua/${nextCategoryId}` as any);
+  };
 
   // Font Size Styles
   const getArabicSize = () => {
@@ -455,6 +478,56 @@ export default function DuaCategoryScreen() {
   };
 
   const imgSource = CATEGORY_IMAGES[cat.id] || { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" };
+  const categorySwitcher = (
+    <View style={styles.categorySwitcher}>
+      <Text style={[styles.categorySwitcherTitle, { color: colors.onSurfaceMuted }]}>Dua Categories</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoryChipsRow}
+      >
+        {CATEGORIES.map((item) => {
+          const isActive = item.id === cat.id;
+          return (
+            <Pressable
+              key={item.id}
+              onPress={() => switchCategory(item.id)}
+              style={[
+                styles.categoryChip,
+                {
+                  backgroundColor: isActive ? colors.brand : colors.surfaceSecondary,
+                  borderColor: isActive ? colors.brand : colors.border,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={item.icon as any}
+                size={16}
+                color={isActive ? colors.onBrandPrimary : colors.brand}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.categoryChipText,
+                  { color: isActive ? colors.onBrandPrimary : colors.onSurface },
+                ]}
+              >
+                {item.title}
+              </Text>
+              <Text
+                style={[
+                  styles.categoryChipCount,
+                  { color: isActive ? colors.onBrandPrimary : colors.onSurfaceMuted },
+                ]}
+              >
+                {item.duas.length}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 
   if (viewMode === 'reader') {
     const activeItem = cat.duas[activeDuaIndex];
@@ -477,6 +550,10 @@ export default function DuaCategoryScreen() {
                 <MaterialCommunityIcons name="home-outline" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
+          </View>
+
+          <View style={styles.readerCategorySwitcher}>
+            {categorySwitcher}
           </View>
 
           {/* Carousel */}
@@ -668,6 +745,8 @@ export default function DuaCategoryScreen() {
       </ImageBackground>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100 }}>
+        {categorySwitcher}
+
         {/* PlayStore Replicated Related Articles Row */}
         <Pressable style={[styles.relatedArticlesCard, { backgroundColor: colors.surfaceSecondary }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -748,6 +827,24 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },
   heroTitle: { color: "#fff", fontSize: 18, fontWeight: "700", flex: 1, textAlign: "center" },
   heroSub: { color: "rgba(255,255,255,0.85)", paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
+
+  // Category switcher
+  categorySwitcher: { marginBottom: 16 },
+  readerCategorySwitcher: { paddingHorizontal: theme.spacing.lg },
+  categorySwitcherTitle: { fontSize: 12, fontWeight: "800", marginBottom: 8, textTransform: "uppercase" },
+  categoryChipsRow: { gap: 8, paddingRight: theme.spacing.lg },
+  categoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: 220,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+  },
+  categoryChipText: { fontSize: 13, fontWeight: "700", maxWidth: 140 },
+  categoryChipCount: { fontSize: 11, fontWeight: "800" },
   
   // List style (play store)
   relatedArticlesCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderRadius: theme.radius.md, marginBottom: 16 },

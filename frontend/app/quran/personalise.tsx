@@ -59,6 +59,7 @@ export default function PersonaliseScreen() {
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
   const [tajweedEnabled, setTajweedEnabled] = useState<boolean>(true);
+  const [readingMode, setReadingMode] = useState<"default" | "sepia" | "dark">("default");
 
   // Dialog state
   const [modalVisible, setModalVisible] = useState(false);
@@ -77,6 +78,9 @@ export default function PersonaliseScreen() {
     });
     AsyncStorage.getItem("islamic_hikmah:quran_show_transliteration").then((val) => {
       if (val !== null) setShowTransliteration(val === "true");
+    });
+    AsyncStorage.getItem("islamic_hikmah:quran_reading_mode").then((val) => {
+      if (val) setReadingMode(val as any);
     });
   }, []);
 
@@ -100,6 +104,11 @@ export default function PersonaliseScreen() {
     await AsyncStorage.setItem("islamic_hikmah:quran_show_transliteration", String(val));
   };
 
+  const saveReadingMode = async (val: "default" | "sepia" | "dark") => {
+    setReadingMode(val);
+    await AsyncStorage.setItem("islamic_hikmah:quran_reading_mode", val);
+  };
+
   const getFontFamily = (type: string) => {
     if (type === "indopak") return "AmiriBold";
     if (type === "uthmani") return "ScheherazadeNew";
@@ -120,7 +129,12 @@ export default function PersonaliseScreen() {
       </View>
 
       {/* Live Preview Container */}
-      <View style={[styles.previewArea, { backgroundColor: colors.surfaceSecondary }]}>
+      <View style={[styles.previewArea, {
+        backgroundColor:
+          readingMode === "sepia" ? "#F5ECD7" :
+          readingMode === "dark"  ? "#0D2137" :
+          colors.surfaceSecondary,
+      }]}>
         <Text
           style={[
             styles.arabicPreview,
@@ -184,6 +198,38 @@ export default function PersonaliseScreen() {
             >
               <Text style={[styles.sizeBtnTxt, { color: colors.onSurface }]}>A+</Text>
             </Pressable>
+          </View>
+        </View>
+
+        {/* Reading Mode — Default / Sepia / Dark */}
+        <View style={[styles.row, { borderBottomColor: colors.border }]}>
+          <View style={styles.rowLeft}>
+            <MaterialCommunityIcons name="brightness-6" size={22} color={colors.brandSecondary} />
+            <Text style={[styles.rowLabel, { color: colors.onSurface }]}>Reading Mode</Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            {(["default", "sepia", "dark"] as const).map((m) => {
+              const labels = { default: "Default", sepia: "Sepia", dark: "Dark" };
+              const bg = { default: colors.surfaceSecondary, sepia: "#F5ECD7", dark: "#0D2137" };
+              const tc = { default: colors.onSurface, sepia: "#5C3D1E", dark: "#C8DFF0" };
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{}); saveReadingMode(m); }}
+                  style={{
+                    paddingHorizontal: 10, paddingVertical: 5,
+                    borderRadius: 8,
+                    backgroundColor: bg[m],
+                    borderWidth: readingMode === m ? 2 : 1,
+                    borderColor: readingMode === m ? colors.brand : colors.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: readingMode === m ? "700" : "500", color: tc[m] }}>
+                    {labels[m]}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 
