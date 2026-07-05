@@ -144,7 +144,7 @@ export default function SearchScreen() {
             color={colors.onSurfaceMuted}
           />
           <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>
-            No results for "{query}"
+            No results for &quot;{query}&quot;
           </Text>
         </View>
       ) : (
