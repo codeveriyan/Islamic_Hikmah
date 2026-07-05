@@ -6,6 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { CATEGORIES, getCategory } from "@/src/data/duas";
 import { toggleFavourite, getFavourites, Favourite } from "@/src/storage";
 import { transliterateToTamil } from "@/src/transliterator";
@@ -17,6 +18,7 @@ export default function DuaCategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const router = useRouter();
   const { colors, language, fontSize, fontColor } = useTheme();
+  const arabicFontFamily = useArabicFont();
   const cat = getCategory(String(category));
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [translatedTexts, setTranslatedTexts] = useState<Record<string, { translation: string; transliteration?: string }>>({});
@@ -435,7 +437,7 @@ export default function DuaCategoryScreen() {
       <View style={{ width: SCREEN_WIDTH, padding: theme.spacing.lg }}>
         <ScrollView contentContainerStyle={styles.readerCardScroll} showsVerticalScrollIndicator={false}>
           <View style={[styles.readerCard, { backgroundColor: colors.surfaceSecondary }]}>
-            <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight() }]}>
+            <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight(), fontFamily: arabicFontFamily }]}>
               {item.arabic}
             </Text>
             

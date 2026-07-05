@@ -51,10 +51,10 @@ const FONTS: FontOption[] = [
 
 export default function PersonaliseScreen() {
   const router = useRouter();
-  const { colors, language, setLanguage } = useTheme();
+  const { colors, language, setLanguage, arabicFont, setArabicFont } = useTheme();
 
   // Settings states
-  const [fontType, setFontType] = useState<"indopak" | "uthmani" | "naskh">("indopak");
+  const [fontType, setFontType] = useState<"indopak" | "uthmani" | "naskh">(arabicFont);
   const [fontSize, setFontSize] = useState<number>(24);
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
@@ -86,6 +86,7 @@ export default function PersonaliseScreen() {
 
   const saveFontType = async (type: "indopak" | "uthmani" | "naskh") => {
     setFontType(type);
+    setArabicFont(type); // propagates to ALL screens via ThemeContext
     await AsyncStorage.setItem("islamic_hikmah:quran_font_type", type);
   };
 

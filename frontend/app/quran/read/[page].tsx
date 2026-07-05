@@ -29,36 +29,38 @@ const PAGE_TO_SURAH: Record<number, number> = (() => {
 })();
 
 const QuranPageItem = ({
-  item, isNightMode, colors, width, height, zoomScale,
+  item, isNightMode, colors, width, height,
 }: {
   item: number; isNightMode: boolean; colors: any;
-  width: number; height: number; zoomScale: number;
+  width: number; height: number;
 }) => {
   const [itemLoading, setItemLoading] = useState(true);
   const pageStr = String(item).padStart(3, "0");
   const imageUrl = `https://quran.islam-db.com/public/data/pages/quranpages_1024/images/page${pageStr}.png`;
+  const pageHeight = height - 160;
 
   return (
-    <View style={[styles.pageContainer, { width, height: height - 180, backgroundColor: isNightMode ? "#000000" : "#FFFFFF" }]}>
+    <View style={{ width, height: pageHeight, backgroundColor: isNightMode ? "#1A1A2E" : "#FAFAF7" }}>
       <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        maximumZoomScale={4}
+        minimumZoomScale={1}
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center" }}
+        bouncesZoom
       >
-        <Image
-          source={{ uri: imageUrl }}
-          style={{
-            width: width * 0.96 * zoomScale,
-            height: (height - 210) * zoomScale,
-            resizeMode: "contain",
-            ...(Platform.OS === "web" && isNightMode ? { filter: "brightness(0) invert(1)" } : {}),
-          } as any}
-          onLoadStart={() => setItemLoading(true)}
-          onLoadEnd={() => setItemLoading(false)}
-        />
-        {itemLoading && (
-          <ActivityIndicator size="large" color={colors.brand} style={StyleSheet.absoluteFillObject} />
-        )}
+        <View style={{ width, height: pageHeight, alignItems: "center", justifyContent: "center" }}>
+          {itemLoading && (
+            <ActivityIndicator size="large" color={colors.brand} style={StyleSheet.absoluteFillObject} />
+          )}
+          <Image
+            source={{ uri: imageUrl }}
+            style={{ width: width - 8, height: pageHeight - 8, resizeMode: "contain" }}
+            onLoadStart={() => setItemLoading(true)}
+            onLoadEnd={() => setItemLoading(false)}
+          />
+        </View>
       </ScrollView>
     </View>
   );
@@ -72,8 +74,6 @@ export default function QuranReadScreen() {
   const [currentPage, setCurrentPage] = useState(Number(page) || 1);
   const [isNightMode, setIsNightMode] = useState(false);
   const [bookmarks, setBookmarks] = useState<number[]>([]);
-  const [zoomScale, setZoomScale] = useState(1);
-
   const flatListRef = useRef<FlatList>(null);
   const initialDist = useRef<number | null>(null);
   const baseScale = useRef<number>(1);
@@ -132,9 +132,9 @@ export default function QuranReadScreen() {
   const renderPage = useCallback(({ item }: { item: number }) => (
     <QuranPageItem
       item={item} isNightMode={isNightMode} colors={colors}
-      width={width} height={height} zoomScale={zoomScale}
+      width={width} height={height}
     />
-  ), [isNightMode, colors, zoomScale]);
+  ), [isNightMode, colors]);
 
   const handleTouchStart = (e: any) => {
     const touches = e.nativeEvent.touches;
@@ -142,7 +142,6 @@ export default function QuranReadScreen() {
       const dx = touches[0].pageX - touches[1].pageX;
       const dy = touches[0].pageY - touches[1].pageY;
       initialDist.current = Math.sqrt(dx * dx + dy * dy);
-      baseScale.current = zoomScale;
     }
   };
 
@@ -152,7 +151,6 @@ export default function QuranReadScreen() {
       const dx = touches[0].pageX - touches[1].pageX;
       const dy = touches[0].pageY - touches[1].pageY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      setZoomScale(Math.min(Math.max((dist / initialDist.current) * baseScale.current, 1), 3));
     }
   };
 
@@ -161,7 +159,7 @@ export default function QuranReadScreen() {
   const iconColor = isNightMode ? "#FFF" : "#5C4E3C";
 
   return (
-    <View style={[styles.container, { backgroundColor: isNightMode ? "#000000" : "#FFFFFF" }]}>
+    <View style={[styles.container, { backgroundColor: isNightMode ? "#1A1A2E" : "#FAFAF7" }]}>
       {/* Header */}
       <View style={[styles.header, {
         borderBottomColor: isNightMode ? "#1E293B" : "#E2E8F0",
@@ -173,17 +171,7 @@ export default function QuranReadScreen() {
         <Text style={[styles.title, { color: iconColor }]}>
           Page {currentPage} of {TOTAL_PAGES}
         </Text>
-        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-          <Pressable onPress={() => setZoomScale(prev => Math.max(prev - 0.25, 1))} hitSlop={8}>
-            <MaterialCommunityIcons name="minus-box-outline" size={24} color={iconColor} />
-          </Pressable>
-          <Text style={{ color: iconColor, fontSize: 13, fontWeight: "700" }}>
-            {Math.round(zoomScale * 100)}%
-          </Text>
-          <Pressable onPress={() => setZoomScale(prev => Math.min(prev + 0.25, 3))} hitSlop={8}>
-            <MaterialCommunityIcons name="plus-box-outline" size={24} color={iconColor} />
-          </Pressable>
-        </View>
+        <Text style={{ color: iconColor, fontSize: 11, opacity: 0.6 }}>Pinch to zoom</Text>
       </View>
 
       {/* Page swiper */}
