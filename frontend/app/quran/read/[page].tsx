@@ -1,13 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import {
   View, Text, StyleSheet, Pressable, Dimensions,
-  FlatList, ActivityIndicator, Platform, Modal, FlatList as FL,
+  FlatList, Platform,
 } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
-import { theme } from "@/src/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { SURAH_START_PAGES } from "@/src/data/surahPages";
