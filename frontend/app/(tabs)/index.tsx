@@ -62,7 +62,7 @@ const CIRC = 2 * Math.PI * RADIUS;
 const QUICK_ACTIONS = [
   { id: "quran", title: "Quran", icon: "book-open-variant", route: "/quran", color: "#10B981" },
   { id: "hadith", title: "Hadith", icon: "book-open", route: "/hadith", color: "#F59E0B" },
-  { id: "goals", title: "Goals", icon: "checkbox-marked-circle-outline", route: "/goals", color: "#EC4899" },
+  { id: "seerah", title: "Seerah", icon: "account-star", route: "/seerah", color: "#EC4899" },
   { id: "dhikr", title: "Tasbih", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
   { id: "names", title: "99 Names", icon: "mosque", route: "/names", color: "#14B8A6" },
   { id: "prayer", title: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times", color: "#8B5CF6" },

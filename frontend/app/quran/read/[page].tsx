@@ -43,8 +43,10 @@ interface QuranPageItemProps {
   isNightMode: boolean;
   colors: any;
   zoomScale: number;
-  selectedAyah: any;
-  onSelectAyah: (ayah: any) => void;
+  playingAyah: { surah: number; ayah: number } | null;
+  onTapAyah: (ayah: any) => void;
+  onLongPressAyah: (ayah: any) => void;
+  bookmarkedVerses: Set<string>; // "surahNum-ayahNum"
   fontType: "indopak" | "uthmani" | "naskh";
 }
 
@@ -53,8 +55,10 @@ const QuranPageItem = ({
   isNightMode,
   colors,
   zoomScale,
-  selectedAyah,
-  onSelectAyah,
+  playingAyah,
+  onTapAyah,
+  onLongPressAyah,
+  bookmarkedVerses,
   fontType,
 }: QuranPageItemProps) => {
   const pageMap = PAGE_MAPPING.find((p) => p.page === item);
@@ -201,24 +205,46 @@ const QuranPageItem = ({
           <View key={`verses-${idx}`} style={styles.versesParagraph}>
             <Text style={{ textAlign: "center" }}>
               {seg.items.map((v, vIdx) => {
-                const isSelected = selectedAyah?.surahNumber === v.surahNumber && selectedAyah?.ayahNumber === v.ayahNumber;
+                const verseKey = `${v.surahNumber}-${v.ayahNumber}`;
+                const isBookmarked = bookmarkedVerses.has(verseKey);
+                const isPlaying = playingAyah?.surah === v.surahNumber && playingAyah?.ayah === v.ayahNumber;
                 return (
                   <Text
                     key={vIdx}
-                    onPress={() => onSelectAyah(v)}
+                    onPress={() => onTapAyah(v)}
+                    onLongPress={() => onLongPressAyah(v)}
                     style={[
                       styles.arabicWord,
                       {
                         fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
                         fontSize: zoomScale * 21,
                         lineHeight: zoomScale * 21 * 1.95,
-                        color: isSelected ? colors.brand : isNightMode ? "#F0F4F8" : "#2C1E10",
+                        // Priority: playing > bookmarked > normal
+                        color: isPlaying
+                          ? colors.brandSecondary   // teal while playing
+                          : isBookmarked
+                          ? colors.brand            // gold for bookmarked
+                          : isNightMode ? "#F0F4F8" : "#2C1E10",
+                        // Bold weight for bookmarked verses
+                        fontWeight: isBookmarked ? "900" : "400",
+                        // Highlighted background for bookmarked
+                        backgroundColor: isPlaying
+                          ? colors.brandSecondary + "28"
+                          : isBookmarked
+                          ? colors.brand + "22"
+                          : "transparent",
+                        borderRadius: 4,
                       },
-                      isSelected && { backgroundColor: colors.brand + "28" },
                     ]}
                   >
                     {v.arabic}
-                    <Text style={[styles.ayahEndCircle, { color: colors.brand, fontSize: zoomScale * 14 }]}>
+                    {isBookmarked && (
+                      <Text style={{ color: colors.brand, fontSize: zoomScale * 11 }}>🔖</Text>
+                    )}
+                    <Text style={[styles.ayahEndCircle, {
+                      color: isPlaying ? colors.brandSecondary : colors.brand,
+                      fontSize: zoomScale * 14
+                    }]}>
                       {` ۝${toArabicNumber(v.ayahNumber)} `}
                     </Text>
                   </Text>
@@ -243,14 +269,11 @@ export default function QuranReadScreen() {
   const [zoomScale, setZoomScale] = useState(1);
   const [fontType, setFontType] = useState<"indopak" | "uthmani" | "naskh">(arabicFont as any);
 
-  // Selected Verse details
-  const [selectedAyah, setSelectedAyah] = useState<any>(null);
-  const [translatedText, setTranslatedText] = useState("");
-  const [translating, setTranslating] = useState(false);
+  // Bookmarked verses as a Set of "surahNum-ayahNum" strings for O(1) lookup
+  const [bookmarkedVerses, setBookmarkedVerses] = useState<Set<string>>(new Set());
 
+  // Currently playing ayah label
   // Bookmark Prompt Modal State
-  const [bookmarkModalVisible, setBookmarkModalVisible] = useState(false);
-  const [verseInput, setVerseInput] = useState("");
 
   // Jump to Page Modal State
   const [jumpModalVisible, setJumpModalVisible] = useState(false);
@@ -286,6 +309,18 @@ export default function QuranReadScreen() {
             return item;
           });
           setBookmarks(migrated);
+          // Rebuild bookmarkedVerses Set from stored bookmarks
+          const verses = new Set<string>(
+            migrated
+              .filter(b => b.verse && b.verse.includes("Surah "))
+              .map(b => {
+                // Parse "Surah X Ayah Y" into "surahNum-ayahNum"
+                const m = b.verse!.match(/Surah (\d+) Ayah (\d+)/);
+                return m ? `${m[1]}-${m[2]}` : "";
+              })
+              .filter(Boolean)
+          );
+          setBookmarkedVerses(verses);
         } catch {
           setBookmarks([]);
         }
@@ -303,41 +338,7 @@ export default function QuranReadScreen() {
     }
   }, [audioStatus?.didJustFinish]);
 
-  // Translate active selection
-  useEffect(() => {
-    if (!selectedAyah) return;
-    const enText = selectedAyah.translation;
-    if (language === "en") {
-      setTranslatedText(enText);
-      return;
-    }
 
-    setTranslating(true);
-    const cacheKey = `islamic_hikmah:read_trans_${language}_${selectedAyah.surahNumber}_${selectedAyah.ayahNumber}`;
-    AsyncStorage.getItem(cacheKey).then((cached) => {
-      if (cached) {
-        setTranslatedText(cached);
-        setTranslating(false);
-      } else {
-        fetch(
-          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(
-            enText
-          )}`
-        )
-          .then((res) => res.json())
-          .then((data) => {
-            const result = data?.[0]?.map((x: any) => x[0]).join("") || enText;
-            setTranslatedText(result);
-            AsyncStorage.setItem(cacheKey, result);
-            setTranslating(false);
-          })
-          .catch(() => {
-            setTranslatedText(enText);
-            setTranslating(false);
-          });
-      }
-    });
-  }, [selectedAyah, language]);
 
   const saveLastRead = async (pageNum: number) => {
     try {
@@ -353,24 +354,11 @@ export default function QuranReadScreen() {
       setBookmarks(updated);
       await AsyncStorage.setItem("islamic_hikmah:bookmarked_pages", JSON.stringify(updated));
     } else {
-      setVerseInput("");
-      setBookmarkModalVisible(true);
+      const newBookmark: QuranBookmark = { page: currentPage, timestamp: Date.now() };
+      const updated = [...bookmarks, newBookmark];
+      setBookmarks(updated);
+      await AsyncStorage.setItem("islamic_hikmah:bookmarked_pages", JSON.stringify(updated));
     }
-  };
-
-  const saveBookmark = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const updated = [
-      ...bookmarks,
-      {
-        page: currentPage,
-        verse: verseInput.trim() || undefined,
-        timestamp: Date.now(),
-      },
-    ];
-    setBookmarks(updated);
-    await AsyncStorage.setItem("islamic_hikmah:bookmarked_pages", JSON.stringify(updated));
-    setBookmarkModalVisible(false);
   };
 
   const handleJumpPage = () => {
@@ -381,7 +369,6 @@ export default function QuranReadScreen() {
       flatListRef.current?.scrollToIndex({ index: pageNum - 1, animated: false });
       setCurrentPage(pageNum);
       saveLastRead(pageNum);
-      setSelectedAyah(null);
     } else {
       alert("Please enter a valid page number between 1 and 604.");
     }
@@ -392,6 +379,37 @@ export default function QuranReadScreen() {
     const val = !isNightMode;
     setIsNightMode(val);
     await AsyncStorage.setItem("islamic_hikmah:read_night_mode", String(val));
+  };
+
+  // Tap: play the verse immediately
+  const onTapAyah = (v: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    playSingleAyah(v.surahNumber, v.ayahNumber);
+  };
+
+  // Long press: toggle bookmark on the verse + haptic feedback
+  const onLongPressAyah = async (v: any) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const verseKey = `${v.surahNumber}-${v.ayahNumber}`;
+    const bookmarkName = `Surah ${v.surahNumber} Ayah ${v.ayahNumber}`;
+
+    setBookmarkedVerses(prev => {
+      const next = new Set(prev);
+      if (next.has(verseKey)) next.delete(verseKey);
+      else next.add(verseKey);
+      return next;
+    });
+
+    // Persist to bookmarks list
+    const alreadyBookmarked = bookmarks.some(b => b.verse === bookmarkName);
+    let updated = [...bookmarks];
+    if (alreadyBookmarked) {
+      updated = updated.filter(b => b.verse !== bookmarkName);
+    } else {
+      updated.push({ page: currentPage, verse: bookmarkName, timestamp: Date.now() });
+    }
+    setBookmarks(updated);
+    await AsyncStorage.setItem("islamic_hikmah:bookmarked_pages", JSON.stringify(updated));
   };
 
   const playSingleAyah = (surahNum: number, ayahNum: number) => {
@@ -422,7 +440,6 @@ export default function QuranReadScreen() {
     if (pageNum >= 1 && pageNum <= TOTAL_PAGES && pageNum !== currentPage) {
       setCurrentPage(pageNum);
       saveLastRead(pageNum);
-      setSelectedAyah(null);
       if (player) {
         player.pause();
         setPlayingAyah(null);
@@ -438,19 +455,21 @@ export default function QuranReadScreen() {
     <ScrollView
       showsVerticalScrollIndicator={false}
       style={{ width, height: height - 150, backgroundColor: isNightMode ? "#0D1E2E" : "#FAF7F0" }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 24, paddingBottom: selectedAyah ? 280 : 120 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 24, paddingBottom: 100 }}
     >
       <QuranPageItem
         item={item}
         isNightMode={isNightMode}
         colors={colors}
         zoomScale={zoomScale}
-        selectedAyah={selectedAyah}
-        onSelectAyah={setSelectedAyah}
+        playingAyah={playingAyah}
+        onTapAyah={onTapAyah}
+        onLongPressAyah={onLongPressAyah}
+        bookmarkedVerses={bookmarkedVerses}
         fontType={fontType}
       />
     </ScrollView>
-  ), [isNightMode, colors, zoomScale, selectedAyah, fontType]);
+  ), [isNightMode, colors, zoomScale, playingAyah, bookmarkedVerses, fontType]);
 
   // Touch gesture handlers for pinch to zoom
   const handleTouchStart = (e: any) => {
@@ -521,105 +540,12 @@ export default function QuranReadScreen() {
           removeClippedSubviews={Platform.OS === "android"}
         />
       </View>
-
-      {/* Selected Ayah bottom actions drawer */}
-      {selectedAyah && (
-        <View style={[styles.drawer, { backgroundColor: colors.surfaceSecondary, borderTopColor: colors.border }]}>
-          <View style={styles.drawerHeader}>
-            <View>
-              <Text style={[styles.drawerTitle, { color: colors.onSurface }]}>
-                Surah {selectedAyah.surahName} · Ayah {selectedAyah.ayahNumber}
-              </Text>
-              <Text style={[styles.drawerSubtitle, { color: colors.onSurfaceMuted }]}>
-                Page {currentPage} of {TOTAL_PAGES}
-              </Text>
-            </View>
-            <Pressable onPress={() => setSelectedAyah(null)} hitSlop={10}>
-              <MaterialCommunityIcons name="close-circle" size={24} color={colors.onSurfaceMuted} />
-            </Pressable>
-          </View>
-
-          <ScrollView style={styles.drawerScroll} contentContainerStyle={{ paddingBottom: 16 }}>
-            <Text style={[styles.drawerArabicText, { color: colors.onSurface }]}>
-              {selectedAyah.arabic}
-            </Text>
-            <Text style={[styles.drawerTranslit, { color: colors.brand }]}>
-              {selectedAyah.transliteration}
-            </Text>
-            {translating ? (
-              <ActivityIndicator color={colors.brand} style={{ marginVertical: 12 }} />
-            ) : (
-              <Text style={[styles.drawerTranslation, { color: colors.onSurfaceMuted }]}>
-                {translatedText}
-              </Text>
-            )}
-          </ScrollView>
-
-          <View style={styles.drawerActionBar}>
-            <Pressable
-              onPress={() => playSingleAyah(selectedAyah.surahNumber, selectedAyah.ayahNumber)}
-              style={[
-                styles.actionBtn,
-                {
-                  backgroundColor:
-                    playingAyah && playingAyah.surah === selectedAyah.surahNumber && playingAyah.ayah === selectedAyah.ayahNumber
-                      ? colors.brand + "22"
-                      : colors.surface,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={
-                  playingAyah && playingAyah.surah === selectedAyah.surahNumber && playingAyah.ayah === selectedAyah.ayahNumber && audioStatus?.playing
-                    ? "pause"
-                    : "play"
-                }
-                size={18}
-                color={colors.brand}
-              />
-              <Text style={[styles.actionBtnTxt, { color: colors.brand }]}>
-                {playingAyah && playingAyah.surah === selectedAyah.surahNumber && playingAyah.ayah === selectedAyah.ayahNumber && audioStatus?.playing
-                  ? "Pause"
-                  : "Play Ayah"}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={async () => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                const bookmarkName = `Surah ${selectedAyah.surahName} Ayah ${selectedAyah.ayahNumber}`;
-                const alreadyBookmarked = bookmarks.some((b) => b.page === currentPage && b.verse === bookmarkName);
-                let updated = [...bookmarks];
-                if (alreadyBookmarked) {
-                  updated = updated.filter((b) => !(b.page === currentPage && b.verse === bookmarkName));
-                } else {
-                  updated.push({ page: currentPage, verse: bookmarkName, timestamp: Date.now() });
-                }
-                setBookmarks(updated);
-                await AsyncStorage.setItem("islamic_hikmah:bookmarked_pages", JSON.stringify(updated));
-              }}
-              style={[styles.actionBtn, { backgroundColor: colors.surface }]}
-            >
-              {(() => {
-                const bookmarkName = `Surah ${selectedAyah.surahName} Ayah ${selectedAyah.ayahNumber}`;
-                const isBookmarked = bookmarks.some((b) => b.page === currentPage && b.verse === bookmarkName);
-                return (
-                  <>
-                    <MaterialCommunityIcons
-                      name={isBookmarked ? "bookmark" : "bookmark-outline"}
-                      size={18}
-                      color={colors.brand}
-                    />
-                    <Text style={[styles.actionBtnTxt, { color: colors.brand }]}>
-                      {isBookmarked ? "Bookmarked" : "Bookmark"}
-                    </Text>
-                  </>
-                );
-              })()}
-            </Pressable>
-          </View>
-        </View>
-      )}
+      {/* Long press hint — helps users discover the gesture */}
+      <View style={{ backgroundColor: colors.brand + "14", paddingVertical: 5, alignItems: "center" }}>
+        <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>
+          TAP verse to play  ·  LONG PRESS verse to bookmark 🔖
+        </Text>
+      </View>
 
       {/* Bottom Bar Controls */}
       <View style={[styles.bottomBar, { 
@@ -665,52 +591,6 @@ export default function QuranReadScreen() {
           <MaterialCommunityIcons name="cog-outline" size={24} color={isNightMode ? "#FFF" : "#5C4E3C"} />
         </Pressable>
       </View>
-
-      {/* Bookmark Modal Prompt Dialog */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={bookmarkModalVisible}
-        onRequestClose={() => setBookmarkModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setBookmarkModalVisible(false)}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary }]}>
-            <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Bookmark Verse</Text>
-            <Text style={[styles.modalSub, { color: colors.onSurfaceMuted }]}>
-              Type the verse number you wish to remember on page {currentPage}:
-            </Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                { 
-                  color: colors.onSurface, 
-                  borderColor: colors.border, 
-                  backgroundColor: colors.surface 
-                }
-              ]}
-              placeholder="e.g. Verse 12 (Optional)"
-              placeholderTextColor={colors.onSurfaceMuted}
-              value={verseInput}
-              onChangeText={setVerseInput}
-              autoFocus={true}
-            />
-            <View style={styles.modalButtons}>
-              <Pressable
-                onPress={() => setBookmarkModalVisible(false)}
-                style={[styles.modalBtn, { backgroundColor: colors.surface }]}
-              >
-                <Text style={[styles.modalBtnTxt, { color: colors.onSurfaceMuted }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={saveBookmark}
-                style={[styles.modalBtn, { backgroundColor: colors.brand }]}
-              >
-                <Text style={[styles.modalBtnTxt, { color: "#FFF" }]}>Save</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
 
       {/* Jump to Page Modal Dialog */}
       <Modal
@@ -838,37 +718,6 @@ const styles = StyleSheet.create({
       android: { elevation: 8 },
       web: { boxShadow: "0 -4px 12px rgba(0,0,0,0.08)" },
     }),
-  },
-  drawerHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  drawerTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  drawerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  drawerScroll: {
-    maxHeight: 180,
-    marginVertical: 8,
-  },
-  drawerArabicText: {
-    fontFamily: "AmiriBold",
-    fontSize: 25,
-    textAlign: "right",
-    lineHeight: 46,
-    marginBottom: 8,
-  },
-  drawerTranslit: {
-    fontSize: 13,
-    fontStyle: "italic",
-    lineHeight: 18,
-    marginBottom: 8,
   },
   drawerTranslation: {
     fontSize: 14,

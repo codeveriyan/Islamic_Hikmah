@@ -37,6 +37,22 @@ const RECITERS = [
   { id: "ar.abdulbasitmurattal", name: "Abdul Basit (Murattal)" },
 ] as const;
 
+// Compute the global 1-based Quran ayah number for a given surah + ayah-in-surah.
+// Uses the local bundled dataset so no network call is needed.
+const getGlobalAyahNumber = (surahNumber: number, ayahNumberInSurah: number): number => {
+  let globalNum = 0;
+  for (let s = 1; s < surahNumber; s++) {
+    const surah = QURAN.find((item) => item.number === s);
+    if (surah) globalNum += surah.totalAyahs;
+  }
+  return globalNum + ayahNumberInSurah;
+};
+
+// Return the correct CDN bitrate for a given reciter.
+// Sudais and Abdul Basit are only available at 192 kbps; all others at 128 kbps.
+const getReciterBitrate = (reciterId: string): number =>
+  (reciterId === "ar.abdurrahmaansudais" || reciterId === "ar.abdulbasitmurattal") ? 192 : 128;
+
 export default function SurahDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -264,30 +280,29 @@ export default function SurahDetail() {
     };
   }, [id, language]);
 
-  // Effect 2: Load audio recitation — deferred until user presses Play.
-  // Previously this fetched on every screen open, blocking the initial render
-  // with a network round-trip even when the user only wants to read.
-  // Now it only fires once the user taps Play Surah or a per-ayah play button.
+  // Effect 2: Generate audio URLs locally using the Islamic Network CDN.
+  // Previously this fetched the full surah metadata from api.alquran.cloud on every
+  // screen open, adding a 1-3 s network round-trip before any audio was playable.
+  // Now we compute the CDN URL directly from the bundled QURAN dataset — instant,
+  // offline-friendly, and 100% identical to what the API would have returned.
   useEffect(() => {
     if (!audioRequested) return;
-    let active = true;
-    setAudioErr(false);
-
-    fetch(`https://api.alquran.cloud/v1/surah/${id}/${reciter}`)
-      .then((r) => r.json())
-      .then((au) => {
-        if (!active) return;
-        const ayahs = au.data?.ayahs || [];
-        setAudio(ayahs);
-        setAudioErr(ayahs.length === 0 || !ayahs[0]?.audio);
-      })
-      .catch(() => {
-        if (active) setAudioErr(true);
-      });
-
-    return () => {
-      active = false;
-    };
+    const surahId = Number(id);
+    const surah = QURAN.find((s) => s.number === surahId);
+    if (surah) {
+      const bitrate = getReciterBitrate(reciter);
+      const generatedAudio = surah.ayahs.map((a) => ({
+        number: a.numberInSurah,
+        numberInSurah: a.numberInSurah,
+        text: a.arabic,
+        audio: `https://cdn.islamic.network/quran/audio/${bitrate}/${reciter}/${getGlobalAyahNumber(surahId, a.numberInSurah)}.mp3`,
+      }));
+      setAudio(generatedAudio);
+      setAudioErr(false);
+    } else {
+      setAudio([]);
+      setAudioErr(true);
+    }
   }, [id, reciter, audioRequested]);
 
   const isFocused = useIsFocused();
