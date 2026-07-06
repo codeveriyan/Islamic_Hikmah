@@ -6,6 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { CATEGORIES, getCategory } from "@/src/data/duas";
 import { toggleFavourite, getFavourites, Favourite } from "@/src/storage";
@@ -18,6 +19,7 @@ export default function DuaCategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const router = useRouter();
   const { colors, language, fontSize, fontColor } = useTheme();
+  const { t } = useTranslation(language);
   const arabicFontFamily = useArabicFont();
   const cat = getCategory(String(category));
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
@@ -27,6 +29,7 @@ export default function DuaCategoryScreen() {
   const [viewMode, setViewMode] = useState<'list' | 'reader'>('list');
   const [activeDuaIndex, setActiveDuaIndex] = useState<number>(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [scrollProgress, setScrollProgress] = useState(0);
   
   // Audio state
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -514,7 +517,7 @@ export default function DuaCategoryScreen() {
                   { color: isActive ? colors.onBrandPrimary : colors.onSurface },
                 ]}
               >
-                {item.title}
+                {t(item.id)}
               </Text>
               <Text
                 style={[
@@ -535,18 +538,27 @@ export default function DuaCategoryScreen() {
     const activeItem = cat.duas[activeDuaIndex];
     const isFav = favIds.has(activeItem.id);
 
+    const readerPct = Math.round(((activeDuaIndex + 1) / cat.duas.length) * 100);
+
     return (
       <View style={[StyleSheet.absoluteFillObject, styles.readerContainer, { backgroundColor: colors.surface }]}>
+        {/* Reading progress bar */}
+        <View style={{ height: 3, backgroundColor: colors.surfaceSecondary, width: "100%" }}>
+          <View style={{ height: 3, backgroundColor: colors.brand, width: `${readerPct}%` }} />
+        </View>
+
         <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
           {/* Header */}
           <View style={styles.readerHeader}>
             <Pressable onPress={() => setViewMode('list')} hitSlop={10}>
               <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
             </Pressable>
-            <Text style={[styles.readerHeaderTitle, { color: colors.onSurface }]}>{cat.title}</Text>
+            <Text style={[styles.readerHeaderTitle, { color: colors.onSurface }]}>{t(cat.id)}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={[styles.pageIndicator, { backgroundColor: colors.brand + "22" }]}>
-                <Text style={[styles.pageIndicatorText, { color: colors.brand }]}>{activeDuaIndex + 1} / {cat.duas.length}</Text>
+                <Text style={[styles.pageIndicatorText, { color: colors.brand }]}>
+                  {activeDuaIndex + 1}/{cat.duas.length} · {readerPct}% {t("readPercent")}
+                </Text>
               </View>
               <Pressable onPress={() => router.push("/")} hitSlop={10} testID="dua-reader-home">
                 <MaterialCommunityIcons name="home-outline" size={22} color={colors.onSurface} />
@@ -578,19 +590,19 @@ export default function DuaCategoryScreen() {
           <View style={[styles.actionsToolbar, { backgroundColor: colors.surfaceSecondary }]}>
             <Pressable onPress={() => playDua(activeItem)} style={styles.actionIconBtn}>
               <MaterialCommunityIcons name={playingId === activeItem.id ? "pause" : "play"} size={22} color={colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>Play</Text>
+              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("play") || "Play"}</Text>
             </Pressable>
             <Pressable onPress={() => setShowInfo(!showInfo)} style={styles.actionIconBtn}>
               <MaterialCommunityIcons name="information" size={22} color={colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>Info</Text>
+              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("info") || "Info"}</Text>
             </Pressable>
             <Pressable onPress={() => onShare(activeItem)} style={styles.actionIconBtn}>
               <MaterialCommunityIcons name="share-variant" size={22} color={colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>Share</Text>
+              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("share") || "Share"}</Text>
             </Pressable>
             <Pressable onPress={() => onFav(activeDuaIndex)} style={styles.actionIconBtn}>
               <MaterialCommunityIcons name={isFav ? "heart" : "heart-outline"} size={22} color={isFav ? theme.colors.error : colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isFav ? "Liked" : "Like"}</Text>
+              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isFav ? t("liked") : t("like")}</Text>
             </Pressable>
           </View>
 
@@ -736,24 +748,44 @@ export default function DuaCategoryScreen() {
               <Pressable onPress={() => router.back()} hitSlop={10} testID="back-btn">
                 <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
               </Pressable>
-              <Text style={styles.heroTitle}>{cat.title}</Text>
+              <Text style={styles.heroTitle}>{t(cat.id)}</Text>
               <Pressable onPress={() => router.push("/")} hitSlop={10} testID="dua-home">
                 <MaterialCommunityIcons name="home-outline" size={24} color="#fff" />
               </Pressable>
             </View>
-            <Text style={styles.heroSub}>{cat.duas.length} Du{`'`}a{cat.duas.length === 1 ? "" : "s"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginRight: 16 }}>
+              <Text style={styles.heroSub}>{cat.duas.length} {t("duas")}</Text>
+              <Text style={{ fontSize: 11, color: "#fff", fontWeight: "700", opacity: 0.8 }}>
+                {Math.round(scrollProgress * 100)}% {t("readPercent")}
+              </Text>
+            </View>
           </SafeAreaView>
         </LinearGradient>
       </ImageBackground>
 
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100 }}>
+      {/* Reading progress bar */}
+      <View style={{ height: 3, backgroundColor: colors.surfaceSecondary, width: "100%" }}>
+        <View style={{ height: 3, backgroundColor: colors.brand, width: `${Math.round(scrollProgress * 100)}%` }} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 100 }}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          const scrollable = contentSize.height - layoutMeasurement.height;
+          if (scrollable > 0) {
+            setScrollProgress(Math.min(1, contentOffset.y / scrollable));
+          }
+        }}
+      >
         {categorySwitcher}
 
         {/* PlayStore Replicated Related Articles Row */}
         <Pressable style={[styles.relatedArticlesCard, { backgroundColor: colors.surfaceSecondary }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
             <MaterialCommunityIcons name="book-open-outline" size={24} color={colors.brand} />
-            <Text style={[styles.relatedArticlesText, { color: colors.onSurface }]}>Related Articles</Text>
+            <Text style={[styles.relatedArticlesText, { color: colors.onSurface }]}>{t("relatedArticles")}</Text>
           </View>
           <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
         </Pressable>
@@ -784,11 +816,11 @@ export default function DuaCategoryScreen() {
       <View style={[styles.stickyBottomBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
         <Pressable style={[styles.playAllBtn, { backgroundColor: colors.brand }]} onPress={playAll} testID="play-all-btn">
           <MaterialCommunityIcons name="play" size={20} color={colors.onBrandPrimary} />
-          <Text style={[styles.playAllText, { color: colors.onBrandPrimary }]}>Play All</Text>
+          <Text style={[styles.playAllText, { color: colors.onBrandPrimary }]}>{t("playAll")}</Text>
         </Pressable>
         <Pressable style={[styles.favouriteBtn, { borderColor: colors.brand }]} onPress={toggleCategoryFavourite}>
           <MaterialCommunityIcons name="heart-outline" size={20} color={colors.brand} />
-          <Text style={[styles.favouriteText, { color: colors.brand }]}>Favourite</Text>
+          <Text style={[styles.favouriteText, { color: colors.brand }]}>{t("favourite")}</Text>
         </Pressable>
       </View>
     </View>
@@ -823,7 +855,13 @@ const CATEGORY_IMAGES: Record<string, any> = {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.surface },
+  container: { 
+    flex: 1, 
+    backgroundColor: theme.colors.surface,
+    ...Platform.select({
+      web: { height: "100%", overflow: "hidden" } as any
+    })
+  },
   heroImage: { width: "100%" },
   heroScrim: { paddingBottom: 24, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },

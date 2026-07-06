@@ -4,23 +4,26 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
 
+import { useTranslation } from "@/src/localization";
+
 const ITEMS = [
-  { id: "dhikr", label: "Tasbih Counter", icon: "circle-double", route: "/dhikr" },
-  { id: "quran", label: "The Noble Quran", icon: "book-open-variant", route: "/quran" },
-  { id: "hadith", label: "Hadith Collections", icon: "book-open", route: "/hadith" },
-  { id: "names", label: "99 Names of Allah", icon: "mosque", route: "/names" },
-  { id: "prayer", label: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times" },
-  { id: "qibla", label: "Qibla Finder", icon: "compass", route: "/qibla" },
-  { id: "calendar", label: "Hijri Calendar", icon: "calendar-month", route: "/hijri-calendar" },
-  { id: "fav", label: "Favourites", icon: "heart", route: "/(tabs)/favourites" },
-  { id: "articles", label: "Our Publications", icon: "newspaper-variant", route: "/(tabs)/articles" },
-  { id: "emotions", label: "Emotions", icon: "emoticon", route: "/(tabs)/emotions" },
-  { id: "reminder", label: "Reminders", icon: "bell", route: "/(tabs)/reminder" },
+  { id: "tasbihCounter", icon: "circle-double", route: "/dhikr" },
+  { id: "nobleQuran", icon: "book-open-variant", route: "/quran" },
+  { id: "hadithCollections", icon: "book-open", route: "/hadith" },
+  { id: "namesOfAllah", icon: "mosque", route: "/names" },
+  { id: "prayerTimes", icon: "clock-time-eight", route: "/prayer-times" },
+  { id: "qiblaFinder", icon: "compass", route: "/qibla" },
+  { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar" },
+  { id: "favourites", icon: "heart", route: "/(tabs)/favourites" },
+  { id: "publications", icon: "newspaper-variant", route: "/(tabs)/articles" },
+  { id: "emotions", icon: "emoticon", route: "/(tabs)/emotions" },
+  { id: "reminders", icon: "bell", route: "/(tabs)/reminder" },
 ] as const;
 
 export default function MenuScreen() {
   const router = useRouter();
-  const { colors, mode, setMode } = useTheme();
+  const { colors, mode, setMode, language } = useTheme();
+  const { t } = useTranslation(language);
 
   const share = async () => {
     try {
@@ -52,7 +55,7 @@ export default function MenuScreen() {
           testID="theme-light"
         >
           <MaterialCommunityIcons name="lightbulb-on" size={18} color={mode === "light" ? colors.onBrandPrimary : colors.onSurface} />
-          <Text style={[styles.themeTxt, { color: mode === "light" ? colors.onBrandPrimary : colors.onSurface }]}>LIGHT MODE</Text>
+          <Text style={[styles.themeTxt, { color: mode === "light" ? colors.onBrandPrimary : colors.onSurface }]}>{t("lightMode").toUpperCase() || "LIGHT MODE"}</Text>
         </Pressable>
         <Pressable
           onPress={() => setMode("dark")}
@@ -78,7 +81,7 @@ export default function MenuScreen() {
             testID={`menu-${it.id}`}
           >
             <MaterialCommunityIcons name={it.icon as any} size={22} color={colors.brandSecondary} />
-            <Text style={[styles.rowLabel, { color: colors.onSurface }]}>{it.label}</Text>
+            <Text style={[styles.rowLabel, { color: colors.onSurface }]}>{t(it.id)}</Text>
             <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
           </Pressable>
         ))}

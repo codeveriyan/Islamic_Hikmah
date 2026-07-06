@@ -17,6 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import {
   getGoalNotifTimes,
   saveGoalNotifTimes,
@@ -62,7 +63,8 @@ function fmt12(hour: number, minute: number): string {
 
 export default function GoalNotifSettingsScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
   const [times, setTimes] = useState<GoalNotifTimes | null>(null);
   const [editing, setEditing] = useState<keyof GoalNotifTimes | null>(null);
   const [inputH, setInputH] = useState("06");
@@ -212,13 +214,13 @@ export default function GoalNotifSettingsScreen() {
                 onPress={() => setEditing(null)}
                 style={[styles.modalBtn, { backgroundColor: colors.surfaceSecondary }]}
               >
-                <Text style={[styles.modalBtnTxt, { color: colors.onSurface }]}>Cancel</Text>
+                <Text style={[styles.modalBtnTxt, { color: colors.onSurface }]}>{t("cancel")}</Text>
               </Pressable>
               <Pressable
                 onPress={saveEdit}
                 style={[styles.modalBtn, { backgroundColor: colors.brand }]}
               >
-                <Text style={[styles.modalBtnTxt, { color: "#fff" }]}>Save</Text>
+                <Text style={[styles.modalBtnTxt, { color: "#fff" }]}>{t("save")}</Text>
               </Pressable>
             </View>
           </View>

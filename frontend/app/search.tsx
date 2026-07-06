@@ -12,6 +12,7 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { CATEGORIES } from "@/src/data/duas";
 import { SURAH_LIST } from "@/src/data/surahList";
 
@@ -56,7 +57,8 @@ const TYPE_COLOR: Record<Result["type"], string> = {
 
 export default function SearchScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
   const [query, setQuery] = useState("");
 
   const results = useMemo<Result[]>(() => {

@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Share, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Share, ScrollView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { theme } from "@/src/theme";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -20,6 +21,7 @@ export default function HadithDetailScreen() {
   const { book, chapter } = useLocalSearchParams<{ book: string; chapter?: string }>();
   const router = useRouter();
   const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
   const arabicFontFamily = useArabicFont();
 
   const bookMeta = useMemo(() => HADITH_BOOKS.find((b) => b.id === book), [book]);
@@ -33,6 +35,23 @@ export default function HadithDetailScreen() {
       case "te": return "Telugu (తెలుగు)";
       case "kn": return "Kannada (ಕನ್ನಡ)";
       case "ml": return "Malayalam (മലയാളം)";
+      case "bn": return "Bengali (বাংলা)";
+      case "gu": return "Gujarati (ગુજરાતી)";
+      case "mr": return "Marathi (మราठी)";
+      case "pa": return "Punjabi (ਪੰਜਾਬੀ)";
+      case "ar": return "Arabic (العربية)";
+      case "fr": return "French (Français)";
+      case "es": return "Spanish (Español)";
+      case "tr": return "Turkish (Türkçe)";
+      case "id": return "Indonesian (Bahasa Indonesia)";
+      case "ru": return "Russian (Русский)";
+      case "fa": return "Persian / Farsi (فارسی)";
+      case "ha": return "Hausa (هَوُسَ)";
+      case "so": return "Somali (Soomaali)";
+      case "ms": return "Malay (Bahasa Melayu)";
+      case "uz": return "Uzbek (Oʻzbekcha)";
+      case "yo": return "Yoruba (Yorùbá)";
+      case "ps": return "Pashto (پښتو)";
       default: return "English";
     }
   };
@@ -44,6 +63,7 @@ export default function HadithDetailScreen() {
   
   // Pagination
   const [limit, setLimit] = useState(15);
+  const [scrollProgress, setScrollProgress] = useState(0);
   
   // Translation cache states
   const [translatedTexts, setTranslatedTexts] = useState<Record<number, string>>({});
@@ -245,7 +265,7 @@ export default function HadithDetailScreen() {
               ) : (
                 <>
                   <MaterialCommunityIcons name="translate" size={16} color={colors.brand} />
-                  <Text style={[styles.translateBtnTxt, { color: colors.brand }]}>Translate to {getLanguageName(language)}</Text>
+                  <Text style={[styles.translateBtnTxt, { color: colors.brand }]}>{t("translateTo").replace("{lang}", getLanguageName(language))}</Text>
                 </>
               )}
             </Pressable>
@@ -270,11 +290,33 @@ export default function HadithDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>{bookMeta.name}</Text>
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <Text style={[styles.title, { color: colors.onSurface }]}>{bookMeta.name}</Text>
+          {filtered.length > 0 && (() => {
+            const loadedFraction = Math.min(limit, filtered.length) / (filtered.length || 1);
+            const overallPct = Math.min(100, Math.max(0, Math.round(scrollProgress * loadedFraction * 100)));
+            return (
+              <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "700", marginTop: 1 }}>
+                {overallPct}% read · {Math.min(limit, filtered.length)} of {filtered.length} hadiths
+              </Text>
+            );
+          })()}
+        </View>
         <Pressable onPress={() => router.push("/")} hitSlop={10} testID="hadith-home">
           <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
         </Pressable>
       </View>
+
+      {/* Reading progress bar */}
+      {filtered.length > 0 && (() => {
+        const loadedFraction = Math.min(limit, filtered.length) / (filtered.length || 1);
+        const overallPct = Math.min(100, Math.max(0, Math.round(scrollProgress * loadedFraction * 100)));
+        return (
+          <View style={{ height: 3, backgroundColor: colors.surfaceSecondary, width: "100%" }}>
+            <View style={{ height: 3, backgroundColor: colors.brand, width: `${overallPct}%` }} />
+          </View>
+        );
+      })()}
 
       {/* Search Input Bar */}
       <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
@@ -285,7 +327,7 @@ export default function HadithDetailScreen() {
             setQ(txt);
             setLimit(15); // reset page limit on search
           }}
-          placeholder="Search by number or narration text..."
+          placeholder={t("searchPlaceholder")}
           placeholderTextColor={theme.colors.onSurfaceMuted}
           style={[styles.search, { color: colors.onSurface }]}
         />
@@ -298,7 +340,7 @@ export default function HadithDetailScreen() {
 
       {chapters.length > 0 && (
         <View style={styles.chapterSection}>
-          <Text style={[styles.chapterTitle, { color: colors.onSurfaceMuted }]}>Chapters</Text>
+          <Text style={[styles.chapterTitle, { color: colors.onSurfaceMuted }]}>{t("chapters")}</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -318,7 +360,7 @@ export default function HadithDetailScreen() {
                 styles.chapterChipText,
                 { color: selectedChapterId === "all" ? colors.onBrandPrimary : colors.onSurface },
               ]}>
-                All Hadith
+                {t("allHadith")}
               </Text>
               <Text style={[
                 styles.chapterRange,
@@ -377,6 +419,14 @@ export default function HadithDetailScreen() {
           onEndReachedThreshold={0.5}
           contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const scrollable = contentSize.height - layoutMeasurement.height;
+            if (scrollable > 0) {
+              setScrollProgress(Math.min(1, contentOffset.y / scrollable));
+            }
+          }}
           ListFooterComponent={() => {
             if (limit < filtered.length) {
               return <ActivityIndicator size="small" color={colors.brand} style={{ marginVertical: 20 }} />;
@@ -396,7 +446,12 @@ export default function HadithDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { 
+    flex: 1,
+    ...Platform.select({
+      web: { height: "100%", overflow: "hidden" } as any
+    })
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

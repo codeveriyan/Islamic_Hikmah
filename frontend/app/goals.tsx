@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
 import {
   getActiveGoalIds,
@@ -24,7 +25,8 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export default function GoalsSettingsScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
   const [activeIds, setActiveIds] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -80,7 +82,7 @@ export default function GoalsSettingsScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Goal Settings</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("goalSettings")}</Text>
         {/* Bell icon navigates to notification time settings */}
         <Pressable onPress={() => router.push("/goal-notif-settings")} hitSlop={10}>
           <MaterialCommunityIcons name="bell-cog-outline" size={24} color={colors.brand} />
@@ -88,7 +90,7 @@ export default function GoalsSettingsScreen() {
       </View>
 
       <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>
-        Choose which goals appear on your home screen daily checklist
+        {t("goalSettingsSub")}
       </Text>
 
       <FlatList
@@ -100,11 +102,13 @@ export default function GoalsSettingsScreen() {
             <View style={styles.catHeader}>
               <View style={[styles.catDot, { backgroundColor: CATEGORY_COLORS[category] }]} />
               <Text style={[styles.catLabel, { color: colors.onSurface }]}>
-                {CATEGORY_LABELS[category]}
+                {t(category === "prayer" ? "prayers" : category === "quran" ? "quran" : category === "dhikr" ? "dhikrAdhkar" : "otherDeeds")}
               </Text>
             </View>
             {grouped[category].map((goal) => {
               const active = activeIds.includes(goal.id);
+              const localizedTitle = t(goal.id) !== goal.id ? t(goal.id) : goal.title;
+              const localizedSub = goal.subtitle ? (t(goal.id + "Sub") !== goal.id + "Sub" ? t(goal.id + "Sub") : goal.subtitle) : undefined;
               return (
                 <Pressable
                   key={goal.id}
@@ -113,11 +117,11 @@ export default function GoalsSettingsScreen() {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.goalTitle, { color: colors.onSurface }]}>
-                      {goal.title}
+                      {localizedTitle}
                     </Text>
-                    {goal.subtitle && (
+                    {localizedSub && (
                       <Text style={[styles.goalSub, { color: colors.onSurfaceMuted }]}>
-                        {goal.subtitle}
+                        {localizedSub}
                       </Text>
                     )}
                   </View>

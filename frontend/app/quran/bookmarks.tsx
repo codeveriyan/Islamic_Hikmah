@@ -1,18 +1,39 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Alert } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  FlatList,
+  Pressable,
+  Alert,
+  TextInput,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useIsFocused } from "@react-navigation/native";
+
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import {
   getQuranBookmarks,
   removeQuranBookmark,
-  getQuranLastRead,
   QuranBookmark,
-  QuranLastRead,
 } from "@/src/storage";
+import { SURAH_LIST } from "@/src/data/surahList";
+import pageMapping from "@/src/data/quran/pageMapping.json";
+
+import { JUZ_DATA } from "@/src/data/juzData";
+
+const JUZ_START_PAGES = JUZ_DATA.map((j) => j.juz === 1 ? 1 : (pageMapping as any[]).find((p) => p.ayahs.some((a: any) => a.surah === j.surahNumber && a.ayah === j.ayahNumber))?.page || 1);
+
+
+// ─── Page-bookmark stored separately under key 'islamic_hikmah:bookmarked_pages' ─
+type PageBookmark = { page: number; timestamp?: number };
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -25,20 +46,60 @@ function timeAgo(ts: number): string {
   return `${days}d ago`;
 }
 
+function getSurahStartPage(surahNum: number): number {
+  const pg = pageMapping.find((p) => p.ayahs.some((a: any) => a.surah === surahNum));
+  return pg ? pg.page : 1;
+}
+
+function getJuzForPage(page: number): number {
+  for (let i = JUZ_START_PAGES.length - 1; i >= 0; i--) {
+    if (page >= JUZ_START_PAGES[i]) return i + 1;
+  }
+  return 1;
+}
+
+type BookmarkTab = "ayaat" | "surah" | "juz";
+
 export default function QuranBookmarksScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const [bookmarks, setBookmarks] = useState<QuranBookmark[]>([]);
-  const [lastRead, setLastRead] = useState<QuranLastRead | null>(null);
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
+  const isFocused = useIsFocused();
 
-  const load = useCallback(() => {
-    getQuranBookmarks().then(setBookmarks);
-    getQuranLastRead().then(setLastRead);
+  const [tab, setTab] = useState<BookmarkTab>("ayaat");
+  const [searchQ, setSearchQ] = useState("");
+
+  // Ayah-level bookmarks (long-press in listen mode)
+  const [ayahBMs, setAyahBMs] = useState<QuranBookmark[]>([]);
+  // Page-level bookmarks (long-press in read/mushaf mode)
+  const [pageBMs, setPageBMs] = useState<PageBookmark[]>([]);
+
+  const load = useCallback(async () => {
+    const [a, raw] = await Promise.all([
+      getQuranBookmarks(),
+      AsyncStorage.getItem("islamic_hikmah:bookmarked_pages"),
+    ]);
+    setAyahBMs(a);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as any[];
+        setPageBMs(
+          parsed.map((x) =>
+            typeof x === "number" ? { page: x, timestamp: Date.now() } : x
+          )
+        );
+      } catch {
+        setPageBMs([]);
+      }
+    }
   }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (isFocused) load();
+  }, [isFocused]);
 
-  const handleDelete = useCallback((b: QuranBookmark) => {
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const deleteAyahBM = (b: QuranBookmark) => {
     Alert.alert(
       "Remove Bookmark",
       `Remove bookmark for ${b.surahName} · Ayah ${b.ayahNumber}?`,
@@ -55,137 +116,300 @@ export default function QuranBookmarksScreen() {
         },
       ]
     );
-  }, [load]);
+  };
 
-  const goToSurah = useCallback((surahNumber: number) => {
-    router.push(`/quran/${surahNumber}` as any);
-  }, [router]);
+  const deletePageBM = async (page: number) => {
+    const updated = pageBMs.filter((b) => b.page !== page);
+    setPageBMs(updated);
+    await AsyncStorage.setItem(
+      "islamic_hikmah:bookmarked_pages",
+      JSON.stringify(updated)
+    );
+  };
+
+  // ── Filtered data ──────────────────────────────────────────────────────────
+  const q = searchQ.toLowerCase().trim();
+
+  // SURAH tab: deduplicate bookmarked pages → show which Surah they belong to
+  const surahBMs = (() => {
+    const seen = new Set<number>();
+    const result: { surahNumber: number; surahName: string; arabicName: string; totalAyahs: number; page: number; timestamp: number }[] = [];
+    [...pageBMs].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)).forEach((pb) => {
+      const pageMap = pageMapping.find((p) => p.page === pb.page);
+      if (!pageMap) return;
+      const firstSurahNum: number = pageMap.ayahs[0]?.surah ?? 0;
+      if (!firstSurahNum || seen.has(firstSurahNum)) return;
+      seen.add(firstSurahNum);
+      const surahMeta = SURAH_LIST.find((s) => s.number === firstSurahNum);
+      result.push({
+        surahNumber: firstSurahNum,
+        surahName: surahMeta?.englishName ?? `Surah ${firstSurahNum}`,
+        arabicName: surahMeta?.name ?? "",
+        totalAyahs: surahMeta?.numberOfAyahs ?? 0,
+        page: pb.page,
+        timestamp: pb.timestamp ?? Date.now(),
+      });
+    });
+    return result.filter((s) =>
+      !q || s.surahName.toLowerCase().includes(q) || String(s.surahNumber).includes(q)
+    );
+  })();
+
+  // JUZ tab: deduplicate bookmarked pages → show which Juz they belong to
+  const juzBMs = (() => {
+    const seen = new Set<number>();
+    const result: { juz: number; name: string; page: number; timestamp: number }[] = [];
+    [...pageBMs].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)).forEach((pb) => {
+      const juz = getJuzForPage(pb.page);
+      if (seen.has(juz)) return;
+      seen.add(juz);
+      const jEntry = JUZ_DATA.find((entry) => entry.juz === juz);
+      result.push({ juz, name: jEntry?.nameEn ?? `Juz ${juz}`, page: pb.page, timestamp: pb.timestamp ?? Date.now() });
+    });
+    return result.filter((j) =>
+      !q || `juz ${j.juz}`.includes(q) || j.name.toLowerCase().includes(q)
+    );
+  })();
+
+  const filteredAyah = ayahBMs.filter((b) =>
+    !q ||
+    b.surahName.toLowerCase().includes(q) ||
+    String(b.surahNumber).includes(q) ||
+    String(b.ayahNumber).includes(q)
+  );
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const TAB_LABELS: { key: BookmarkTab; label: string }[] = [
+    { key: "ayaat", label: "AYAAT" },
+    { key: "surah", label: "SURAH" },
+    { key: "juz", label: "JUZ" },
+  ];
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.brand + "44" }]}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Quran Bookmarks</Text>
-        <View style={{ width: 28 }} />
+        <Text style={[styles.title, { color: colors.onSurface }]}>Bookmarks</Text>
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          <Pressable hitSlop={10}>
+            <MaterialCommunityIcons name="magnify" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
-      <FlatList
-        data={bookmarks}
-        keyExtractor={(b) => `${b.surahNumber}-${b.ayahNumber}`}
-        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
-        ListHeaderComponent={
-          <>
-            {/* Last Read Banner */}
-            {lastRead && (
-              <Pressable
-                onPress={() => goToSurah(lastRead.surahNumber)}
-                style={[styles.lastReadCard, { backgroundColor: colors.brand + "18", borderColor: colors.brand + "44" }]}
-              >
-                <View style={styles.lastReadLeft}>
-                  <MaterialCommunityIcons name="book-open-variant" size={28} color={colors.brand} />
-                  <View>
-                    <Text style={[styles.lastReadLabel, { color: colors.onSurfaceMuted }]}>
-                      Continue Reading
-                    </Text>
-                    <Text style={[styles.lastReadSurah, { color: colors.onSurface }]}>
-                      {lastRead.surahName}
-                    </Text>
-                    <Text style={[styles.lastReadAyah, { color: colors.brand }]}>
-                      Ayah {lastRead.ayahNumber} · {timeAgo(lastRead.readAt)}
-                    </Text>
-                  </View>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={22} color={colors.brand} />
-              </Pressable>
-            )}
-
-            {bookmarks.length > 0 && (
-              <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted }]}>
-                SAVED BOOKMARKS
-              </Text>
-            )}
-          </>
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <MaterialCommunityIcons name="bookmark-off-outline" size={60} color={colors.onSurfaceMuted} />
-            <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>No bookmarks yet</Text>
-            <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>
-              Tap the 🔖 icon on any ayah while reading to save your place.
-            </Text>
-            <Pressable
-              onPress={() => router.push("/quran" as any)}
-              style={[styles.openQuranBtn, { backgroundColor: colors.brand }]}
-            >
-              <Text style={[styles.openQuranTxt, { color: colors.onBrandPrimary }]}>Open Quran</Text>
-            </Pressable>
-          </View>
-        }
-        renderItem={({ item: b }) => (
-          <Pressable
-            onPress={() => goToSurah(b.surahNumber)}
-            style={[styles.card, { backgroundColor: colors.surfaceSecondary }]}
-          >
-            <View style={[styles.cardIcon, { backgroundColor: colors.brand + "22" }]}>
-              <MaterialCommunityIcons name="bookmark" size={20} color={colors.brand} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.cardSurah, { color: colors.onSurface }]}>
-                {b.surahName}
-              </Text>
-              <Text style={[styles.cardAyah, { color: colors.brand }]}>
-                Ayah {b.ayahNumber}
-              </Text>
-              <Text style={[styles.cardTime, { color: colors.onSurfaceMuted }]}>
-                Saved {timeAgo(b.savedAt)}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => handleDelete(b)}
-              hitSlop={10}
-              style={{ padding: 4 }}
-            >
-              <MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.onSurfaceMuted} />
-            </Pressable>
+      {/* Search bar */}
+      <View style={[styles.searchRow, { backgroundColor: colors.surfaceSecondary }]}>
+        <MaterialCommunityIcons name="magnify" size={18} color={colors.onSurfaceMuted} />
+        <TextInput
+          value={searchQ}
+          onChangeText={setSearchQ}
+          placeholder="Search bookmarks..."
+          placeholderTextColor={colors.onSurfaceMuted}
+          style={[styles.searchInput, { color: colors.onSurface }]}
+        />
+        {searchQ.length > 0 && (
+          <Pressable onPress={() => setSearchQ("")} hitSlop={8}>
+            <MaterialCommunityIcons name="close-circle" size={16} color={colors.onSurfaceMuted} />
           </Pressable>
         )}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-      />
+      </View>
+
+      {/* Tabs */}
+      <View style={[styles.tabRow, { borderBottomColor: colors.brand }]}>
+        {TAB_LABELS.map((t) => (
+          <Pressable
+            key={t.key}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setTab(t.key);
+            }}
+            style={[
+              styles.tabBtn,
+              tab === t.key && { borderBottomColor: colors.brand, borderBottomWidth: 3 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.tabTxt,
+                { color: tab === t.key ? colors.brand : colors.onSurfaceMuted },
+                tab === t.key && { fontWeight: "800" },
+              ]}
+            >
+              {t.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* Tab Content */}
+      {tab === "ayaat" && (
+        <FlatList
+          data={filteredAyah}
+          keyExtractor={(b) => `${b.surahNumber}-${b.ayahNumber}`}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyState message="No verse bookmarks yet.\nLong-press any verse while reading to bookmark it." />}
+          renderItem={({ item: b }) => (
+            <Pressable
+              onPress={() => router.push(`/quran/${b.surahNumber}` as any)}
+              style={[styles.card, { backgroundColor: colors.surfaceSecondary }]}
+            >
+              <View style={[styles.numCircle, { borderColor: colors.brand + "66" }]}>
+                <Text style={[styles.numTxt, { color: colors.brand }]}>{b.surahNumber}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cardTitle, { color: colors.onSurface }]}>{b.surahName}</Text>
+                <Text style={[styles.cardSub, { color: colors.onSurfaceMuted }]}>
+                  Ayah {b.ayahNumber} · {timeAgo(b.savedAt)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                <MaterialCommunityIcons name="bookmark" size={22} color={colors.brand} />
+                <Pressable onPress={() => deleteAyahBM(b)} hitSlop={10}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.onSurfaceMuted} />
+                </Pressable>
+              </View>
+            </Pressable>
+          )}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        />
+      )}
+
+      {tab === "surah" && (
+        <FlatList
+          data={surahBMs}
+          keyExtractor={(s) => String(s.surahNumber)}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyState message="No surah bookmarks yet.\nLong-press a verse in Read mode to bookmark a page." />}
+          renderItem={({ item: s }) => (
+            <Pressable
+              onPress={() => router.push(`/quran/read/${s.page}` as any)}
+              style={[styles.card, { backgroundColor: colors.surfaceSecondary }]}
+            >
+              <View style={[styles.numCircle, { borderColor: colors.brand + "66" }]}>
+                <Text style={[styles.numTxt, { color: colors.brand }]}>{s.surahNumber}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cardTitle, { color: colors.onSurface }]}>{s.surahName}</Text>
+                <Text style={[styles.cardSub, { color: colors.onSurfaceMuted }]}>
+                  {s.arabicName ? `${s.arabicName} · ` : ""}{s.totalAyahs} ayahs
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="bookmark" size={22} color={colors.brand} />
+            </Pressable>
+          )}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        />
+      )}
+
+      {tab === "juz" && (
+        <FlatList
+          data={juzBMs}
+          keyExtractor={(j) => String(j.juz)}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyState message="No juz bookmarks yet.\nBookmark pages while reading to see juz here." />}
+          renderItem={({ item: j }) => {
+            const jEntry = JUZ_DATA.find((entry) => entry.juz === j.juz);
+            return (
+              <Pressable
+                onPress={() => router.push(`/quran/read/${j.page}` as any)}
+                style={[styles.card, { backgroundColor: colors.surfaceSecondary }]}
+              >
+                <View style={[styles.numCircle, { borderColor: colors.brand + "66" }]}>
+                  <Text style={[styles.numTxt, { color: colors.brand }]}>{j.juz}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardTitle, { color: colors.onSurface }]}>Juz {j.juz} — {jEntry?.nameEn}</Text>
+                  <Text style={[styles.cardSub, { color: colors.onSurfaceMuted }]}>{jEntry?.name}</Text>
+                </View>
+                <MaterialCommunityIcons name="bookmark" size={22} color={colors.brand} />
+              </Pressable>
+            );
+          }}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        />
+      )}
     </SafeAreaView>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <View style={styles.empty}>
+      <MaterialCommunityIcons name="bookmark-off-outline" size={56} color="#C5A88066" />
+      <Text style={styles.emptyTxt}>{message}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 1,
   },
-  title: { fontSize: 18, fontWeight: "700" },
-  lastReadCard: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    padding: theme.spacing.lg, borderRadius: theme.radius.lg, borderWidth: 1,
-    marginBottom: theme.spacing.lg,
+  title: { fontSize: 20, fontWeight: "800" },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: theme.spacing.lg,
+    marginTop: 10,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 8,
   },
-  lastReadLeft: { flexDirection: "row", alignItems: "center", gap: 14 },
-  lastReadLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5, marginBottom: 2 },
-  lastReadSurah: { fontSize: 16, fontWeight: "700" },
-  lastReadAyah: { fontSize: 13, marginTop: 2 },
-  sectionLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8, marginBottom: 12 },
+  searchInput: { flex: 1, paddingVertical: 10, fontSize: 14 },
+  tabRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    marginTop: 8,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderBottomWidth: 3,
+    borderBottomColor: "transparent",
+  },
+  tabTxt: { fontSize: 13, fontWeight: "700", letterSpacing: 0.5 },
+  listContent: {
+    padding: theme.spacing.lg,
+    paddingBottom: 48,
+    gap: 8,
+  },
   card: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    padding: theme.spacing.lg, borderRadius: theme.radius.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    gap: 14,
   },
-  cardIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  cardSurah: { fontSize: 15, fontWeight: "700" },
-  cardAyah: { fontSize: 13, marginTop: 2 },
-  cardTime: { fontSize: 11, marginTop: 2 },
-  empty: { alignItems: "center", paddingTop: 60, gap: 12, paddingHorizontal: 24 },
-  emptyTitle: { fontSize: 18, fontWeight: "700" },
-  emptyText: { fontSize: 14, textAlign: "center", lineHeight: 20 },
-  openQuranBtn: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: theme.radius.pill },
-  openQuranTxt: { fontWeight: "700", fontSize: 15 },
+  numCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  numTxt: { fontWeight: "800", fontSize: 15 },
+  cardTitle: { fontSize: 16, fontWeight: "700" },
+  cardSub: { fontSize: 12, marginTop: 3 },
+  empty: { alignItems: "center", paddingTop: 60, gap: 14, paddingHorizontal: 32 },
+  emptyTxt: {
+    color: "#C5A88099",
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+  },
 });

@@ -1,9 +1,12 @@
 import { Tabs } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 
 export default function TabsLayout() {
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
+
   return (
     <Tabs
       screenOptions={{
@@ -24,7 +27,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: t("home") || "Home",
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="home-variant" size={size} color={color} />
           ),
@@ -34,7 +37,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="favourites"
         options={{
-          title: "Favourites",
+          title: t("favourites"),
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="heart" size={size} color={color} />
           ),
@@ -44,7 +47,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="articles"
         options={{
-          title: "Articles",
+          title: t("publications"),
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="text-box" size={size} color={color} />
           ),
@@ -54,7 +57,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="emotions"
         options={{
-          title: "Emotions",
+          title: t("emotions"),
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="emoticon" size={size} color={color} />
           ),
@@ -64,7 +67,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="reminder"
         options={{
-          title: "Reminder",
+          title: t("reminders"),
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="bell" size={size} color={color} />
           ),

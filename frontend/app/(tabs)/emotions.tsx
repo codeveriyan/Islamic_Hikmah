@@ -5,11 +5,13 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { EMOTIONS } from "@/src/data/emotions";
 
 export default function EmotionsScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
@@ -17,7 +19,7 @@ export default function EmotionsScreen() {
         <Pressable onPress={() => router.push("/menu")} hitSlop={10} testID="emotions-menu">
           <MaterialCommunityIcons name="menu" size={26} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Emotions</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("emotions")}</Text>
         <Pressable onPress={() => router.push("/settings")} hitSlop={10} testID="emotions-settings">
           <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
         </Pressable>

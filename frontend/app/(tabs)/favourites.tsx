@@ -6,12 +6,14 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { getFavourites, toggleFavourite, Favourite } from "@/src/storage";
 
 export default function FavouritesScreen() {
   const [items, setItems] = useState<Favourite[]>([]);
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
 
   useFocusEffect(
     useCallback(() => {
@@ -22,7 +24,7 @@ export default function FavouritesScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Favourites</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("favourites")}</Text>
         <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>{items.length} saved</Text>
       </View>
       {items.length === 0 ? (

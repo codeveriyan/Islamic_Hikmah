@@ -7,6 +7,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { getReminders, saveReminders, Reminder } from "@/src/storage";
 
 export default function ReminderScreen() {
@@ -15,7 +16,8 @@ export default function ReminderScreen() {
   const [title, setTitle] = useState("");
   const [hour, setHour] = useState("06");
   const [minute, setMinute] = useState("00");
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
 
   useFocusEffect(
     useCallback(() => {
@@ -81,7 +83,7 @@ export default function ReminderScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>
         <View>
-          <Text style={[styles.title, { color: colors.onSurface }]}>Reminders</Text>
+          <Text style={[styles.title, { color: colors.onSurface }]}>{t("reminders")}</Text>
           <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>Daily Dhikr & Du{`'`}a alerts</Text>
         </View>
         <Pressable
@@ -128,14 +130,14 @@ export default function ReminderScreen() {
               style={[styles.actionBtn, { backgroundColor: theme.colors.surfaceTertiary }]}
               testID="reminder-cancel-btn"
             >
-              <Text style={[styles.actionTxt, { color: theme.colors.onSurface }]}>Cancel</Text>
+              <Text style={[styles.actionTxt, { color: theme.colors.onSurface }]}>{t("cancel")}</Text>
             </Pressable>
             <Pressable
               onPress={addReminder}
               style={[styles.actionBtn, { backgroundColor: theme.colors.brand }]}
               testID="reminder-save-btn"
             >
-              <Text style={[styles.actionTxt, { color: theme.colors.onBrandPrimary }]}>Save</Text>
+              <Text style={[styles.actionTxt, { color: theme.colors.onBrandPrimary }]}>{t("save")}</Text>
             </Pressable>
           </View>
         </View>

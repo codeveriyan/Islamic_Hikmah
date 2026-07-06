@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { getSavedLocation, setSavedLocation } from "@/src/storage";
 
 const KAABA = { lat: 21.4225, lon: 39.8262 };
@@ -27,7 +28,8 @@ function bearingTo(lat: number, lon: number): number {
 
 export default function QiblaScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
 
   const [qibla, setQibla] = useState<number | null>(null);
   const [heading, setHeading] = useState(0);
@@ -169,7 +171,7 @@ export default function QiblaScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} testID="qibla-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Qibla Direction</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("qiblaDirection")}</Text>
         <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
             <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
           </Pressable>

@@ -3,6 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 
 export const HADITH_BOOKS = [
@@ -16,7 +17,8 @@ export const HADITH_BOOKS = [
 
 export default function HadithIndexScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
@@ -25,7 +27,7 @@ export default function HadithIndexScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backBtn}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Hadith Collections</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("hadithCollections")}</Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -33,9 +35,9 @@ export default function HadithIndexScreen() {
         <View style={[styles.banner, { backgroundColor: colors.brand + "12" }]}>
           <MaterialCommunityIcons name="book-open-page-variant" size={32} color={colors.brand} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.bannerTitle, { color: colors.onSurface }]}>Al-Kutub al-Sittah</Text>
+            <Text style={[styles.bannerTitle, { color: colors.onSurface }]}>{t("alKutubAlSittah")}</Text>
             <Text style={[styles.bannerSub, { color: colors.onSurfaceMuted }]}>
-              The six canonical Hadith compilations of authentic prophetic narrations.
+              {t("alKutubAlSittahSub")}
             </Text>
           </View>
         </View>
@@ -55,9 +57,9 @@ export default function HadithIndexScreen() {
                 <MaterialCommunityIcons name="book" size={24} color={book.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.bookName, { color: colors.onSurface }]}>{book.name}</Text>
+                <Text style={[styles.bookName, { color: colors.onSurface }]}>{t(book.id)}</Text>
                 <Text style={[styles.bookDetail, { color: colors.onSurfaceMuted }]}>
-                  By {book.compiler} · {book.total} narrations
+                  {t(book.id + "Sub").replace("{total}", String(book.total))}
                 </Text>
               </View>
               <MaterialCommunityIcons name="chevron-right" size={24} color={colors.onSurfaceMuted} />
