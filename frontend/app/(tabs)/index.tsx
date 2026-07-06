@@ -448,14 +448,18 @@ export default function HomeScreen() {
         </View>
 
         {/* Daily Goals */}
-        <View style={[styles.goalsCard, { backgroundColor: colors.surfaceSecondary }]}>
+        <Pressable 
+          onPress={() => router.push("/goals" as any)}
+          style={({ pressed }) => [
+            styles.goalsCard, 
+            { backgroundColor: colors.surfaceSecondary },
+            pressed && { opacity: 0.7 }
+          ]}
+        >
           <View style={styles.goalsHeader}>
             <Text style={[styles.goalsTitle, { color: colors.onSurface }]}>
               Complete {totalGoals} goals today
             </Text>
-            <Pressable onPress={() => router.push("/goals" as any)} hitSlop={8}>
-              <Text style={[styles.goalsSettings, { color: colors.brand }]}>Settings</Text>
-            </Pressable>
           </View>
 
           {/* Overall progress bar */}
@@ -475,7 +479,7 @@ export default function HomeScreen() {
             ) : null)}
           </View>
 
-        </View>
+        </Pressable>
 
         {/* Dua Categories */}
         <View style={[styles.segment, { backgroundColor: colors.surfaceSecondary }]}>
@@ -556,9 +560,8 @@ const styles = StyleSheet.create({
 
   // Goals card
   goalsCard: { marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.lg, padding: theme.spacing.lg, marginBottom: theme.spacing.lg },
-  goalsHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.sm },
+  goalsHeader: { marginBottom: theme.spacing.sm },
   goalsTitle: { fontSize: 16, fontWeight: "700" },
-  goalsSettings: { fontSize: 13, fontWeight: "600" },
   progressBg: { height: 6, borderRadius: 3, marginBottom: theme.spacing.sm },
   progressFill: { height: 6, borderRadius: 3 },
   catPills: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: theme.spacing.md },

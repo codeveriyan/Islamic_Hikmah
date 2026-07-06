@@ -281,12 +281,16 @@ export default function QuranReadScreen() {
 
   // Audio Player states
   const [playingAyah, setPlayingAyah] = useState<{ surah: number; ayah: number } | null>(null);
+  const [isPlayingContinuous, setIsPlayingContinuous] = useState(false);
+  const [continuePlayNextPage, setContinuePlayNextPage] = useState(false);
   const player = useAudioPlayer(null);
   const audioStatus = useAudioPlayerStatus(player);
 
   const flatListRef = useRef<FlatList>(null);
   const initialDist = useRef<number | null>(null);
   const baseScale = useRef<number>(1);
+  const playQueueRef = useRef<Array<{ surah: number; ayah: number }>>([]);
+  const currentQueueIndexRef = useRef<number>(0);
 
   const isFocused = useIsFocused();
 
@@ -331,12 +335,43 @@ export default function QuranReadScreen() {
     });
   }, []);
 
-  // Audio status monitor
+  // Audio status monitor - handles automatic next verse playback
   useEffect(() => {
     if (audioStatus?.didJustFinish) {
-      setPlayingAyah(null);
+      if (isPlayingContinuous && continuePlayNextPage) {
+        // Auto-play next verse in queue
+        playNextInQueue();
+      } else {
+        setPlayingAyah(null);
+      }
     }
-  }, [audioStatus?.didJustFinish]);
+  }, [audioStatus?.didJustFinish, isPlayingContinuous, continuePlayNextPage]);
+
+  // Handle auto page-turning when reaching end of current page verses
+  useEffect(() => {
+    if (isPlayingContinuous && playingAyah && continuePlayNextPage) {
+      const currentPageMap = PAGE_MAPPING.find((p) => p.page === currentPage);
+      if (currentPageMap) {
+        const lastVerseOnPage = currentPageMap.ayahs[currentPageMap.ayahs.length - 1];
+        // If current playing verse is the last on page, go to next page
+        if (
+          playingAyah.surah === lastVerseOnPage.surah &&
+          playingAyah.ayah === lastVerseOnPage.ayah
+        ) {
+          if (currentPage < TOTAL_PAGES) {
+            setCurrentPage(currentPage + 1);
+            saveLastRead(currentPage + 1);
+            if (flatListRef.current) {
+              flatListRef.current.scrollToIndex({
+                index: currentPage,
+                animated: false,
+              });
+            }
+          }
+        }
+      }
+    }
+  }, [playingAyah, isPlayingContinuous, continuePlayNextPage, currentPage]);
 
 
 
@@ -434,18 +469,81 @@ export default function QuranReadScreen() {
     setPlayingAyah({ surah: surahNum, ayah: ayahNum });
   };
 
+  // Get all verses from current page onwards
+  const getAllVersesFromPage = (pageNum: number) => {
+    const verses: Array<{ surah: number; ayah: number }> = [];
+    for (let p = pageNum; p <= TOTAL_PAGES; p++) {
+      const pageMap = PAGE_MAPPING.find((pm) => pm.page === p);
+      if (pageMap) {
+        pageMap.ayahs.forEach((m) => {
+          verses.push({ surah: m.surah, ayah: m.ayah });
+        });
+      }
+    }
+    return verses;
+  };
+
+  // Start continuous playback from current page
+  const startContinuousPlayback = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setIsPlayingContinuous(true);
+    setContinuePlayNextPage(true);
+    const verses = getAllVersesFromPage(currentPage);
+    playQueueRef.current = verses;
+    currentQueueIndexRef.current = 0;
+    playNextInQueue();
+  };
+
+  // Stop continuous playback
+  const stopContinuousPlayback = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setIsPlayingContinuous(false);
+    setContinuePlayNextPage(false);
+    player.pause();
+    setPlayingAyah(null);
+    playQueueRef.current = [];
+    currentQueueIndexRef.current = 0;
+  };
+
+  // Play next verse in queue
+  const playNextInQueue = () => {
+    if (currentQueueIndexRef.current >= playQueueRef.current.length) {
+      // Queue finished
+      setIsPlayingContinuous(false);
+      setContinuePlayNextPage(false);
+      return;
+    }
+
+    const verse = playQueueRef.current[currentQueueIndexRef.current];
+    
+    // Calculate absolute verse index
+    let count = 0;
+    for (let i = 1; i < verse.surah; i++) {
+      const s = QURAN.find((x) => x.number === i);
+      if (s) count += s.totalAyahs;
+    }
+    const absoluteIdx = count + verse.ayah;
+    const url = `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${absoluteIdx}.mp3`;
+
+    player.replace({ uri: url });
+    player.play();
+    setPlayingAyah(verse);
+    currentQueueIndexRef.current += 1;
+  };
+
   const onScroll = useCallback((e: any) => {
     const offset = e.nativeEvent.contentOffset.x;
     const pageNum = Math.round(offset / width) + 1;
     if (pageNum >= 1 && pageNum <= TOTAL_PAGES && pageNum !== currentPage) {
       setCurrentPage(pageNum);
       saveLastRead(pageNum);
-      if (player) {
+      // Only stop playback if not in continuous playback mode (manual scroll)
+      if (player && !isPlayingContinuous) {
         player.pause();
         setPlayingAyah(null);
       }
     }
-  }, [currentPage, player]);
+  }, [currentPage, player, isPlayingContinuous]);
 
   const isBookmarked = bookmarks.some((b) => b.page === currentPage);
 
@@ -540,10 +638,10 @@ export default function QuranReadScreen() {
           removeClippedSubviews={Platform.OS === "android"}
         />
       </View>
-      {/* Long press hint — helps users discover the gesture */}
+      {/* Interaction hints */}
       <View style={{ backgroundColor: colors.brand + "14", paddingVertical: 5, alignItems: "center" }}>
         <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>
-          TAP verse to play  ·  LONG PRESS verse to bookmark 🔖
+          TAP verse to play  ·  LONG PRESS to bookmark 🔖  ·  Use ⏯️ button to play all
         </Text>
       </View>
 
@@ -561,23 +659,13 @@ export default function QuranReadScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            // Find the surah on the current page and go to Listen screen
-            const pageMapped = (pageMappingData as any[]).find((p: any) => p.page === currentPage);
-            const surahNum = pageMapped?.ayahs?.[0]?.surah ?? 1;
-            router.push(`/quran/${surahNum}` as any);
-          }}
+          onPress={() => isPlayingContinuous ? stopContinuousPlayback() : startContinuousPlayback()}
           style={styles.barBtn}
         >
-          <MaterialCommunityIcons name="volume-high" size={24} color={isNightMode ? "#F0F4F8" : "#5C4E3C"} />
-        </Pressable>
-
-        <Pressable onPress={toggleBookmark} style={styles.barBtn}>
           <MaterialCommunityIcons
-            name={isBookmarked ? "bookmark" : "bookmark-outline"}
+            name={isPlayingContinuous ? "pause-circle" : "play-circle"}
             size={24}
-            color={isBookmarked ? colors.brand : isNightMode ? "#FFF" : "#5C4E3C"}
+            color={isPlayingContinuous ? colors.brand : isNightMode ? "#F0F4F8" : "#5C4E3C"}
           />
         </Pressable>
 
