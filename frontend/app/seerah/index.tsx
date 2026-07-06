@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 import {
   SEERAH_CHAPTERS,
@@ -36,7 +37,8 @@ const ERA_ORDER: SeerahEra[] = [
 
 export default function SeerahIndexScreen() {
   const router = useRouter();
-  const { colors, mode } = useTheme();
+  const { colors, mode, language } = useTheme();
+  const { t } = useTranslation(language);
   const [selectedEra, setSelectedEra] = useState<SeerahEra | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [readChapters, setReadChapters] = useState<Set<string>>(new Set());
@@ -89,7 +91,7 @@ export default function SeerahIndexScreen() {
         </Pressable>
         <View style={{ flex: 1, alignItems: "center" }}>
           <Text style={[styles.headerTitle, { color: colors.onSurface }]}>
-            Seerah
+            {t("seerah")}
           </Text>
           <Text style={[styles.headerSub, { color: colors.brand }]}>
             السيرة النبوية
@@ -104,15 +106,15 @@ export default function SeerahIndexScreen() {
       >
         <View style={styles.heroLeft}>
           <Text style={[styles.heroTitle, { color: colors.onSurface }]}>
-            Life of the Prophet ﷺ
+            {t("lifeOfProphet")}
           </Text>
           <Text style={[styles.heroSub, { color: colors.onSurfaceMuted }]}>
-            Ar-Raheeq Al-Makhtum · The Sealed Nectar
+            {t("sealedNectar")}
           </Text>
           {/* Progress */}
           <View style={styles.progressRow}>
             <Text style={[styles.progressTxt, { color: colors.brand }]}>
-              {totalRead}/{total} chapters read
+              {totalRead}/{total} {t("chaptersRead")}
             </Text>
           </View>
           <View
@@ -148,7 +150,7 @@ export default function SeerahIndexScreen() {
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search chapters..."
+          placeholder={t("searchChapters")}
           placeholderTextColor={colors.onSurfaceMuted}
           style={[styles.searchInput, { color: colors.onSurface }]}
         />
@@ -164,73 +166,76 @@ export default function SeerahIndexScreen() {
       </View>
 
       {/* Era Filter Chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.eraRow}
-      >
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            setSelectedEra("all");
-          }}
-          style={[
-            styles.eraChip,
-            {
-              backgroundColor:
-                selectedEra === "all" ? colors.brand : colors.surfaceSecondary,
-            },
-          ]}
+      <View style={styles.eraScrollWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.eraRow}
+          style={{ flex: 1 }}
         >
-          <Text
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setSelectedEra("all");
+            }}
             style={[
-              styles.eraChipTxt,
+              styles.eraChip,
               {
-                color:
-                  selectedEra === "all" ? colors.onBrandPrimary : colors.onSurfaceMuted,
+                backgroundColor:
+                  selectedEra === "all" ? colors.brand : colors.surfaceSecondary,
               },
             ]}
           >
-            All ({total})
-          </Text>
-        </Pressable>
-        {ERA_ORDER.map((era) => {
-          const count = SEERAH_CHAPTERS.filter((c) => c.era === era).length;
-          const active = selectedEra === era;
-          return (
-            <Pressable
-              key={era}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                setSelectedEra(era);
-              }}
+            <Text
               style={[
-                styles.eraChip,
+                styles.eraChipTxt,
                 {
-                  backgroundColor: active
-                    ? ERA_COLORS[era]
-                    : colors.surfaceSecondary,
+                  color:
+                    selectedEra === "all" ? colors.onBrandPrimary : colors.onSurfaceMuted,
                 },
               ]}
             >
-              <MaterialCommunityIcons
-                name={ERA_ICONS[era] as any}
-                size={14}
-                color={active ? "#fff" : colors.onSurfaceMuted}
-                style={{ marginRight: 4 }}
-              />
-              <Text
+              {t("all")} ({total})
+            </Text>
+          </Pressable>
+          {ERA_ORDER.map((era) => {
+            const count = SEERAH_CHAPTERS.filter((c) => c.era === era).length;
+            const active = selectedEra === era;
+            return (
+              <Pressable
+                key={era}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setSelectedEra(era);
+                }}
                 style={[
-                  styles.eraChipTxt,
-                  { color: active ? "#fff" : colors.onSurfaceMuted },
+                  styles.eraChip,
+                  {
+                    backgroundColor: active
+                      ? ERA_COLORS[era]
+                      : colors.surfaceSecondary,
+                  },
                 ]}
               >
-                {ERA_LABELS[era]} ({count})
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+                <MaterialCommunityIcons
+                  name={ERA_ICONS[era] as any}
+                  size={14}
+                  color={active ? "#fff" : colors.onSurfaceMuted}
+                  style={{ marginRight: 4 }}
+                />
+                <Text
+                  style={[
+                    styles.eraChipTxt,
+                    { color: active ? "#fff" : colors.onSurfaceMuted },
+                  ]}
+                >
+                  {t(era.replace("-", "")) || ERA_LABELS[era]} ({count})
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* Chapter List */}
       <ScrollView
@@ -412,12 +417,16 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, paddingVertical: 8, fontSize: 14 },
 
+  eraScrollWrap: {
+    height: 52,
+    marginBottom: theme.spacing.sm,
+  },
   eraRow: {
     flexDirection: "row",
     paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing.md,
-    paddingTop: theme.spacing.sm,
+    alignItems: "center",
     gap: 8,
+    paddingVertical: 6,
   },
   eraChip: {
     flexDirection: "row",

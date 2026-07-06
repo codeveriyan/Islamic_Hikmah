@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
@@ -52,6 +53,7 @@ const FONTS: FontOption[] = [
 export default function PersonaliseScreen() {
   const router = useRouter();
   const { colors, language, setLanguage, arabicFont, setArabicFont } = useTheme();
+  const { t } = useTranslation(language);
 
   // Settings states
   const [fontType, setFontType] = useState<"indopak" | "uthmani" | "naskh">(arabicFont);
@@ -258,7 +260,7 @@ export default function PersonaliseScreen() {
         <View style={[styles.row, { borderBottomColor: colors.border }]}>
           <View style={styles.rowLeft}>
             <MaterialCommunityIcons name="book-open-variant" size={22} color={colors.brandSecondary} />
-            <Text style={[styles.rowLabel, { color: colors.onSurface }]}>Translation</Text>
+            <Text style={[styles.rowLabel, { color: colors.onSurface }]}>{t("translation")}</Text>
           </View>
           <Switch
             value={showTranslation}
@@ -272,7 +274,7 @@ export default function PersonaliseScreen() {
         <View style={[styles.row, { borderBottomColor: colors.border }]}>
           <View style={styles.rowLeft}>
             <MaterialCommunityIcons name="format-text" size={22} color={colors.brandSecondary} />
-            <Text style={[styles.rowLabel, { color: colors.onSurface }]}>Transliteration</Text>
+            <Text style={[styles.rowLabel, { color: colors.onSurface }]}>{t("transliteration")}</Text>
             <Pressable
               onPress={() => alert("English transliteration displays Arabic characters phonetically.")}
               style={{ marginLeft: 6 }}

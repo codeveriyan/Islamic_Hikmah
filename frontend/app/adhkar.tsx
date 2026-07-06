@@ -5,13 +5,15 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { ADHKAR_CATEGORIES, AdhkarItem, AdhkarCategory } from "@/src/data/adhkar";
 
 const ITEM_HEIGHT = 160;
 
 export default function AdhkarScreen() {
   const router = useRouter();
-  const { colors, fontSize, fontColor } = useTheme();
+  const { colors, fontSize, fontColor, language } = useTheme();
+  const { t } = useTranslation(language);
   const [selected, setSelected] = useState<AdhkarCategory | null>(null);
 
   // Font Size Styles

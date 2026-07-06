@@ -16,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 import {
   SEERAH_CHAPTERS,
@@ -28,7 +29,8 @@ const STORAGE_KEY = "islamic_hikmah:seerah_read_chapters";
 export default function SeerahChapterScreen() {
   const { chapter: chapterId } = useLocalSearchParams<{ chapter: string }>();
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
   const scrollRef = useRef<ScrollView>(null);
 
   const [readChapters, setReadChapters] = useState<Set<string>>(new Set());
@@ -190,7 +192,7 @@ export default function SeerahChapterScreen() {
           />
         </Pressable>
         <Text style={{ color: colors.onSurface, padding: 20 }}>
-          Chapter not found.
+          {t("chapterNotFound")}
         </Text>
       </SafeAreaView>
     );
@@ -291,8 +293,8 @@ export default function SeerahChapterScreen() {
             {chapter.arabicTitle}
           </Text>
           <Text style={[styles.chapterMeta, { color: colors.onSurfaceMuted }]}>
-            Chapter {chapter.order} · {chapter.readMinutes} min read
-            {progressPct > 0 ? ` · ${progressPct}% read` : ""}
+            {t("chapterNo").replace("{no}", String(chapter.order))} · {t("minRead").replace("{min}", String(chapter.readMinutes))}
+            {progressPct > 0 ? ` · ${progressPct}% ${t("readPercent")}` : ""}
           </Text>
         </View>
       </View>
@@ -333,7 +335,7 @@ export default function SeerahChapterScreen() {
               { color: isRead ? colors.success : colors.onSurfaceMuted },
             ]}
           >
-            {isRead ? "Marked as Read" : "Mark as Read"}
+            {isRead ? t("markedAsRead") : t("markAsRead")}
           </Text>
         </Pressable>
 
@@ -353,7 +355,7 @@ export default function SeerahChapterScreen() {
                 <Text
                   style={[styles.navLabel, { color: colors.onSurfaceMuted }]}
                 >
-                  Previous
+                  {t("previous")}
                 </Text>
                 <Text
                   style={[styles.navTitle, { color: colors.onSurface }]}
@@ -378,7 +380,7 @@ export default function SeerahChapterScreen() {
             >
               <View style={{ flex: 1, alignItems: "flex-end" }}>
                 <Text style={[styles.navLabel, { color: colors.onBrandPrimary + "CC" }]}>
-                  Next
+                  {t("next2")}
                 </Text>
                 <Text
                   style={[styles.navTitle, { color: colors.onBrandPrimary }]}
@@ -403,10 +405,10 @@ export default function SeerahChapterScreen() {
             >
               <View style={{ flex: 1, alignItems: "flex-end" }}>
                 <Text style={[styles.navLabel, { color: colors.success }]}>
-                  Completed!
+                  {t("completed")}
                 </Text>
                 <Text style={[styles.navTitle, { color: colors.success }]}>
-                  End of Seerah 🕊️
+                  {t("endOfSeerah")}
                 </Text>
               </View>
               <MaterialCommunityIcons

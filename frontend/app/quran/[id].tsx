@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Modal, FlatList } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Modal, FlatList, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { toggleFavourite, getFavourites, addQuranBookmark, removeQuranBookmark, getQuranBookmarks, saveQuranLastRead } from "@/src/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useIsFocused } from "@react-navigation/native";
@@ -77,12 +78,56 @@ export default function SurahDetail() {
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
   const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
 
   // Reading mode — default / sepia / dark (loaded from AsyncStorage, set in Quick Settings)
   const [readingMode, setReadingMode] = useState<"default" | "sepia" | "dark">("default");
 
+  // Scroll progress for lists
+  const [scrollProgress, setScrollProgress] = useState(0);
+
   // Juz modal
   const [showJuzModal, setShowJuzModal] = useState(false);
+
+  // Tafsir modal state
+  const [tafsirModalVisible, setTafsirModalVisible] = useState(false);
+  const [tafsirLoading, setTafsirLoading] = useState(false);
+  const [tafsirContent, setTafsirContent] = useState("");
+  const [tafsirRef, setTafsirRef] = useState({ surah: 0, ayah: 0, arabic: "", trans: "" });
+
+  const openTafsirModal = useCallback(async (ayahNum: number, arabicText: string, transText: string) => {
+    setTafsirRef({ surah: Number(id), ayah: ayahNum, arabic: arabicText, trans: transText });
+    setTafsirModalVisible(true);
+    setTafsirLoading(true);
+    setTafsirContent("");
+
+    try {
+      const cacheKey = `hikmah:tafsir:${id}:${ayahNum}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        setTafsirContent(cached);
+        setTafsirLoading(false);
+        return;
+      }
+
+      const response = await fetch(`https://api.quran.com/api/v4/tafsirs/169/by_ayah/${id}:${ayahNum}`);
+      const data = await response.json();
+      if (data && data.tafsir && data.tafsir.text) {
+        // Strip HTML tags from the Tafsir text
+        let cleanText = data.tafsir.text.replace(/<\/?[^>]+(>|$)/g, "");
+        cleanText = cleanText.trim();
+        setTafsirContent(cleanText);
+        await AsyncStorage.setItem(cacheKey, cleanText);
+      } else {
+        setTafsirContent("Commentary not available for this verse.");
+      }
+    } catch (e) {
+      console.error(e);
+      setTafsirContent("Failed to load Tafsir. Please check your internet connection.");
+    } finally {
+      setTafsirLoading(false);
+    }
+  }, [id]);
 
   // Scroll ref for auto-scrolling to highlighted ayah
   const scrollRef = useRef<ScrollView>(null);
@@ -451,7 +496,17 @@ export default function SurahDetail() {
     setContinuous(false);
     // Pre-buffer next ayah into player B immediately
     preloadNext(i);
-  }, [audioRequested, audio, playingIdx, status, statusB, player, playerB, preloadNext]);
+    // Save last played position for Resume
+    const surahId = Number(id);
+    const surahData = QURAN.find((s) => s.number === surahId);
+    if (surahData) {
+      saveQuranLastRead({
+        surahNumber: surahId,
+        surahName: surahData.name,
+        ayahNumber: audio[i]?.numberInSurah ?? (i + 1),
+      }).catch(() => {});
+    }
+  }, [audioRequested, audio, playingIdx, status, statusB, player, playerB, preloadNext, id]);
 
   const [pendingPlayIdx, setPendingPlayIdx] = useState<number | null>(null);
 
@@ -529,15 +584,25 @@ export default function SurahDetail() {
   // Current Juz for display in header
   const currentJuz = arabic.length > 0 ? getJuzForAyah(Number(id), 1) : null;
 
+  const readPct = Math.round(scrollProgress * 100);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: rc.bg }]} edges={["top"]}>
+      {/* Scroll progress bar */}
+      <View style={{ height: 3, backgroundColor: rc.bg === "#F5ECD7" ? "#D4C4A8" : "rgba(255,255,255,0.1)", width: "100%" }}>
+        <View style={{ height: 3, backgroundColor: colors.brand, width: `${readPct}%` }} />
+      </View>
+
       <View style={[styles.header, { backgroundColor: rc.bg }]}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="surah-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={rc.arabic} />
         </Pressable>
         <View style={{ flex: 1, alignItems: "center" }}>
           <Text style={[styles.title, { color: rc.arabic }]}>{name}</Text>
-          <Text style={[styles.subtitle, { color: colors.brand }]}>{arName}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={[styles.subtitle, { color: colors.brand }]}>{arName}</Text>
+            <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "700" }}>· {readPct}% read</Text>
+          </View>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           {/* Juz badge — tap to open Juz navigator */}
@@ -628,6 +693,14 @@ export default function SurahDetail() {
           ref={scrollRef}
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
           style={{ backgroundColor: rc.bg }}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+            const scrollable = contentSize.height - layoutMeasurement.height;
+            if (scrollable > 0) {
+              setScrollProgress(Math.min(1, contentOffset.y / scrollable));
+            }
+          }}
         >
           {arabic.map((a, i) => {
             const isPlaying = playingIdx === i && status?.playing;
@@ -676,6 +749,17 @@ export default function SurahDetail() {
                         name={isFav ? "heart" : "heart-outline"}
                         size={24}
                         color={isFav ? theme.colors.error : colors.onSurfaceMuted}
+                      />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => openTafsirModal(a.numberInSurah, a.text, trans[i]?.text || "")}
+                      hitSlop={10}
+                      testID={`tafsir-ayah-${a.numberInSurah}`}
+                    >
+                      <MaterialCommunityIcons
+                        name="comment-text-outline"
+                        size={24}
+                        color={colors.onSurfaceMuted}
                       />
                     </Pressable>
                   </View>
@@ -755,12 +839,58 @@ export default function SurahDetail() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Tafsir Ibn Kathir Modal */}
+      <Modal
+        visible={tafsirModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTafsirModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.tafsirModalContent, { backgroundColor: rc.bg, borderColor: colors.border }]}>
+            <View style={styles.tafsirModalHeader}>
+              <Text style={[styles.tafsirModalTitle, { color: rc.arabic }]}>Tafsir Ibn Kathir</Text>
+              <Pressable onPress={() => setTafsirModalVisible(false)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={rc.trans} />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 13, color: colors.brand, fontWeight: "700", marginBottom: 8 }}>
+                Surah {id} · Ayah {tafsirRef.ayah}
+              </Text>
+              <Text style={{ fontFamily: "AmiriBold", fontSize: 22, color: rc.arabic, textAlign: "right", marginBottom: 12, lineHeight: 36 }}>
+                {tafsirRef.arabic}
+              </Text>
+              <Text style={{ fontSize: 14, color: rc.trans, marginBottom: 16, lineHeight: 22 }}>
+                {tafsirRef.trans}
+              </Text>
+
+              <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 16 }} />
+
+              {tafsirLoading ? (
+                <ActivityIndicator color={colors.brand} style={{ marginVertical: 32 }} />
+              ) : (
+                <Text style={{ fontSize: 14, color: rc.arabic, lineHeight: 22, textAlign: "justify" }}>
+                  {tafsirContent}
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { 
+    flex: 1,
+    ...Platform.select({
+      web: { height: "100%", overflow: "hidden" } as any
+    })
+  },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
   title: { fontSize: 18, fontWeight: "700" },
   subtitle: { fontFamily: "Amiri", fontSize: 18 },
@@ -788,4 +918,33 @@ const styles = StyleSheet.create({
   juzModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#33445566" },
   juzModalTitle: { fontSize: 17, fontWeight: "700" },
   juzCell: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  tafsirModalContent: {
+    width: "100%",
+    height: "80%",
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  tafsirModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  tafsirModalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
 });

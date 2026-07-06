@@ -40,7 +40,7 @@ const light = {
 };
 
 type Mode = "light" | "dark";
-type LangCode = "en" | "ta" | "hi" | "ur" | "te" | "kn" | "ml";
+type LangCode = "en" | "ta" | "hi" | "ur" | "te" | "kn" | "ml" | "bn" | "gu" | "mr" | "pa" | "ar" | "fr" | "es" | "tr" | "id" | "ru" | "fa" | "ha" | "so" | "ms" | "uz" | "yo" | "ps";
 type FontSize = "small" | "medium" | "large";
 type FontColor = "default" | "gold" | "green" | "sepia";
 export type ArabicFontType = "indopak" | "uthmani" | "naskh";

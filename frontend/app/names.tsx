@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 import { ALLAH_NAMES, AllahName } from "@/src/data/names";
 
@@ -12,7 +13,8 @@ const GRID_ITEM_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md * 2) / 
 
 export default function AllahNamesScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
   const [isGrid, setIsGrid] = useState(false);
 
   const handleShare = async (item: AllahName) => {
@@ -60,7 +62,7 @@ export default function AllahNamesScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>99 Names of Allah</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("namesOfAllah")}</Text>
         <Pressable onPress={() => setIsGrid((g) => !g)} hitSlop={10}>
           <MaterialCommunityIcons
             name={isGrid ? "view-list-outline" : "view-grid-outline"}

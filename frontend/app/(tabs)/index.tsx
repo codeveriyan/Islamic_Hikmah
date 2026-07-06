@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useTranslation } from "@/src/localization";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import Svg, { Circle } from "react-native-svg";
@@ -60,12 +61,12 @@ const RADIUS = (RING - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
 const QUICK_ACTIONS = [
-  { id: "quran", title: "Quran", icon: "book-open-variant", route: "/quran", color: "#10B981" },
-  { id: "hadith", title: "Hadith", icon: "book-open", route: "/hadith", color: "#F59E0B" },
-  { id: "seerah", title: "Seerah", icon: "account-star", route: "/seerah", color: "#EC4899" },
-  { id: "dhikr", title: "Tasbih", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
-  { id: "names", title: "99 Names", icon: "mosque", route: "/names", color: "#14B8A6" },
-  { id: "prayer", title: "Prayer Times", icon: "clock-time-eight", route: "/prayer-times", color: "#8B5CF6" },
+  { id: "nobleQuran", icon: "book-open-variant", route: "/quran", color: "#10B981" },
+  { id: "hadithCollections", icon: "book-open", route: "/hadith", color: "#F59E0B" },
+  { id: "seerah", icon: "account-star", route: "/seerah", color: "#EC4899" },
+  { id: "tasbihCounter", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
+  { id: "namesOfAllah", icon: "mosque", route: "/names", color: "#14B8A6" },
+  { id: "prayerTimes", icon: "clock-time-eight", route: "/prayer-times", color: "#8B5CF6" },
 ] as const;
 
 function getGreeting() {
@@ -244,7 +245,8 @@ function getPrayerPeriods(times: Record<string, string>) {
 export default function HomeScreen() {
   const [group, setGroup] = useState<"main" | "other">("main");
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
   const greeting = useMemo(() => getGreeting(), []);
   const hijri = useMemo(() => getHijriDate(), []);
 
@@ -408,10 +410,10 @@ export default function HomeScreen() {
         {prayerPeriods && (
           <Pressable onPress={() => router.push("/prayer-times")} style={[styles.prayerCard, { backgroundColor: colors.surfaceSecondary }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.prayerLabel, { color: colors.onSurfaceMuted }]}>Current Prayer</Text>
-              <Text style={[styles.prayerName, { color: colors.onSurface }]}>{prayerPeriods.current.name}</Text>
+              <Text style={[styles.prayerLabel, { color: colors.onSurfaceMuted }]}>{t("currentPrayer")}</Text>
+              <Text style={[styles.prayerName, { color: colors.onSurface }]}>{t(prayerPeriods.current.name.toLowerCase())}</Text>
               <Text style={[styles.prayerTime, { color: colors.brand }]}>{format12Hour(prayerPeriods.current.timeStr)}</Text>
-              <Text style={[styles.viewAll, { color: colors.brand }]}>View All Prayers →</Text>
+              <Text style={[styles.viewAll, { color: colors.brand }]}>{t("viewAllPrayers")}</Text>
             </View>
             {/* Countdown Ring */}
             <View style={styles.ringWrap}>
@@ -426,7 +428,7 @@ export default function HomeScreen() {
               </Svg>
               <View style={styles.ringCenter}>
                 <Text style={[styles.nextLabel, { color: colors.onSurfaceMuted }]}>
-                  {prayerPeriods.next.name}
+                  {t(prayerPeriods.next.name.toLowerCase())}
                 </Text>
                 <Text style={[styles.countdown, { color: colors.onSurface }]}>{countdown}</Text>
               </View>
@@ -442,7 +444,7 @@ export default function HomeScreen() {
               <View style={[styles.quickIconWrap, { backgroundColor: a.color + "22" }]}>
                 <MaterialCommunityIcons name={a.icon as any} size={22} color={a.color} />
               </View>
-              <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{a.title}</Text>
+              <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{t(a.id)}</Text>
             </Pressable>
           ))}
         </View>
@@ -458,7 +460,7 @@ export default function HomeScreen() {
         >
           <View style={styles.goalsHeader}>
             <Text style={[styles.goalsTitle, { color: colors.onSurface }]}>
-              Complete {totalGoals} goals today
+              {t("completeGoalsToday").replace("{total}", String(totalGoals))}
             </Text>
           </View>
 
@@ -473,7 +475,7 @@ export default function HomeScreen() {
               <View key={cat} style={styles.pill}>
                 <View style={[styles.pillDot, { backgroundColor: CATEGORY_COLORS[cat] }]} />
                 <Text style={[styles.pillTxt, { color: colors.onSurfaceMuted }]}>
-                  {done}/{total} {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                  {done}/{total} {t(cat === "prayer" ? "prayers" : cat === "quran" ? "quran" : cat === "dhikr" ? "dhikrAdhkar" : "otherDeeds")}
                 </Text>
               </View>
             ) : null)}
@@ -489,7 +491,7 @@ export default function HomeScreen() {
               <Pressable key={g} onPress={() => setGroup(g)}
                 style={[styles.segmentBtn, active && { backgroundColor: colors.brandSecondary }]}>
                 <Text style={[styles.segmentText, { color: colors.onSurfaceMuted }, active && styles.segmentTextActive]}>
-                  {g === "main" ? "Main Duas" : "Other Duas"}
+                  {g === "main" ? t("mainDuas") : t("otherDuas")}
                 </Text>
               </Pressable>
             );
@@ -506,7 +508,7 @@ export default function HomeScreen() {
                 <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
                   <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
                     <View style={styles.cardLabelContainer}>
-                      <Text style={styles.cardTitle}>{c.title.toUpperCase()}</Text>
+                      <Text style={styles.cardTitle}>{t(c.id).toUpperCase()}</Text>
                     </View>
                   </LinearGradient>
                 </ImageBackground>

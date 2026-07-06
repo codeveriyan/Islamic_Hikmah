@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { ISLAMIC_EVENTS, HIJRI_MONTHS, IslamicEvent } from "@/src/data/islamicEvents";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -109,7 +110,8 @@ async function buildHijriMonth(
 
 export default function HijriCalendarScreen() {
   const router = useRouter();
-  const { colors, mode } = useTheme();
+  const { colors, mode , language } = useTheme();
+  const { t } = useTranslation(language);
 
   const [currentHijriYear, setCurrentHijriYear] = useState(1446);
   const [currentHijriMonth, setCurrentHijriMonth] = useState(1);
@@ -186,7 +188,7 @@ export default function HijriCalendarScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Hijri Calendar</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("hijriCalendar")}</Text>
         <Pressable onPress={goToToday} hitSlop={10}>
           <Text style={[styles.todayBtn, { color: colors.brand }]}>Today</Text>
         </Pressable>
@@ -354,7 +356,7 @@ export default function HijriCalendarScreen() {
                   ))
                 )}
                 <Pressable onPress={() => setSelectedDay(null)} style={[styles.closeBtn, { backgroundColor: colors.brand }]}>
-                  <Text style={[styles.closeBtnTxt, { color: colors.onBrandPrimary }]}>Close</Text>
+                  <Text style={[styles.closeBtnTxt, { color: colors.onBrandPrimary }]}>{t("close")}</Text>
                 </Pressable>
               </>
             )}

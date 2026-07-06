@@ -664,6 +664,17 @@ export async function removeQuranBookmark(surahNumber: number, ayahNumber: numbe
   await AsyncStorage.setItem(QURAN_BOOKMARKS_KEY, JSON.stringify(filtered));
 }
 
+export async function updateQuranBookmarkNote(surahNumber: number, ayahNumber: number, note: string): Promise<void> {
+  const existing = await getQuranBookmarks();
+  const updated = existing.map((e) => {
+    if (e.surahNumber === surahNumber && e.ayahNumber === ayahNumber) {
+      return { ...e, note };
+    }
+    return e;
+  });
+  await AsyncStorage.setItem(QURAN_BOOKMARKS_KEY, JSON.stringify(updated));
+}
+
 export async function isQuranBookmarked(surahNumber: number, ayahNumber: number): Promise<boolean> {
   const existing = await getQuranBookmarks();
   return existing.some((e) => e.surahNumber === surahNumber && e.ayahNumber === ayahNumber);

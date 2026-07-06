@@ -9,6 +9,7 @@ import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { resolveUserLocation, getPrayerSettings, savePrayerSettings, PrayerSettings, schedulePrayerNotifications, scheduleGoalNotifications, getActiveGoalIds, getGoalNotifTimes } from "@/src/storage";
 
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Qiyam"];
@@ -54,7 +55,8 @@ const JURISTIC_METHODS = [
 
 export default function PrayerTimesScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
   const [times, setTimes] = useState<Record<string, string> | null>(null);
   const [city, setCity] = useState("");
   const [date, setDate] = useState("");
@@ -189,9 +191,9 @@ export default function PrayerTimesScreen() {
     return (
       <View style={[styles.row, { backgroundColor: isCurrent ? colors.brand + "18" : colors.surfaceSecondary }, isCurrent && { borderWidth: 1, borderColor: colors.brand }]}>
         <MaterialCommunityIcons name={PRAYER_ICONS[p] as any} size={22} color={isCurrent ? colors.brand : colors.onSurfaceMuted} />
-        <Text style={[styles.rowName, { color: isCurrent ? colors.brand : colors.onSurface }]}>{p}</Text>
+        <Text style={[styles.rowName, { color: isCurrent ? colors.brand : colors.onSurface }]}>{t(p.toLowerCase())}</Text>
         <Text style={[styles.rowTime, { color: isCurrent ? colors.brand : colors.onSurface }]}>{formattedTime || "--:--"}</Text>
-        {isCurrent && <View style={[styles.nextBadge, { backgroundColor: colors.brand }]}><Text style={styles.nextBadgeTxt}>NEXT</Text></View>}
+        {isCurrent && <View style={[styles.nextBadge, { backgroundColor: colors.brand }]}><Text style={styles.nextBadgeTxt}>{t("next")}</Text></View>}
         {hasAdhan ? (
           <Pressable onPress={() => toggleAdhan(p, !adhanOn)} hitSlop={8} testID={`toggle-adhan-${p}`}>
             <MaterialCommunityIcons
@@ -221,7 +223,7 @@ export default function PrayerTimesScreen() {
             <Pressable onPress={() => router.back()} hitSlop={10}>
               <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
             </Pressable>
-            <Text style={styles.title}>Prayer Times</Text>
+            <Text style={styles.title}>{t("prayerTimes")}</Text>
             <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
               <Pressable onPress={() => router.push("/qibla" as any)} hitSlop={10}>
                 <MaterialCommunityIcons name="compass" size={26} color="#fff" />
@@ -236,14 +238,14 @@ export default function PrayerTimesScreen() {
             {city ? <Text style={styles.heroCity}>📍 {city}</Text> : null}
             {nextPrayer ? (
               <View style={styles.nextBox}>
-                <Text style={styles.nextLabel}>Next Prayer</Text>
-                <Text style={styles.nextName}>{nextPrayer.name}</Text>
+                <Text style={styles.nextLabel}>{t("nextPrayer")}</Text>
+                <Text style={styles.nextName}>{t(nextPrayer.name.toLowerCase())}</Text>
                 <Text style={styles.nextTime}>{format12Hour(nextPrayer.time)}</Text>
               </View>
             ) : (
               <View style={styles.nextBox}>
-                <Text style={styles.nextLabel}>All prayers complete</Text>
-                <Text style={styles.nextName}>Alhamdulillah 🌙</Text>
+                <Text style={styles.nextLabel}>{t("allPrayersComplete")}</Text>
+                <Text style={styles.nextName}>{t("alhamdulillah")}</Text>
               </View>
             )}
           </View>
@@ -257,7 +259,7 @@ export default function PrayerTimesScreen() {
           <MaterialCommunityIcons name="wifi-off" size={48} color={theme.colors.onSurfaceMuted} />
           <Text style={[styles.errTxt, { color: colors.onSurfaceMuted }]}>{err}</Text>
           <Pressable onPress={() => load()} style={[styles.retry, { backgroundColor: colors.brand }]}>
-            <Text style={[styles.retryTxt, { color: colors.onBrandPrimary }]}>Retry</Text>
+            <Text style={[styles.retryTxt, { color: colors.onBrandPrimary }]}>{t("retry")}</Text>
           </Pressable>
         </View>
       ) : (
@@ -275,8 +277,10 @@ export default function PrayerTimesScreen() {
               <Pressable onPress={() => setShowJuristicPicker(true)}
                 style={[styles.settingRow, { backgroundColor: colors.surfaceSecondary }]}>
                 <View>
-                  <Text style={[styles.settingLabel, { color: colors.onSurface }]}>Juristic Method</Text>
-                  <Text style={[styles.settingValue, { color: colors.onSurfaceMuted }]}>{currentJuristic?.name}</Text>
+                  <Text style={[styles.settingLabel, { color: colors.onSurface }]}>{t("juristicMethod")}</Text>
+                  <Text style={[styles.settingValue, { color: colors.onSurfaceMuted }]}>
+                    {settings.juristic === 0 ? t("standardSchool") : t("hanafiSchool")}
+                  </Text>
                 </View>
                 <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
               </Pressable>
@@ -285,7 +289,7 @@ export default function PrayerTimesScreen() {
               <Pressable onPress={() => setShowMethodPicker(true)}
                 style={[styles.settingRow, { backgroundColor: colors.surfaceSecondary }]}>
                 <View>
-                  <Text style={[styles.settingLabel, { color: colors.onSurface }]}>Calculation Method</Text>
+                  <Text style={[styles.settingLabel, { color: colors.onSurface }]}>{t("calculationMethod")}</Text>
                   <Text style={[styles.settingValue, { color: colors.onSurfaceMuted }]}>{currentMethod?.name}</Text>
                 </View>
                 <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
@@ -300,7 +304,7 @@ export default function PrayerTimesScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Calculation Method</Text>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>{t("calculationMethod")}</Text>
               <Pressable onPress={() => setShowMethodPicker(false)} hitSlop={10}>
                 <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
               </Pressable>
@@ -326,7 +330,7 @@ export default function PrayerTimesScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Juristic Method</Text>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>{t("juristicMethod")}</Text>
               <Pressable onPress={() => setShowJuristicPicker(false)} hitSlop={10}>
                 <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
               </Pressable>

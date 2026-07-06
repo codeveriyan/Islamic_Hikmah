@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { useState, useEffect } from "react";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -58,6 +59,7 @@ const ITEMS: SettingItem[] = [
 export default function SettingsScreen() {
   const router = useRouter();
   const { colors, mode, setMode, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor } = useTheme();
+  const { t } = useTranslation(language);
   const [activeItem, setActiveItem] = useState<SettingItem | null>(null);
 
   // User preference states
@@ -80,7 +82,24 @@ export default function SettingsScreen() {
       case "ur": return "Urdu (اردو)";
       case "te": return "Telugu (తెలుగు)";
       case "kn": return "Kannada (ಕನ್ನಡ)";
-      case "ml": return "Malayalam (മലയാളம்)";
+      case "ml": return "Malayalam (മലയാളം)";
+      case "bn": return "Bengali (বাংলা)";
+      case "gu": return "Gujarati (ગુજરાતી)";
+      case "mr": return "Marathi (मराठी)";
+      case "pa": return "Punjabi (ਪੰਜਾਬੀ)";
+      case "ar": return "Arabic (العربية)";
+      case "fr": return "French (Français)";
+      case "es": return "Spanish (Español)";
+      case "tr": return "Turkish (Türkçe)";
+      case "id": return "Indonesian (Bahasa Indonesia)";
+      case "ru": return "Russian (Русский)";
+      case "fa": return "Persian / Farsi (فارسی)";
+      case "ha": return "Hausa (هَوُسَ)";
+      case "so": return "Somali (Soomaali)";
+      case "ms": return "Malay (Bahasa Melayu)";
+      case "uz": return "Uzbek (Oʻzbekcha)";
+      case "yo": return "Yoruba (Yorùbá)";
+      case "ps": return "Pashto (پښتو)";
       default: return "English";
     }
   };
@@ -315,31 +334,50 @@ export default function SettingsScreen() {
 
       case "language":
         return (
-          <View style={styles.modalContent}>
-            <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Change Language</Text>
-            {[
-              { name: "English", code: "en" as const },
-              { name: "Tamil (தமிழ்)", code: "ta" as const },
-              { name: "Hindi (हिन्दी)", code: "hi" as const },
-              { name: "Urdu (اردو)", code: "ur" as const },
-              { name: "Telugu (తెలుగు)", code: "te" as const },
-              { name: "Kannada (ಕನ್ನಡ)", code: "kn" as const },
-              { name: "Malayalam (മലയാളம்)", code: "ml" as const }
-            ].map((lang) => (
-              <Pressable
-                key={lang.code}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  setLanguage(lang.code);
-                }}
-                style={[styles.langRow, { backgroundColor: language === lang.code ? colors.brand + "18" : "transparent" }]}
-              >
-                <Text style={[styles.langTxt, { color: colors.onSurface }, language === lang.code && { color: colors.brand, fontWeight: "700" }]}>
-                  {lang.name}
-                </Text>
-                {language === lang.code && <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />}
-              </Pressable>
-            ))}
+          <View style={[styles.modalContent, { maxHeight: "80%" }]}>
+            <Text style={[styles.modalTitle, { color: colors.onSurface, marginBottom: 12 }]}>Change Language</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: "100%" }}>
+              {[
+                { name: "English", code: "en" as const },
+                { name: "Arabic (العربية)", code: "ar" as const },
+                { name: "Bengali (বাংলা)", code: "bn" as const },
+                { name: "French (Français)", code: "fr" as const },
+                { name: "Gujarati (ગુજરાતી)", code: "gu" as const },
+                { name: "Hausa (هَوُسَ)", code: "ha" as const },
+                { name: "Hindi (हिन्दी)", code: "hi" as const },
+                { name: "Indonesian (Bahasa Indonesia)", code: "id" as const },
+                { name: "Kannada (ಕನ್ನಡ)", code: "kn" as const },
+                { name: "Malayalam (മലയാളം)", code: "ml" as const },
+                { name: "Malay (Bahasa Melayu)", code: "ms" as const },
+                { name: "Marathi (मраठी)", code: "mr" as const },
+                { name: "Pashto (پښتو)", code: "ps" as const },
+                { name: "Persian / Farsi (فارسی)", code: "fa" as const },
+                { name: "Punjabi (ਪੰਜਾਬੀ)", code: "pa" as const },
+                { name: "Russian (Русский)", code: "ru" as const },
+                { name: "Somali (Soomaali)", code: "so" as const },
+                { name: "Spanish (Español)", code: "es" as const },
+                { name: "Tamil (தமிழ்)", code: "ta" as const },
+                { name: "Telugu (తెలుగు)", code: "te" as const },
+                { name: "Turkish (Türkçe)", code: "tr" as const },
+                { name: "Urdu (اردو)", code: "ur" as const },
+                { name: "Uzbek (Oʻzbekcha)", code: "uz" as const },
+                { name: "Yoruba (Yorùbá)", code: "yo" as const }
+              ].map((lang) => (
+                <Pressable
+                  key={lang.code}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setLanguage(lang.code);
+                  }}
+                  style={[styles.langRow, { backgroundColor: language === lang.code ? colors.brand + "18" : "transparent" }]}
+                >
+                  <Text style={[styles.langTxt, { color: colors.onSurface }, language === lang.code && { color: colors.brand, fontWeight: "700" }]}>
+                    {lang.name}
+                  </Text>
+                  {language === lang.code && <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />}
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         );
 
@@ -381,7 +419,7 @@ export default function SettingsScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} testID="settings-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Settings</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t("settings")}</Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -397,9 +435,9 @@ export default function SettingsScreen() {
               <MaterialCommunityIcons name={item.icon as any} size={24} color={colors.brand} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.onSurface }]}>{item.label}</Text>
+              <Text style={[styles.rowLabel, { color: colors.onSurface }]}>{t(item.id)}</Text>
               <Text style={[styles.rowSub, { color: colors.onSurfaceMuted }]} numberOfLines={2}>
-                {item.subtext}
+                {t(item.id + "Sub")}
               </Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={22} color={colors.onSurfaceMuted} />
@@ -407,7 +445,7 @@ export default function SettingsScreen() {
         ))}
 
         {/* Footer version */}
-        <Text style={[styles.version, { color: colors.onSurfaceMuted }]}>Islamic Hikmah v1.1.0</Text>
+        <Text style={[styles.version, { color: colors.onSurfaceMuted }]}>{t("appVersion")}</Text>
       </ScrollView>
 
       {/* Sub-option Sheet Modal */}

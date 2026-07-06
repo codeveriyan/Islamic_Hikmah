@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, Dimensions, FlatList, ActivityIndica
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { theme } from "@/src/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -262,6 +263,7 @@ export default function QuranReadScreen() {
   const { page } = useLocalSearchParams<{ page: string }>();
   const router = useRouter();
   const { colors, language, arabicFont } = useTheme();
+  const { t } = useTranslation(language);
 
   const [currentPage, setCurrentPage] = useState(Number(page) || 1);
   const [isNightMode, setIsNightMode] = useState(false);
@@ -271,6 +273,9 @@ export default function QuranReadScreen() {
 
   // Bookmarked verses as a Set of "surahNum-ayahNum" strings for O(1) lookup
   const [bookmarkedVerses, setBookmarkedVerses] = useState<Set<string>>(new Set());
+
+  // Vertical scroll percentage of current page
+  const [pageScrollPct, setPageScrollPct] = useState(0);
 
   // Currently playing ayah label
   // Bookmark Prompt Modal State
@@ -532,9 +537,9 @@ export default function QuranReadScreen() {
   };
 
   const onScroll = useCallback((e: any) => {
-    const offset = e.nativeEvent.contentOffset.x;
-    const pageNum = Math.round(offset / width) + 1;
-    if (pageNum >= 1 && pageNum <= TOTAL_PAGES && pageNum !== currentPage) {
+    const offset = e.nativeEvent.contentOffset.y;
+    const pageNum = Math.min(TOTAL_PAGES, Math.max(1, Math.round(offset / 780) + 1));
+    if (pageNum !== currentPage) {
       setCurrentPage(pageNum);
       saveLastRead(pageNum);
       // Only stop playback if not in continuous playback mode (manual scroll)
@@ -543,6 +548,9 @@ export default function QuranReadScreen() {
         setPlayingAyah(null);
       }
     }
+    // Calculate progress within current page (0 to 100)
+    const pageOffset = offset % 780;
+    setPageScrollPct(Math.min(100, Math.max(0, Math.round((pageOffset / 780) * 100))));
   }, [currentPage, player, isPlayingContinuous]);
 
   const isBookmarked = bookmarks.some((b) => b.page === currentPage);
@@ -550,11 +558,21 @@ export default function QuranReadScreen() {
   const pagesData = Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1);
 
   const renderPage = useCallback(({ item }: { item: number }) => (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      style={{ width, height: height - 150, backgroundColor: isNightMode ? "#0D1E2E" : "#FAF7F0" }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 24, paddingBottom: 100 }}
+    <View
+      style={{
+        width,
+        height: 780,
+        backgroundColor: isNightMode ? "#0D1E2E" : "#FAF7F0",
+        paddingHorizontal: 20,
+        paddingVertical: 24,
+        borderBottomWidth: 1,
+        borderBottomColor: isNightMode ? "#1E2F40" : "#E2E8F0",
+        justifyContent: "center",
+      }}
     >
+      <Text style={{ fontSize: 11, color: colors.brand, fontWeight: "700", textAlign: "center", marginBottom: 8 }}>
+        PAGE {item}
+      </Text>
       <QuranPageItem
         item={item}
         isNightMode={isNightMode}
@@ -566,7 +584,7 @@ export default function QuranReadScreen() {
         bookmarkedVerses={bookmarkedVerses}
         fontType={fontType}
       />
-    </ScrollView>
+    </View>
   ), [isNightMode, colors, zoomScale, playingAyah, bookmarkedVerses, fontType]);
 
   // Touch gesture handlers for pinch to zoom
@@ -597,14 +615,25 @@ export default function QuranReadScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isNightMode ? "#0D1829" : "#FFFFFF" }]}>
+      {/* Reading progress bar */}
+      <View style={{ height: 3, backgroundColor: isNightMode ? "#1E3A55" : "#E2E8F0", width: "100%" }}>
+        <View style={{ height: 3, backgroundColor: "#C5A880", width: `${pageScrollPct}%` }} />
+      </View>
+
+
       {/* Top Header */}
       <View style={[styles.header, { borderBottomColor: isNightMode ? "#334155" : "#E2E8F0", backgroundColor: isNightMode ? "#0D1829" : "#FFFFFF" }]}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={isNightMode ? "#FFF" : "#5C4E3C"} />
         </Pressable>
-        <Text style={[styles.title, { color: isNightMode ? "#F0F4F8" : "#5C4E3C" }]}>
-          Medina Mushaf - Page {currentPage}
-        </Text>
+        <View style={{ alignItems: "center" }}>
+          <Text style={[styles.title, { color: isNightMode ? "#F0F4F8" : "#5C4E3C" }]}>
+            Medina Mushaf - Page {currentPage}
+          </Text>
+          <Text style={{ fontSize: 10, color: "#C5A880", fontWeight: "700", marginTop: 1 }}>
+            {pageScrollPct}% read
+          </Text>
+        </View>
         <Pressable onPress={() => {
           setJumpPageInput(String(currentPage));
           setJumpModalVisible(true);
@@ -623,16 +652,14 @@ export default function QuranReadScreen() {
         <FlatList
           ref={flatListRef}
           data={pagesData}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
           keyExtractor={(item) => String(item)}
           renderItem={renderPage}
           onScroll={onScroll}
           initialScrollIndex={currentPage - 1}
           getItemLayout={(data, index) => ({
-            length: width,
-            offset: width * index,
+            length: 780,
+            offset: 780 * index,
             index,
           })}
           removeClippedSubviews={Platform.OS === "android"}
@@ -714,7 +741,7 @@ export default function QuranReadScreen() {
                 onPress={() => setJumpModalVisible(false)}
                 style={[styles.modalBtn, { backgroundColor: colors.surface }]}
               >
-                <Text style={[styles.modalBtnTxt, { color: colors.onSurfaceMuted }]}>Cancel</Text>
+                <Text style={[styles.modalBtnTxt, { color: colors.onSurfaceMuted }]}>{t("cancel")}</Text>
               </Pressable>
               <Pressable
                 onPress={handleJumpPage}
@@ -731,7 +758,12 @@ export default function QuranReadScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { 
+    flex: 1,
+    ...Platform.select({
+      web: { height: "100%", overflow: "hidden" } as any
+    })
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

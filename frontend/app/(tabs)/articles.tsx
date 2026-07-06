@@ -4,11 +4,13 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { ARTICLES } from "@/src/data/articles";
 
 export default function ArticlesScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors , language } = useTheme();
+  const { t } = useTranslation(language);
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <View style={styles.header}>

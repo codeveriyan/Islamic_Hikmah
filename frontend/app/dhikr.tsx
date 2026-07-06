@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
+import { useTranslation } from "@/src/localization";
 import { DHIKRS } from "@/src/data/dhikrs";
 import { getDhikrCounts, setDhikrCount } from "@/src/storage";
 import { theme } from "@/src/theme";
@@ -17,7 +18,8 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export default function DhikrScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
   const [selected, setSelected] = useState(DHIKRS[0]);
   const [count, setCount] = useState(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
