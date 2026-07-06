@@ -405,16 +405,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginHorizontal: theme.spacing.lg,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 12,
     gap: 8,
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
   },
-  searchInput: { flex: 1, paddingVertical: 12, fontSize: 14 },
+  searchInput: { flex: 1, paddingVertical: 8, fontSize: 14 },
 
   eraRow: {
     flexDirection: "row",
     paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
     gap: 8,
   },
   eraChip: {
@@ -431,7 +433,8 @@ const styles = StyleSheet.create({
 
   listContent: {
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.sm,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
     gap: theme.spacing.sm,
   },
   chapterCard: {
