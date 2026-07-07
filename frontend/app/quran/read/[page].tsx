@@ -14,6 +14,7 @@ import { useIsFocused } from "@react-navigation/native";
 import quranData from "@/src/data/quran/quranData.json";
 import pageMappingData from "@/src/data/quran/pageMapping.json";
 import { TRANSLATION_MAP } from "@/src/data/quran/translationLanguages";
+import transliterationTajweedData from "@/src/data/quran/transliterationTajweed.json";
 
 type QuranBookmark = {
   page: number;
@@ -75,6 +76,8 @@ const QuranPageItem = ({
   const pageVerses = pageMap.ayahs.map((m) => {
     const surah = QURAN.find((s) => s.number === m.surah);
     const ayah = surah?.ayahs.find((a) => a.numberInSurah === m.ayah);
+    const key = `${m.surah}:${m.ayah}`;
+    const highQualityText = (transliterationTajweedData as Record<string, string>)[key] || ayah?.transliteration || "";
     return {
       surahNumber: m.surah,
       surahName: surah?.name || "",
@@ -83,7 +86,7 @@ const QuranPageItem = ({
       ayahNumber: m.ayah,
       arabic: ayah?.arabic || "",
       translation: ayah?.translation || "",
-      transliteration: ayah?.transliteration || "",
+      transliteration: highQualityText,
     };
   });
 

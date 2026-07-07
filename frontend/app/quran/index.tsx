@@ -33,6 +33,7 @@ import {
   updateQuranBookmarkNote,
 } from "@/src/storage";
 import { SURAH_INFO_DATA, SurahInfo } from "@/src/data/surahInfoData";
+import surahInfoDetailed from "@/src/data/quran/surahInfoDetailed.json";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Surah = {
@@ -320,7 +321,19 @@ export default function QuranIndex() {
           <Text style={[styles.badgeText, { color: colors.brand }]}>{item.number}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.rowTitle, { color: colors.onSurface }]}>{item.englishName}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={[styles.rowTitle, { color: colors.onSurface }]}>{item.englishName}</Text>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setSelectedSurahForInfo(item);
+              }}
+              style={{ padding: 2 }}
+              hitSlop={10}
+            >
+              <MaterialCommunityIcons name="information-outline" size={18} color={colors.brand} />
+            </Pressable>
+          </View>
           <Text style={[styles.rowSub, { color: colors.onSurfaceMuted }]}>
             {t("pageNo").replace("No. ", "").replace("{page}", String(startPage))} · {item.numberOfAyahs} {t("ayaat")}
           </Text>
@@ -835,6 +848,26 @@ export default function QuranIndex() {
                       <Text style={[styles.bulletText, { color: colors.onSurfaceSecondary }]}>{topic}</Text>
                     </View>
                   ))}
+
+                  {(() => {
+                    const detailedLangs = ["en", "id", "it", "ml", "ta", "ur"];
+                    let activeDetailedLang = detailedLangs.includes(language) ? language : "en";
+                    if (activeDetailedLang === "ta" && selectedSurahForInfo?.number !== 3) {
+                      activeDetailedLang = "en";
+                    }
+                    const detailedText = selectedSurahForInfo
+                      ? (surahInfoDetailed as any)[String(selectedSurahForInfo.number)]?.[activeDetailedLang] || ""
+                      : "";
+
+                    if (!detailedText) return null;
+                    return (
+                      <>
+                        <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 20 }} />
+                        <Text style={[styles.sectionTitle, { color: colors.brand }]}>Surah History & Context</Text>
+                        {parseHtmlToElements(detailedText, colors)}
+                      </>
+                    );
+                  })()}
                 </ScrollView>
               );
             })()}
@@ -1038,3 +1071,125 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 });
+
+function parseHtmlToElements(html: string, colors: any) {
+  if (!html) return null;
+
+  // Clean HTML: Keep only allowed tags, strip attributes, and remove unhandled tags completely
+  let cleaned = html.replace(/<(\/?[a-zA-Z0-9]+)([^>]*)>/g, (match, tag) => {
+    const normTag = tag.toLowerCase();
+    if (normTag === "h2" || normTag === "p" || normTag === "strong" || normTag === "br") {
+      return `<${normTag}>`;
+    }
+    if (normTag === "/h2" || normTag === "/p" || normTag === "/strong") {
+      return `<${normTag}>`;
+    }
+    return "";
+  });
+
+  // Split into paragraphs by <p> tags and headings by <h2> tags
+  const blocks = cleaned.split(/(<\/?[pP]>|<\/?[hH]2>|<br\s*\/?>)/g);
+  
+  const elements: React.ReactNode[] = [];
+  let currentBlockType: "p" | "h2" | "br" = "p";
+  
+  blocks.forEach((block, blockIdx) => {
+    const cleanBlock = block.trim();
+    if (!cleanBlock) return;
+    
+    const tag = cleanBlock.toLowerCase();
+    if (tag === "<p>") {
+      currentBlockType = "p";
+      return;
+    }
+    if (tag === "</p>") {
+      return;
+    }
+    if (tag === "<h2>") {
+      currentBlockType = "h2";
+      return;
+    }
+    if (tag === "</h2>") {
+      return;
+    }
+    if (tag === "<br>" || tag === "<br/>" || tag === "<br />") {
+      elements.push(<View key={`br-${blockIdx}`} style={{ height: 8 }} />);
+      return;
+    }
+    
+    // Within this block, parse <strong> tags
+    const spans = cleanBlock.split(/(<\/?[sS][tT][rR][oO][nN][gG]>)/g);
+    let isStrong = false;
+    const blockChildren: React.ReactNode[] = [];
+    
+    spans.forEach((span, spanIdx) => {
+      const spanTag = span.toLowerCase();
+      if (spanTag === "<strong>") {
+        isStrong = true;
+        return;
+      }
+      if (spanTag === "</strong>") {
+        isStrong = false;
+        return;
+      }
+      
+      // Decode HTML entities
+      const text = span
+        .replace(/&rsquo;/g, "'")
+        .replace(/&lsquo;/g, "'")
+        .replace(/&ldquo;/g, '"')
+        .replace(/&rdquo;/g, '"')
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">");
+        
+      blockChildren.push(
+        <Text
+          key={`span-${spanIdx}`}
+          style={[
+            isStrong && { fontWeight: "700", color: colors.onSurface },
+          ]}
+        >
+          {text}
+        </Text>
+      );
+    });
+    
+    if (currentBlockType === "h2") {
+      elements.push(
+        <Text
+          key={`h2-${blockIdx}`}
+          style={{
+            fontSize: 16,
+            fontWeight: "700",
+            color: colors.brand,
+            marginTop: 18,
+            marginBottom: 8,
+            fontFamily: "System",
+          }}
+        >
+          {blockChildren}
+        </Text>
+      );
+    } else {
+      elements.push(
+        <Text
+          key={`p-${blockIdx}`}
+          style={{
+            fontSize: 14,
+            lineHeight: 22,
+            color: colors.onSurfaceSecondary,
+            marginBottom: 12,
+            fontFamily: "System",
+          }}
+        >
+          {blockChildren}
+        </Text>
+      );
+    }
+  });
+  
+  return <View style={{ marginTop: 10 }}>{elements}</View>;
+}
