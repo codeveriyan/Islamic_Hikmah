@@ -1,46 +1,44 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LangCode } from "@/src/data/quran/translationLanguages";
 
 const KEY = "islamic-hikmah:theme:v1";
 
 const dark = {
   mode: "dark" as Mode,
-  // Rich deep navy blue — matches the reference "A Life With Allah" app style.
-  // NOT pure black (#000) or near-black (#0B1120) — a warm deep blue makes
-  // Arabic text far easier to read and feels more premium.
-  surface: "#0D2137",           // main background — deep navy
-  surfaceSecondary: "#112840",  // card backgrounds — slightly lighter navy
-  surfaceTertiary: "#163351",   // borders, dividers — mid navy
-  onSurface: "#FFFFFF",         // primary text — pure white for max contrast
-  onSurfaceMuted: "#8BAFC8",    // secondary text — muted blue-white
-  onSurfaceSecondary: "#C8DFF0",// body text — light blue-white
-  border: "#1A3A55",            // subtle borders
-  brand: "#C5A880",             // gold accent (kept)
-  onBrandPrimary: "#0D2137",    // text on gold buttons
-  brandSecondary: "#14B8A6",    // teal accent (kept)
-  error: "#EF4444",
-  success: "#10B981",
+  // WhatsApp Dark theme colors
+  surface: "#0b141a",           // main background — WhatsApp dark background
+  surfaceSecondary: "#111b21",  // card backgrounds — WhatsApp bubble/card dark
+  surfaceTertiary: "#202c33",   // borders, dividers
+  onSurface: "#e9edef",         // primary text — high contrast off-white
+  onSurfaceMuted: "#8696a0",    // secondary text — WhatsApp muted grey
+  onSurfaceSecondary: "#d1d7db",// body text — light grey
+  border: "#222e35",            // borders
+  brand: "#00a884",             // WhatsApp teal-green brand accent
+  onBrandPrimary: "#0b141a",    // text on brand buttons
+  brandSecondary: "#005c4b",    // dark green secondary
+  error: "#f15c6d",
+  success: "#00a884",
 };
 
 const light = {
   mode: "light" as Mode,
-  // Pure white background with crisp near-black text — clean and readable.
-  surface: "#FFFFFF",           // pure white main background
-  surfaceSecondary: "#F5F7FA",  // very light grey for cards
-  surfaceTertiary: "#E8EDF2",   // slightly darker for dividers
-  onSurface: "#0F172A",         // near-black text — maximum contrast
-  onSurfaceMuted: "#4B5563",    // secondary text — dark grey
-  onSurfaceSecondary: "#1E293B",// body text — dark slate
-  border: "#E2E8F0",            // light grey borders
-  brand: "#A07C4F",             // warm gold accent
-  onBrandPrimary: "#FFFFFF",    // white text on gold
-  brandSecondary: "#0F766E",    // teal accent
-  error: "#DC2626",
-  success: "#059669",
+  // WhatsApp Light theme colors
+  surface: "#ffffff",           // main background
+  surfaceSecondary: "#f0f2f5",  // cards background
+  surfaceTertiary: "#e9edef",   // dividers/borders
+  onSurface: "#111b21",         // deep slate/black text
+  onSurfaceMuted: "#667781",    // muted text
+  onSurfaceSecondary: "#3b4a54",// body text
+  border: "#dfe5e7",            // light borders
+  brand: "#008069",             // WhatsApp green accent
+  onBrandPrimary: "#ffffff",    // white text on brand buttons
+  brandSecondary: "#075e54",    // deep dark green
+  error: "#ea0038",
+  success: "#008069",
 };
 
 type Mode = "light" | "dark";
-type LangCode = "en" | "ta" | "hi" | "ur" | "te" | "kn" | "ml" | "bn" | "gu" | "mr" | "pa" | "ar" | "fr" | "es" | "tr" | "id" | "ru" | "fa" | "ha" | "so" | "ms" | "uz" | "yo" | "ps";
 type FontSize = "small" | "medium" | "large";
 type FontColor = "default" | "gold" | "green" | "sepia";
 export type ArabicFontType = "indopak" | "uthmani" | "naskh";

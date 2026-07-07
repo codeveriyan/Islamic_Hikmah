@@ -32,6 +32,7 @@ import {
   QuranLastRead,
   updateQuranBookmarkNote,
 } from "@/src/storage";
+import { SURAH_INFO_DATA, SurahInfo } from "@/src/data/surahInfoData";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Surah = {
@@ -93,6 +94,9 @@ export default function QuranIndex() {
 
   // Top tabs
   const [activeTab, setActiveTab] = useState<"read" | "listen" | "learn">("read");
+
+  // Surah Info Modal state
+  const [selectedSurahForInfo, setSelectedSurahForInfo] = useState<Surah | null>(null);
 
   // Read sub-tabs
   const [readSubTab, setReadSubTab] = useState<"surah" | "juz" | "bookmark">("surah");
@@ -274,6 +278,11 @@ export default function QuranIndex() {
   const renderListenSurah = useCallback(({ item }: { item: Surah }) => (
     <Pressable
       onPress={() => router.push(`/quran/${item.number}` as any)}
+      onLongPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        setSelectedSurahForInfo(item);
+      }}
+      delayLongPress={350}
       style={({ pressed }) => [styles.row, { backgroundColor: colors.surfaceSecondary }, pressed && { opacity: 0.8 }]}
       testID={`surah-listen-${item.number}`}
     >
@@ -286,7 +295,10 @@ export default function QuranIndex() {
           {item.englishNameTranslation} · {item.numberOfAyahs} {t("ayaat")} · {item.revelationType}
         </Text>
       </View>
-      <Text style={[styles.arabicName, { color: colors.brand }]}>{item.name}</Text>
+      <View style={{ alignItems: "flex-end", gap: 4 }}>
+        <Text style={[styles.arabicName, { color: colors.brand }]}>{item.name}</Text>
+        <Text style={{ fontSize: 9, color: colors.onSurfaceMuted }}>Hold for Info</Text>
+      </View>
     </Pressable>
   ), [colors, router, t]);
 
@@ -295,6 +307,11 @@ export default function QuranIndex() {
     return (
       <Pressable
         onPress={() => router.push(`/quran/read/${startPage}` as any)}
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          setSelectedSurahForInfo(item);
+        }}
+        delayLongPress={350}
         style={({ pressed }) => [styles.row, { backgroundColor: colors.surfaceSecondary }, pressed && { opacity: 0.8 }]}
         testID={`surah-read-${item.number}`}
       >
@@ -308,7 +325,10 @@ export default function QuranIndex() {
             {t("pageNo").replace("No. ", "").replace("{page}", String(startPage))} · {item.numberOfAyahs} {t("ayaat")}
           </Text>
         </View>
-        <Text style={[styles.arabicNameRead, { color: colors.onSurface }]}>{item.name}</Text>
+        <View style={{ alignItems: "flex-end", gap: 4 }}>
+          <Text style={[styles.arabicNameRead, { color: colors.onSurface }]}>{item.name}</Text>
+          <Text style={{ fontSize: 9, color: colors.onSurfaceMuted }}>Hold for Info</Text>
+        </View>
       </Pressable>
     );
   }, [colors, router, surahStartPages, t]);
@@ -382,7 +402,7 @@ export default function QuranIndex() {
                 <Text style={[styles.rowSub, { color: colors.onSurfaceMuted }]}>Ayah {b.ayahNumber} · {timeAgo(b.savedAt)}</Text>
                 {b.note ? (
                   <Text style={{ fontSize: 12, color: colors.brandSecondary, fontStyle: "italic", marginTop: 4 }}>
-                    "{b.note}"
+                    {"\""}{b.note}{"\""}
                   </Text>
                 ) : null}
               </View>
@@ -733,6 +753,101 @@ export default function QuranIndex() {
           </View>
         </View>
       </Modal>
+
+      {/* Surah Information Modal (Tier-1 Enhancement) */}
+      <Modal
+        visible={selectedSurahForInfo !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedSurahForInfo(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.infoModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.infoModalHeader}>
+              <View>
+                <Text style={[styles.infoModalTitle, { color: colors.onSurface }]}>
+                  {selectedSurahForInfo?.englishName}
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.brand, fontWeight: "600" }}>
+                  {selectedSurahForInfo?.englishNameTranslation}
+                </Text>
+              </View>
+              <Pressable onPress={() => setSelectedSurahForInfo(null)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+
+            {selectedSurahForInfo && (() => {
+              const info = SURAH_INFO_DATA[selectedSurahForInfo.number] || {
+                placeOfRevelation: selectedSurahForInfo.revelationType === "Meccan" ? "Makkah" : "Madinah",
+                revelationOrder: 0,
+                mainThemes: ["Monotheism", "Prophethood", "Hereafter"],
+                keyTopics: ["Guidance", "Faith", "Stories of the Prophets"]
+              };
+
+              return (
+                <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+                  {/* Quick stats row */}
+                  <View style={styles.statsRow}>
+                    <View style={[styles.statBox, { backgroundColor: colors.surfaceSecondary }]}>
+                      <MaterialCommunityIcons name="map-marker-radius" size={20} color={colors.brand} />
+                      <Text style={[styles.statLabel, { color: colors.onSurfaceMuted }]}>Revealed In</Text>
+                      <Text style={[styles.statValue, { color: colors.onSurface }]}>
+                        {info.placeOfRevelation}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.statBox, { backgroundColor: colors.surfaceSecondary }]}>
+                      <MaterialCommunityIcons name="format-list-numbered" size={20} color={colors.brand} />
+                      <Text style={[styles.statLabel, { color: colors.onSurfaceMuted }]}>Revelation Order</Text>
+                      <Text style={[styles.statValue, { color: colors.onSurface }]}>
+                        #{info.revelationOrder || "N/A"}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.statBox, { backgroundColor: colors.surfaceSecondary }]}>
+                      <MaterialCommunityIcons name="book-open-page-variant" size={20} color={colors.brand} />
+                      <Text style={[styles.statLabel, { color: colors.onSurfaceMuted }]}>Total Verses</Text>
+                      <Text style={[styles.statValue, { color: colors.onSurface }]}>
+                        {selectedSurahForInfo.numberOfAyahs}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 20 }} />
+
+                  {/* Main Themes */}
+                  <Text style={[styles.sectionTitle, { color: colors.brand }]}>Main Themes</Text>
+                  {info.mainThemes.map((themeStr, index) => (
+                    <View key={index} style={styles.bulletItem}>
+                      <MaterialCommunityIcons name="star-four-points" size={14} color={colors.brand} style={{ marginTop: 3 }} />
+                      <Text style={[styles.bulletText, { color: colors.onSurfaceSecondary }]}>{themeStr}</Text>
+                    </View>
+                  ))}
+
+                  <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 20 }} />
+
+                  {/* Key Topics */}
+                  <Text style={[styles.sectionTitle, { color: colors.brand }]}>Key Topics covered</Text>
+                  {info.keyTopics.map((topic, index) => (
+                    <View key={index} style={styles.bulletItem}>
+                      <MaterialCommunityIcons name="circle-medium" size={16} color={colors.brand} style={{ marginTop: 2 }} />
+                      <Text style={[styles.bulletText, { color: colors.onSurfaceSecondary }]}>{topic}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              );
+            })()}
+
+            <Pressable
+              onPress={() => setSelectedSurahForInfo(null)}
+              style={[styles.infoBtnClose, { backgroundColor: colors.brand }]}
+            >
+              <Text style={{ color: colors.onBrandPrimary, fontWeight: "700" }}>Dismiss</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -853,5 +968,73 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+  },
+  infoModalContent: {
+    width: "100%",
+    maxHeight: "85%",
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  infoModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  infoModalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  statBox: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: "center",
+    gap: 4,
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    marginBottom: 12,
+    letterSpacing: 0.5,
+  },
+  bulletItem: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+    alignItems: "flex-start",
+  },
+  bulletText: {
+    fontSize: 13,
+    lineHeight: 18,
+    flex: 1,
+  },
+  infoBtnClose: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 16,
   },
 });

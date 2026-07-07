@@ -180,15 +180,23 @@ export type PrayerSettings = {
   method: number;
   juristic: number; // 0=Shafi, 1=Hanafi
   adhanEnabled: Record<string, boolean>;
+  offsets?: Record<string, number>; // manual tuning offsets in minutes
 };
 
 export async function getPrayerSettings(): Promise<PrayerSettings> {
   const raw = await AsyncStorage.getItem(PRAYER_SETTINGS_KEY);
-  if (raw) return JSON.parse(raw);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (!parsed.offsets) {
+      parsed.offsets = { Fajr: 0, Sunrise: 0, Dhuhr: 0, Asr: 0, Maghrib: 0, Isha: 0, Qiyam: 0 };
+    }
+    return parsed;
+  }
   return {
     method: 1,
     juristic: 0,
     adhanEnabled: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true },
+    offsets: { Fajr: 0, Sunrise: 0, Dhuhr: 0, Asr: 0, Maghrib: 0, Isha: 0, Qiyam: 0 },
   };
 }
 
@@ -244,6 +252,8 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
 
   const newIds: string[] = [];
   const activePrayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+  const settings = await getPrayerSettings();
+  const offsets = settings.offsets || {};
   
   for (const p of activePrayers) {
     const isEnabled = adhanEnabled[p] ?? true;
@@ -253,10 +263,20 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
     if (!timeStr) continue;
     
     const [hStr, mStr] = timeStr.split(":");
-    const h = parseInt(hStr, 10);
-    const m = parseInt(mStr, 10);
+    let h = parseInt(hStr, 10);
+    let m = parseInt(mStr, 10);
     
     if (isNaN(h) || isNaN(m)) continue;
+
+    // Apply manual offset adjustments
+    const offsetMin = offsets[p] || 0;
+    if (offsetMin !== 0) {
+      const dateObj = new Date();
+      dateObj.setHours(h, m, 0, 0);
+      const adjustedDate = new Date(dateObj.getTime() + offsetMin * 60 * 1000);
+      h = adjustedDate.getHours();
+      m = adjustedDate.getMinutes();
+    }
     
     try {
       const id = await Notifications.scheduleNotificationAsync({

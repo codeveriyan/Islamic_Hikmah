@@ -62,9 +62,10 @@ export default function PrayerTimesScreen() {
   const [date, setDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [settings, setSettings] = useState<PrayerSettings>({ method: 1, juristic: 0, adhanEnabled: {} });
+  const [settings, setSettings] = useState<PrayerSettings>({ method: 1, juristic: 0, adhanEnabled: {}, offsets: {} });
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [showJuristicPicker, setShowJuristicPicker] = useState(false);
+  const [showOffsetPicker, setShowOffsetPicker] = useState(false);
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -133,9 +134,29 @@ export default function PrayerTimesScreen() {
 
   const getPrayerTime = useCallback((p: string) => {
     if (!times) return "";
-    if (p === "Qiyam") return times["Lastthird"] || times["Midnight"] || "";
-    return times[p] || "";
-  }, [times]);
+    let baseTime = times[p];
+    if (p === "Qiyam") baseTime = times["Lastthird"] || times["Midnight"] || "";
+    if (!baseTime) return "";
+    
+    const offsetMin = settings.offsets?.[p] || 0;
+    if (offsetMin === 0) return baseTime;
+    
+    try {
+      const [hStr, mStr] = baseTime.split(":");
+      const h = parseInt(hStr, 10);
+      const m = parseInt(mStr, 10);
+      if (isNaN(h) || isNaN(m)) return baseTime;
+      
+      const dateObj = new Date();
+      dateObj.setHours(h, m, 0, 0);
+      const adjustedDate = new Date(dateObj.getTime() + offsetMin * 60 * 1000);
+      const adjustedH = String(adjustedDate.getHours()).padStart(2, "0");
+      const adjustedM = String(adjustedDate.getMinutes()).padStart(2, "0");
+      return `${adjustedH}:${adjustedM}`;
+    } catch {
+      return baseTime;
+    }
+  }, [times, settings]);
 
 
   const nextPrayer = (() => {
@@ -294,6 +315,18 @@ export default function PrayerTimesScreen() {
                 </View>
                 <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
               </Pressable>
+
+              {/* Time Correction Adjustment */}
+              <Pressable onPress={() => setShowOffsetPicker(true)}
+                style={[styles.settingRow, { backgroundColor: colors.surfaceSecondary }]}>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.onSurface }]}>Manual Time Correction</Text>
+                  <Text style={[styles.settingValue, { color: colors.onSurfaceMuted }]}>
+                    Adjust prayer times manually (± minutes)
+                  </Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
+              </Pressable>
             </View>
           }
         />
@@ -345,6 +378,59 @@ export default function PrayerTimesScreen() {
                 {j.id === settings.juristic && <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />}
               </Pressable>
             ))}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Manual Time Correction Modal */}
+      <Modal visible={showOffsetPicker} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Manual Time Correction</Text>
+              <Pressable onPress={() => setShowOffsetPicker(false)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 350 }}>
+              {["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Qiyam"].map(p => {
+                const currentOffset = settings.offsets?.[p] || 0;
+                const updateOffset = async (newVal: number) => {
+                  const newOffsets = { ...(settings.offsets || {}), [p]: newVal };
+                  const newSettings = { ...settings, offsets: newOffsets };
+                  setSettings(newSettings);
+                  await savePrayerSettings(newSettings);
+                  await load(newSettings);
+                };
+                return (
+                  <View key={p} style={[styles.pickerRow, { justifyContent: "space-between", alignItems: "center" }]}>
+                    <View>
+                      <Text style={[styles.pickerName, { color: colors.onSurface }]}>{t(p.toLowerCase()) || p}</Text>
+                      <Text style={[styles.pickerNote, { color: colors.onSurfaceMuted }]}>
+                        Current adjustment: {currentOffset > 0 ? `+${currentOffset}` : currentOffset} min
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                      <Pressable
+                        onPress={() => updateOffset(currentOffset - 1)}
+                        style={{ padding: 8, borderRadius: 8, backgroundColor: colors.surfaceTertiary }}
+                      >
+                        <MaterialCommunityIcons name="minus" size={20} color={colors.onSurface} />
+                      </Pressable>
+                      <Text style={{ minWidth: 32, textAlign: "center", color: colors.onSurface, fontWeight: "700" }}>
+                        {currentOffset}
+                      </Text>
+                      <Pressable
+                        onPress={() => updateOffset(currentOffset + 1)}
+                        style={{ padding: 8, borderRadius: 8, backgroundColor: colors.surfaceTertiary }}
+                      >
+                        <MaterialCommunityIcons name="plus" size={20} color={colors.onSurface} />
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
       </Modal>

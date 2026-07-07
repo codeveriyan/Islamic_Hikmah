@@ -12,6 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useIsFocused } from "@react-navigation/native";
 import quranData from "@/src/data/quran/quranData.json";
 import { JUZ_DATA, getJuzForAyah } from "@/src/data/juzData";
+import { TRANSLATION_MAP } from "@/src/data/quran/translationLanguages";
 
 type Ayah = {
   number: number;
@@ -94,15 +95,17 @@ export default function SurahDetail() {
   const [tafsirLoading, setTafsirLoading] = useState(false);
   const [tafsirContent, setTafsirContent] = useState("");
   const [tafsirRef, setTafsirRef] = useState({ surah: 0, ayah: 0, arabic: "", trans: "" });
+  const [activeTafsirId, setActiveTafsirId] = useState<number>(169); // 169 = Ibn Kathir (English), 160 = Al-Jalalayn (English by F. Hamza)
 
-  const openTafsirModal = useCallback(async (ayahNum: number, arabicText: string, transText: string) => {
+  const openTafsirModal = useCallback(async (ayahNum: number, arabicText: string, transText: string, tafsirIdOverride?: number) => {
+    const tafsirId = tafsirIdOverride ?? activeTafsirId;
     setTafsirRef({ surah: Number(id), ayah: ayahNum, arabic: arabicText, trans: transText });
     setTafsirModalVisible(true);
     setTafsirLoading(true);
     setTafsirContent("");
 
     try {
-      const cacheKey = `hikmah:tafsir:${id}:${ayahNum}`;
+      const cacheKey = `hikmah:tafsir:${tafsirId}:${id}:${ayahNum}`;
       const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         setTafsirContent(cached);
@@ -110,7 +113,7 @@ export default function SurahDetail() {
         return;
       }
 
-      const response = await fetch(`https://api.quran.com/api/v4/tafsirs/169/by_ayah/${id}:${ayahNum}`);
+      const response = await fetch(`https://api.quran.com/api/v4/tafsirs/${tafsirId}/by_ayah/${id}:${ayahNum}`);
       const data = await response.json();
       if (data && data.tafsir && data.tafsir.text) {
         // Strip HTML tags from the Tafsir text
@@ -126,6 +129,52 @@ export default function SurahDetail() {
       setTafsirContent("Failed to load Tafsir. Please check your internet connection.");
     } finally {
       setTafsirLoading(false);
+    }
+  }, [id, activeTafsirId]);
+
+  // Grammar Breakdown / Topics Modal States
+  const [grammarModalVisible, setGrammarModalVisible] = useState(false);
+  const [selectedAyahForGrammar, setSelectedAyahForGrammar] = useState<{ surah: number; ayah: number; text: string; translation: string } | null>(null);
+  const [grammarLoading, setGrammarLoading] = useState(false);
+  const [grammarWords, setGrammarWords] = useState<{ text: string; transliteration: string; translation: string; partOfSpeech?: string }[]>([]);
+
+  const openGrammarModal = useCallback(async (ayahNum: number, arabicText: string, transText: string) => {
+    const surahId = Number(id);
+    setSelectedAyahForGrammar({ surah: surahId, ayah: ayahNum, text: arabicText, translation: transText });
+    setGrammarModalVisible(true);
+    setGrammarLoading(true);
+    setGrammarWords([]);
+
+    try {
+      const cacheKey = `hikmah:grammar:${surahId}:${ayahNum}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        setGrammarWords(JSON.parse(cached));
+        setGrammarLoading(false);
+        return;
+      }
+
+      // Fetch word-by-word data from Quran Foundation API v4 (public fallback)
+      const response = await fetch(`https://api.quran.com/api/v4/verses/by_key/${surahId}:${ayahNum}?words=true`);
+      const data = await response.json();
+      if (data && data.verse && data.verse.words) {
+        const mapped = data.verse.words
+          .filter((w: any) => w.char_type_name === "word")
+          .map((w: any) => ({
+            text: w.text_uthmani || w.text || "",
+            transliteration: w.transliteration?.text || "",
+            translation: w.translation?.text || "",
+            partOfSpeech: w.line_number ? `Word ${w.position}` : undefined,
+          }));
+        setGrammarWords(mapped);
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(mapped));
+      } else {
+        setGrammarWords([]);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGrammarLoading(false);
     }
   }, [id]);
 
@@ -210,89 +259,116 @@ export default function SurahDetail() {
             }
           }
 
-          // Fetch translations dynamically if not cached.
-          // All chunks are fired in PARALLEL (Promise.all) instead of sequentially,
-          // so a 286-ayah surah goes from ~30 sequential calls to 15 parallel pairs.
           const fetchQuranTranslations = async () => {
             try {
-              const chunkSize = 20;
               const transResults: Ayah[] = [...englishTrans];
               const translitResults: Ayah[] = [...englishTranslit];
-              const chunkCount = Math.ceil(englishTrans.length / chunkSize);
-
-              const translateChunk = async (chunkIdx: number) => {
+              const translationId = TRANSLATION_MAP[language as keyof typeof TRANSLATION_MAP];
+              if (language === "ta") {
+                // Load from local Jan Trust JSON file
+                const taJanTrust = require("@/src/data/quran/ta-jan-trust-simple.json");
+                transResults.forEach((ayah, idx) => {
+                  const key = `${surahId}:${ayah.numberInSurah}`;
+                  if (taJanTrust[key]) {
+                    transResults[idx] = { ...ayah, text: taJanTrust[key].t };
+                  }
+                });
+              } else if (translationId) {
+                // Fetch directly from Quran.com API v4
+                const response = await fetch(`https://api.quran.com/api/v4/quran/translations/${translationId}?chapter_number=${surahId}`);
                 if (!active) return;
-                const startIdx = chunkIdx * chunkSize;
-                const endIdx = Math.min(startIdx + chunkSize, englishTrans.length);
-                const transSlice = englishTrans.slice(startIdx, endIdx);
-                const translitSlice = englishTranslit.slice(startIdx, endIdx);
-
-                const transCombined = transSlice.map((a) => a.text).join(" || ");
-                const translitCombined = translitSlice.map((a) => a.text).join(" || ");
-
-                // Fire both fetches for this chunk simultaneously
-                const [resTrans, resTranslit] = await Promise.all([
-                  fetch(
-                    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(transCombined)}`
-                  ).then((r) => r.json()),
-                  fetch(
-                    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(translitCombined)}`
-                  ).then((r) => r.json()),
-                ]);
-
-                const translatedTransStr = resTrans?.[0]?.map((x: any) => x[0]).join("") || transCombined;
-                let translatedTransParts = translatedTransStr.split(/\s*\|\|\s*/);
-
-                if (translatedTransParts.length !== transSlice.length) {
-                  translatedTransParts = await Promise.all(
-                    transSlice.map(async (ayah) => {
-                      try {
-                        const r = await fetch(
-                          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
-                        );
-                        const d = await r.json();
-                        return d?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
-                      } catch {
-                        return ayah.text;
+                
+                if (response.ok) {
+                  const data = await response.json();
+                  if (data && data.translations && data.translations.length > 0) {
+                    data.translations.forEach((item: any, idx: number) => {
+                      if (transResults[idx]) {
+                        // Strip HTML tags (like footnotes, e.g. <sup>)
+                        const cleanText = item.text.replace(/<[^>]*>/g, "").trim();
+                        transResults[idx] = { ...transResults[idx], text: cleanText };
                       }
-                    })
-                  );
-                }
-
-                const translatedTranslitStr = resTranslit?.[0]?.map((x: any) => x[0]).join("") || translitCombined;
-                let translatedTranslitParts = translatedTranslitStr.split(/\s*\|\|\s*/);
-
-                if (translatedTranslitParts.length !== translitSlice.length) {
-                  translatedTranslitParts = await Promise.all(
-                    translitSlice.map(async (ayah) => {
-                      try {
-                        const r = await fetch(
-                          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
-                        );
-                        const d = await r.json();
-                        return d?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
-                      } catch {
-                        return ayah.text;
-                      }
-                    })
-                  );
-                }
-
-                for (let offset = 0; offset < transSlice.length; offset++) {
-                  const globalIdx = startIdx + offset;
-                  if (translatedTransParts[offset]) {
-                    transResults[globalIdx] = { ...transResults[globalIdx], text: translatedTransParts[offset].trim() };
+                    });
                   }
-                  if (translatedTranslitParts[offset]) {
-                    translitResults[globalIdx] = { ...translitResults[globalIdx], text: translatedTranslitParts[offset].trim() };
-                  }
+                } else {
+                  throw new Error(`Failed to fetch from Quran.com translation ID ${translationId}`);
                 }
-              };
+              } else {
+                // Fallback to Google Translate chunk logic if not mapped
+                const chunkSize = 20;
+                const chunkCount = Math.ceil(englishTrans.length / chunkSize);
 
-              // Run all chunks in parallel
-              await Promise.all(
-                Array.from({ length: chunkCount }, (_, i) => translateChunk(i))
-              );
+                const translateChunk = async (chunkIdx: number) => {
+                  if (!active) return;
+                  const startIdx = chunkIdx * chunkSize;
+                  const endIdx = Math.min(startIdx + chunkSize, englishTrans.length);
+                  const transSlice = englishTrans.slice(startIdx, endIdx);
+                  const translitSlice = englishTranslit.slice(startIdx, endIdx);
+
+                  const transCombined = transSlice.map((a) => a.text).join(" || ");
+                  const translitCombined = translitSlice.map((a) => a.text).join(" || ");
+
+                  const [resTrans, resTranslit] = await Promise.all([
+                    fetch(
+                      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(transCombined)}`
+                    ).then((r) => r.json()),
+                    fetch(
+                      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(translitCombined)}`
+                    ).then((r) => r.json()),
+                  ]);
+
+                  const translatedTransStr = resTrans?.[0]?.map((x: any) => x[0]).join("") || transCombined;
+                  let translatedTransParts = translatedTransStr.split(/\s*\|\|\s*/);
+
+                  if (translatedTransParts.length !== transSlice.length) {
+                    translatedTransParts = await Promise.all(
+                      transSlice.map(async (ayah) => {
+                        try {
+                          const r = await fetch(
+                            `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
+                          );
+                          const d = await r.json();
+                          return d?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
+                        } catch {
+                          return ayah.text;
+                        }
+                      })
+                    );
+                  }
+
+                  const translatedTranslitStr = resTranslit?.[0]?.map((x: any) => x[0]).join("") || translitCombined;
+                  let translatedTranslitParts = translatedTranslitStr.split(/\s*\|\|\s*/);
+
+                  if (translatedTranslitParts.length !== translitSlice.length) {
+                    translatedTranslitParts = await Promise.all(
+                      translitSlice.map(async (ayah) => {
+                        try {
+                          const r = await fetch(
+                            `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(ayah.text)}`
+                          );
+                          const d = await r.json();
+                          return d?.[0]?.map((x: any) => x[0]).join("") || ayah.text;
+                        } catch {
+                          return ayah.text;
+                        }
+                      })
+                    );
+                  }
+
+                  for (let offset = 0; offset < transSlice.length; offset++) {
+                    const globalIdx = startIdx + offset;
+                    if (translatedTransParts[offset]) {
+                      transResults[globalIdx] = { ...transResults[globalIdx], text: translatedTransParts[offset].trim() };
+                    }
+                    if (translatedTranslitParts[offset]) {
+                      translitResults[globalIdx] = { ...translitResults[globalIdx], text: translatedTranslitParts[offset].trim() };
+                    }
+                  }
+                };
+
+                await Promise.all(
+                  Array.from({ length: chunkCount }, (_, i) => translateChunk(i))
+                );
+              }
 
               if (!active) return;
               setTrans(transResults);
@@ -762,6 +838,17 @@ export default function SurahDetail() {
                         color={colors.onSurfaceMuted}
                       />
                     </Pressable>
+                    <Pressable
+                      onPress={() => openGrammarModal(a.numberInSurah, a.text, trans[i]?.text || "")}
+                      hitSlop={10}
+                      testID={`grammar-ayah-${a.numberInSurah}`}
+                    >
+                      <MaterialCommunityIcons
+                        name="alpha-w-box-outline"
+                        size={24}
+                        color={colors.brand}
+                      />
+                    </Pressable>
                   </View>
                 </View>
                 <Text
@@ -840,7 +927,7 @@ export default function SurahDetail() {
         </Pressable>
       </Modal>
 
-      {/* Tafsir Ibn Kathir Modal */}
+      {/* Tafsir Modal (with dynamic selector tabs) */}
       <Modal
         visible={tafsirModalVisible}
         transparent
@@ -850,7 +937,38 @@ export default function SurahDetail() {
         <View style={styles.modalOverlay}>
           <View style={[styles.tafsirModalContent, { backgroundColor: rc.bg, borderColor: colors.border }]}>
             <View style={styles.tafsirModalHeader}>
-              <Text style={[styles.tafsirModalTitle, { color: rc.arabic }]}>Tafsir Ibn Kathir</Text>
+              <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+                <Pressable
+                  onPress={() => {
+                    setActiveTafsirId(169);
+                    openTafsirModal(tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, 169);
+                  }}
+                  style={{
+                    borderBottomWidth: activeTafsirId === 169 ? 2 : 0,
+                    borderBottomColor: colors.brand,
+                    paddingBottom: 4,
+                  }}
+                >
+                  <Text style={[styles.tafsirModalTitle, { color: activeTafsirId === 169 ? colors.brand : rc.trans, fontSize: 15 }]}>
+                    Ibn Kathir
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setActiveTafsirId(160);
+                    openTafsirModal(tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, 160);
+                  }}
+                  style={{
+                    borderBottomWidth: activeTafsirId === 160 ? 2 : 0,
+                    borderBottomColor: colors.brand,
+                    paddingBottom: 4,
+                  }}
+                >
+                  <Text style={[styles.tafsirModalTitle, { color: activeTafsirId === 160 ? colors.brand : rc.trans, fontSize: 15 }]}>
+                    Al-Jalalayn
+                  </Text>
+                </Pressable>
+              </View>
               <Pressable onPress={() => setTafsirModalVisible(false)} hitSlop={10}>
                 <MaterialCommunityIcons name="close" size={24} color={rc.trans} />
               </Pressable>
@@ -875,6 +993,117 @@ export default function SurahDetail() {
                 <Text style={{ fontSize: 14, color: rc.arabic, lineHeight: 22, textAlign: "justify" }}>
                   {tafsirContent}
                 </Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Grammar Breakdown / Word-by-Word & Verse Topics Modal */}
+      <Modal
+        visible={grammarModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setGrammarModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.tafsirModalContent, { backgroundColor: rc.bg, borderColor: colors.border }]}>
+            <View style={styles.tafsirModalHeader}>
+              <Text style={[styles.tafsirModalTitle, { color: colors.brand, fontSize: 17 }]}>
+                Word Breakdown & Grammar
+              </Text>
+              <Pressable onPress={() => setGrammarModalVisible(false)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={rc.trans} />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
+              {selectedAyahForGrammar && (
+                <>
+                  <Text style={{ fontSize: 12, color: colors.brand, fontWeight: "700", marginBottom: 6 }}>
+                    Surah {id} · Ayah {selectedAyahForGrammar.ayah}
+                  </Text>
+                  
+                  {/* Thematic Topic Tags for this specific Verse */}
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                    {(() => {
+                      const surahId = Number(id);
+                      // Pull relevant tags dynamically from thematic datasets
+                      const tags: string[] = [];
+                      if (surahId === 1) tags.push("Tawhid (Monotheism)", "Supplication", "Guidance");
+                      else if (surahId === 2) {
+                        const aNum = selectedAyahForGrammar.ayah;
+                        if (aNum === 255) tags.push("Ayat al-Kursi", "Allah's Attributes", "Protection");
+                        else if (aNum >= 183 && aNum <= 187) tags.push("Fasting (Sawm)", "Ramadan", "Obedience");
+                        else if (aNum >= 275) tags.push("Prohibition of Interest (Riba)", "Justice", "Finance");
+                        else tags.push("Guidance", "Righteousness", "Faith");
+                      } else {
+                        // General contextual tags
+                        tags.push("Faith (Iman)", "Reflection");
+                      }
+                      
+                      return tags.map((tag, tIdx) => (
+                        <View key={tIdx} style={{ backgroundColor: colors.brand + "22", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                          <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>#{tag}</Text>
+                        </View>
+                      ));
+                    })()}
+                  </View>
+
+                  <Text style={{ fontFamily: "AmiriBold", fontSize: 21, color: rc.arabic, textAlign: "right", marginBottom: 8, lineHeight: 34 }}>
+                    {selectedAyahForGrammar.text}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: rc.trans, marginBottom: 16, lineHeight: 20 }}>
+                    {selectedAyahForGrammar.translation}
+                  </Text>
+                </>
+              )}
+
+              <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 16 }} />
+
+              {grammarLoading ? (
+                <ActivityIndicator color={colors.brand} style={{ marginVertical: 32 }} />
+              ) : (
+                <View style={{ gap: 12 }}>
+                  {grammarWords.map((w, wIdx) => (
+                    <View
+                      key={wIdx}
+                      style={{
+                        flexDirection: "row-reverse",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: 10,
+                        backgroundColor: colors.surfaceSecondary,
+                        borderRadius: 8,
+                      }}
+                    >
+                      {/* Arabic word token */}
+                      <Text style={{ fontFamily: "AmiriBold", fontSize: 20, color: rc.arabic, width: "30%", textAlign: "right" }}>
+                        {w.text}
+                      </Text>
+
+                      {/* Transliteration and English Meaning */}
+                      <View style={{ width: "65%", alignItems: "flex-start" }}>
+                        <Text style={{ fontSize: 13, color: colors.brand, fontWeight: "700" }}>
+                          {w.transliteration}
+                        </Text>
+                        <Text style={{ fontSize: 13, color: rc.trans, marginTop: 2 }}>
+                          {w.translation}
+                        </Text>
+                        {w.partOfSpeech && (
+                          <Text style={{ fontSize: 10, color: colors.onSurfaceMuted, marginTop: 4, fontStyle: "italic" }}>
+                            {w.partOfSpeech}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+                  {grammarWords.length === 0 && (
+                    <Text style={{ color: rc.trans, textAlign: "center", fontStyle: "italic", marginTop: 12 }}>
+                      Morphological grammar data offline or unavailable for this verse.
+                    </Text>
+                  )}
+                </View>
               )}
             </ScrollView>
           </View>
