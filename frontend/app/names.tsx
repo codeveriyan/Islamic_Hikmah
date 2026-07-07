@@ -25,7 +25,7 @@ export default function AllahNamesScreen() {
   // Stop audio on unmount
   useEffect(() => {
     return () => {
-      player.remove();
+      player.pause();
     };
   }, [player]);
 

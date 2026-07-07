@@ -65,7 +65,7 @@ const QUICK_ACTIONS = [
   { id: "seerah", icon: "account-star", route: "/seerah", color: "#EC4899" },
   { id: "tasbihCounter", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
   { id: "namesOfAllah", icon: "mosque", route: "/names", color: "#14B8A6" },
-  { id: "prayerTimes", icon: "clock-time-eight", route: "/prayer-times", color: "#8B5CF6" },
+  { id: "qiblaFinder", icon: "compass-outline", route: "/qibla", color: "#8B5CF6" },
   { id: "duas", icon: "hands-pray", route: "/dua-hub", color: "#06B6D4" },
   { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar", color: "#F43F5E" },
   { id: "mosqueFinder", icon: "map-marker-radius", route: "/finder?type=mosque", color: "#4F46E5" },

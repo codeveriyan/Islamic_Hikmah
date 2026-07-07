@@ -11,7 +11,6 @@ const ITEMS = [
   { id: "nobleQuran", icon: "book-open-variant", route: "/quran" },
   { id: "hadithCollections", icon: "book-open", route: "/hadith" },
   { id: "namesOfAllah", icon: "mosque", route: "/names" },
-  { id: "prayerTimes", icon: "clock-time-eight", route: "/prayer-times" },
   { id: "qiblaFinder", icon: "compass", route: "/qibla" },
   { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar" },
   { id: "favourites", icon: "heart", route: "/(tabs)/favourites" },
