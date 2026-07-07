@@ -8,6 +8,7 @@ import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import { LANGUAGES } from "@/src/data/quran/translationLanguages";
 
 type FontOption = {
   id: "indopak" | "uthmani" | "naskh";
@@ -15,19 +16,6 @@ type FontOption = {
   description: string;
   preview: string;
 };
-
-// indopak → AmiriBold: Naskh style matching South Asian printed Qurans
-// uthmani → ScheherazadeNew: purpose-built Uthmani script, correct harakat & ligatures
-// naskh   → NotoNaskhArabic: clean modern Naskh, best for duas & general Arabic
-const LANGUAGES = [
-  { id: "en" as const, label: "English",                flag: "🇬🇧" },
-  { id: "ta" as const, label: "Tamil (தமிழ்)",          flag: "🇮🇳" },
-  { id: "hi" as const, label: "Hindi (हिन्दी)",           flag: "🇮🇳" },
-  { id: "ur" as const, label: "Urdu (اردو)",             flag: "🇵🇰" },
-  { id: "te" as const, label: "Telugu (తెలుగు)",         flag: "🇮🇳" },
-  { id: "kn" as const, label: "Kannada (ಕನ್ನಡ)",        flag: "🇮🇳" },
-  { id: "ml" as const, label: "Malayalam (മലയാളം)",      flag: "🇮🇳" },
-];
 
 const FONTS: FontOption[] = [
   {

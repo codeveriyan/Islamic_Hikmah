@@ -13,6 +13,7 @@ import { useIsFocused } from "@react-navigation/native";
 
 import quranData from "@/src/data/quran/quranData.json";
 import pageMappingData from "@/src/data/quran/pageMapping.json";
+import { TRANSLATION_MAP } from "@/src/data/quran/translationLanguages";
 
 type QuranBookmark = {
   page: number;
@@ -284,6 +285,141 @@ export default function QuranReadScreen() {
   const [jumpModalVisible, setJumpModalVisible] = useState(false);
   const [jumpPageInput, setJumpPageInput] = useState("");
 
+  // Tier 2: View Mode (mushaf = page layout, list = list layout with translations, tafsir = exegesis view)
+  const [activeViewMode, setActiveViewMode] = useState<"mushaf" | "list" | "tafsir">("mushaf");
+
+  // Page translation states for the selected language if non-English
+  const [pageTranslations, setPageTranslations] = useState<Record<number, Record<number, string>>>({});
+
+  useEffect(() => {
+    if (language === "en") return;
+    let active = true;
+
+    const pageMap = pageMappingData.find((p) => p.page === currentPage);
+    if (!pageMap) return;
+
+    const surahIds = Array.from(new Set(pageMap.ayahs.map((m) => m.surah)));
+
+    const fetchTranslationForSurah = async (surahId: number) => {
+      const cacheKey = `islamic_hikmah:quran_trans_${language}_${surahId}`;
+      try {
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached && active) {
+          try {
+            const { trans } = JSON.parse(cached);
+            if (trans && Array.isArray(trans)) {
+              const mapping: Record<number, string> = {};
+              trans.forEach((ayah: any) => {
+                mapping[ayah.numberInSurah] = ayah.text;
+              });
+              setPageTranslations((prev) => ({ ...prev, [surahId]: mapping }));
+              return;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        if (language === "ta") {
+          const taJanTrust = require("@/src/data/quran/ta-jan-trust-simple.json");
+          const pageMapLocal = pageMappingData.find((p) => p.page === currentPage);
+          if (pageMapLocal && active) {
+            const mapping: Record<number, string> = {};
+            const transList: any[] = [];
+            // We want to load the translation for ALL verses of this surah so it gets cached and reused correctly!
+            const surahObj = quranData.find((s) => s.number === surahId);
+            if (surahObj) {
+              surahObj.ayahs.forEach((ayah) => {
+                const key = `${surahId}:${ayah.numberInSurah}`;
+                const text = taJanTrust[key] ? taJanTrust[key].t : ayah.translation;
+                mapping[ayah.numberInSurah] = text;
+                transList.push({ numberInSurah: ayah.numberInSurah, text });
+              });
+            }
+            setPageTranslations((prev) => ({ ...prev, [surahId]: mapping }));
+            await AsyncStorage.setItem(cacheKey, JSON.stringify({ trans: transList, translit: [] })).catch(() => {});
+          }
+          return;
+        }
+
+        const translationId = TRANSLATION_MAP[language as keyof typeof TRANSLATION_MAP];
+        if (translationId) {
+          const response = await fetch(`https://api.quran.com/api/v4/quran/translations/${translationId}?chapter_number=${surahId}`);
+          if (!active) return;
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.translations && data.translations.length > 0) {
+              const transList = data.translations.map((item: any, idx: number) => ({
+                numberInSurah: idx + 1,
+                text: item.text.replace(/<[^>]*>/g, "").trim()
+              }));
+
+              const mapping: Record<number, string> = {};
+              transList.forEach((t: any) => {
+                mapping[t.numberInSurah] = t.text;
+              });
+
+              setPageTranslations((prev) => ({ ...prev, [surahId]: mapping }));
+              await AsyncStorage.setItem(cacheKey, JSON.stringify({ trans: transList, translit: [] })).catch(() => {});
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to load page translation for surah ${surahId}:`, e);
+      }
+    };
+
+    surahIds.forEach((id) => {
+      fetchTranslationForSurah(id);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [currentPage, language]);
+
+  // Tafsir Modal States
+  const [tafsirModalVisible, setTafsirModalVisible] = useState(false);
+  const [tafsirLoading, setTafsirLoading] = useState(false);
+  const [tafsirContent, setTafsirContent] = useState("");
+  const [tafsirRef, setTafsirRef] = useState({ surah: 0, ayah: 0, arabic: "", trans: "" });
+  const [activeTafsirId, setActiveTafsirId] = useState<number>(169); // 169 = Ibn Kathir (English), 160 = Al-Jalalayn (English by F. Hamza)
+
+  const openTafsirModal = useCallback(async (surahNum: number, ayahNum: number, arabicText: string, transText: string, tafsirIdOverride?: number) => {
+    const tafsirId = tafsirIdOverride ?? activeTafsirId;
+    setTafsirRef({ surah: surahNum, ayah: ayahNum, arabic: arabicText, trans: transText });
+    setTafsirModalVisible(true);
+    setTafsirLoading(true);
+    setTafsirContent("");
+
+    try {
+      const cacheKey = `hikmah:tafsir:${tafsirId}:${surahNum}:${ayahNum}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        setTafsirContent(cached);
+        setTafsirLoading(false);
+        return;
+      }
+
+      const response = await fetch(`https://api.quran.com/api/v4/tafsirs/${tafsirId}/by_ayah/${surahNum}:${ayahNum}`);
+      const data = await response.json();
+      if (data && data.tafsir && data.tafsir.text) {
+        let cleanText = data.tafsir.text.replace(/<\/?[^>]+(>|$)/g, "");
+        cleanText = cleanText.trim();
+        setTafsirContent(cleanText);
+        await AsyncStorage.setItem(cacheKey, cleanText);
+      } else {
+        setTafsirContent("Commentary not available for this verse.");
+      }
+    } catch (e) {
+      console.error(e);
+      setTafsirContent("Failed to load Tafsir. Please check your internet connection.");
+    } finally {
+      setTafsirLoading(false);
+    }
+  }, [activeTafsirId]);
+
   // Audio Player states
   const [playingAyah, setPlayingAyah] = useState<{ surah: number; ayah: number } | null>(null);
   const [isPlayingContinuous, setIsPlayingContinuous] = useState(false);
@@ -294,7 +430,7 @@ export default function QuranReadScreen() {
   const flatListRef = useRef<FlatList>(null);
   const initialDist = useRef<number | null>(null);
   const baseScale = useRef<number>(1);
-  const playQueueRef = useRef<Array<{ surah: number; ayah: number }>>([]);
+  const playQueueRef = useRef<{ surah: number; ayah: number }[]>([]);
   const currentQueueIndexRef = useRef<number>(0);
 
   const isFocused = useIsFocused();
@@ -476,7 +612,7 @@ export default function QuranReadScreen() {
 
   // Get all verses from current page onwards
   const getAllVersesFromPage = (pageNum: number) => {
-    const verses: Array<{ surah: number; ayah: number }> = [];
+    const verses: { surah: number; ayah: number }[] = [];
     for (let p = pageNum; p <= TOTAL_PAGES; p++) {
       const pageMap = PAGE_MAPPING.find((pm) => pm.page === p);
       if (pageMap) {
@@ -585,7 +721,7 @@ export default function QuranReadScreen() {
         fontType={fontType}
       />
     </View>
-  ), [isNightMode, colors, zoomScale, playingAyah, bookmarkedVerses, fontType]);
+  ), [isNightMode, colors, zoomScale, playingAyah, bookmarkedVerses, fontType, onTapAyah, onLongPressAyah]);
 
   // Touch gesture handlers for pinch to zoom
   const handleTouchStart = (e: any) => {
@@ -642,33 +778,103 @@ export default function QuranReadScreen() {
         </Pressable>
       </View>
  
-      {/* Page swiper */}
-      <View 
-        style={{ flex: 1 }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={pagesData}
-          showsVerticalScrollIndicator={false}
-          keyExtractor={(item) => String(item)}
-          renderItem={renderPage}
-          onScroll={onScroll}
-          initialScrollIndex={currentPage - 1}
-          getItemLayout={(data, index) => ({
-            length: 780,
-            offset: 780 * index,
-            index,
-          })}
-          removeClippedSubviews={Platform.OS === "android"}
-        />
-      </View>
+      {/* Page swiper / Tafsir view switcher */}
+      {activeViewMode === "tafsir" ? (
+        <ScrollView style={{ flex: 1, padding: 16 }} showsVerticalScrollIndicator={false}>
+          {(() => {
+            const pageMap = PAGE_MAPPING.find((p) => p.page === currentPage);
+            if (!pageMap) return <Text style={{ color: isNightMode ? "#FFF" : "#333", textAlign: "center" }}>Page mapping not found.</Text>;
+            
+            return pageMap.ayahs.map((m, idx) => {
+              const surah = QURAN.find((s) => s.number === m.surah);
+              const ayah = surah?.ayahs.find((a) => a.numberInSurah === m.ayah);
+              const isPlaying = playingAyah?.surah === m.surah && playingAyah?.ayah === m.ayah;
+
+              return (
+                <View
+                  key={idx}
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: isPlaying ? colors.brand + "15" : isNightMode ? "#152235" : "#F5EFE4",
+                    marginBottom: 12,
+                    borderWidth: isPlaying ? 1 : 0,
+                    borderColor: colors.brand,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <Text style={{ fontSize: 11, color: colors.brand, fontWeight: "700" }}>
+                      Surah {surah?.name} · Ayah {m.ayah}
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 12 }}>
+                      <Pressable onPress={() => playSingleAyah(m.surah, m.ayah)} hitSlop={10}>
+                        <MaterialCommunityIcons
+                          name={isPlaying ? "pause-circle" : "play-circle"}
+                          size={24}
+                          color={colors.brand}
+                        />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => openTafsirModal(m.surah, m.ayah, ayah?.arabic || "", pageTranslations[m.surah]?.[m.ayah] || ayah?.translation || "")}
+                        hitSlop={10}
+                      >
+                        <MaterialCommunityIcons name="comment-text-outline" size={22} color={colors.onSurfaceMuted} />
+                      </Pressable>
+                    </View>
+                  </View>
+                  <Text
+                    style={{
+                      fontSize: 22,
+                      fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
+                      color: isNightMode ? "#FFF" : "#2C1E10",
+                      textAlign: "right",
+                      lineHeight: 38,
+                      marginBottom: 8,
+                    }}
+                  >
+                    {ayah?.arabic}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: isNightMode ? "#8BAFC8" : "#6B4423", fontStyle: "italic", marginBottom: 6 }}>
+                    {ayah?.transliteration}
+                  </Text>
+                   <Text style={{ fontSize: 14, color: isNightMode ? "#D1D7DB" : "#333", lineHeight: 20 }}>
+                    {pageTranslations[m.surah]?.[m.ayah] || ayah?.translation}
+                  </Text>
+                </View>
+              );
+            });
+          })()}
+        </ScrollView>
+      ) : (
+        /* Page swiper (Mushaf Page View Mode) */
+        <View 
+          style={{ flex: 1 }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={pagesData}
+            showsVerticalScrollIndicator={false}
+            keyExtractor={(item) => String(item)}
+            renderItem={renderPage}
+            onScroll={onScroll}
+            initialScrollIndex={currentPage - 1}
+            getItemLayout={(data, index) => ({
+              length: 780,
+              offset: 780 * index,
+              index,
+            })}
+            removeClippedSubviews={Platform.OS === "android"}
+          />
+        </View>
+      )}
+
       {/* Interaction hints */}
       <View style={{ backgroundColor: colors.brand + "14", paddingVertical: 5, alignItems: "center" }}>
         <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>
-          TAP verse to play  ·  LONG PRESS to bookmark 🔖  ·  Use ⏯️ button to play all
+          {activeViewMode === "tafsir" ? "Scroll vertically to read verse translations & Tafsir commentaries" : "TAP verse to play  ·  LONG PRESS to bookmark 🔖  ·  Use ⏯️ button to play all"}
         </Text>
       </View>
 
@@ -696,6 +902,21 @@ export default function QuranReadScreen() {
           />
         </Pressable>
 
+        {/* Dynamic View Mode Toggle Button (Mushaf View vs Tafsir List View Toggle) */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            setActiveViewMode(prev => prev === "mushaf" ? "tafsir" : "mushaf");
+          }}
+          style={styles.barBtn}
+        >
+          <MaterialCommunityIcons
+            name={activeViewMode === "tafsir" ? "book-open-page-variant" : "comment-text-multiple-outline"}
+            size={24}
+            color={activeViewMode === "tafsir" ? colors.brand : isNightMode ? "#FFF" : "#5C4E3C"}
+          />
+        </Pressable>
+
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -706,6 +927,78 @@ export default function QuranReadScreen() {
           <MaterialCommunityIcons name="cog-outline" size={24} color={isNightMode ? "#FFF" : "#5C4E3C"} />
         </Pressable>
       </View>
+
+      {/* Tafsir Commentary Modal Dialog */}
+      <Modal
+        visible={tafsirModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTafsirModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.tafsirModalContent, { backgroundColor: isNightMode ? "#0D1E2E" : "#FAF7F0", borderColor: colors.border }]}>
+            <View style={styles.tafsirModalHeader}>
+              <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+                <Pressable
+                  onPress={() => {
+                    setActiveTafsirId(169);
+                    openTafsirModal(tafsirRef.surah, tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, 169);
+                  }}
+                  style={{
+                    borderBottomWidth: activeTafsirId === 169 ? 2 : 0,
+                    borderBottomColor: colors.brand,
+                    paddingBottom: 4,
+                  }}
+                >
+                  <Text style={[styles.tafsirModalTitle, { color: activeTafsirId === 169 ? colors.brand : colors.onSurfaceMuted, fontSize: 15 }]}>
+                    Ibn Kathir
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setActiveTafsirId(160);
+                    openTafsirModal(tafsirRef.surah, tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, 160);
+                  }}
+                  style={{
+                    borderBottomWidth: activeTafsirId === 160 ? 2 : 0,
+                    borderBottomColor: colors.brand,
+                    paddingBottom: 4,
+                  }}
+                >
+                  <Text style={[styles.tafsirModalTitle, { color: activeTafsirId === 160 ? colors.brand : colors.onSurfaceMuted, fontSize: 15 }]}>
+                    Al-Jalalayn
+                  </Text>
+                </Pressable>
+              </View>
+              <Pressable onPress={() => setTafsirModalVisible(false)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 13, color: colors.brand, fontWeight: "700", marginBottom: 8 }}>
+                Surah {tafsirRef.surah} · Ayah {tafsirRef.ayah}
+              </Text>
+              <Text style={{ fontFamily: "AmiriBold", fontSize: 22, color: isNightMode ? "#FFF" : "#2C1E10", textAlign: "right", marginBottom: 12, lineHeight: 36 }}>
+                {tafsirRef.arabic}
+              </Text>
+              <Text style={{ fontSize: 14, color: isNightMode ? "#D1D7DB" : "#333", marginBottom: 16, lineHeight: 22 }}>
+                {tafsirRef.trans}
+              </Text>
+
+              <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 16 }} />
+
+              {tafsirLoading ? (
+                <ActivityIndicator color={colors.brand} style={{ marginVertical: 32 }} />
+              ) : (
+                <Text style={{ fontSize: 14, color: isNightMode ? "#FFF" : "#2C1E10", lineHeight: 22, textAlign: "justify" }}>
+                  {tafsirContent}
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Jump to Page Modal Dialog */}
       <Modal
@@ -927,5 +1220,30 @@ const styles = StyleSheet.create({
   modalBtnTxt: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  tafsirModalContent: {
+    width: "90%",
+    height: "80%",
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: 20,
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
+      android: { elevation: 6 },
+      web: { boxShadow: "0 4px 12px rgba(0,0,0,0.15)" },
+    }),
+  },
+  tafsirModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    paddingBottom: 10,
+  },
+  tafsirModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
   },
 });

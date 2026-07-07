@@ -13,7 +13,6 @@ import Svg, { Circle } from "react-native-svg";
 
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { CATEGORIES } from "@/src/data/duas";
 import { DEFAULT_GOALS, CATEGORY_COLORS } from "@/src/data/goals";
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
@@ -67,6 +66,10 @@ const QUICK_ACTIONS = [
   { id: "tasbihCounter", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
   { id: "namesOfAllah", icon: "mosque", route: "/names", color: "#14B8A6" },
   { id: "prayerTimes", icon: "clock-time-eight", route: "/prayer-times", color: "#8B5CF6" },
+  { id: "duas", icon: "hands-pray", route: "/dua-hub", color: "#06B6D4" },
+  { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar", color: "#F43F5E" },
+  { id: "mosqueFinder", icon: "map-marker-radius", route: "/finder?type=mosque", color: "#4F46E5" },
+  { id: "halalFoodFinder", icon: "food-fork-drink", route: "/finder?type=halal", color: "#16A34A" },
 ] as const;
 
 function getGreeting() {
@@ -243,7 +246,6 @@ function getPrayerPeriods(times: Record<string, string>) {
 }
 
 export default function HomeScreen() {
-  const [group, setGroup] = useState<"main" | "other">("main");
   const router = useRouter();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
@@ -261,8 +263,6 @@ export default function HomeScreen() {
   // Goals
   const [completed, setCompleted] = useState<string[]>([]);
   const [activeIds, setActiveIds] = useState<string[]>([]);
-
-  const cats = useMemo(() => CATEGORIES.filter((c) => c.group === group), [group]);
 
   // Load prayer times
   useEffect(() => {
@@ -365,11 +365,6 @@ export default function HomeScreen() {
   const handleQuickAction = useCallback((route: string) => {
     Haptics.selectionAsync().catch(() => {});
     router.push(route as any);
-  }, [router]);
-
-  const handleCategoryPress = useCallback((id: string) => {
-    Haptics.selectionAsync().catch(() => {});
-    router.push(`/dua/${id}` as any);
   }, [router]);
 
   return (
@@ -483,39 +478,7 @@ export default function HomeScreen() {
 
         </Pressable>
 
-        {/* Dua Categories */}
-        <View style={[styles.segment, { backgroundColor: colors.surfaceSecondary }]}>
-          {(["main", "other"] as const).map((g) => {
-            const active = group === g;
-            return (
-              <Pressable key={g} onPress={() => setGroup(g)}
-                style={[styles.segmentBtn, active && { backgroundColor: colors.brandSecondary }]}>
-                <Text style={[styles.segmentText, { color: colors.onSurfaceMuted }, active && styles.segmentTextActive]}>
-                  {g === "main" ? t("mainDuas") : t("otherDuas")}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
 
-        <View style={styles.grid}>
-          {cats.map((c) => {
-            const imgSource = CATEGORY_IMAGES[c.id] || { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" };
-            return (
-              <Pressable key={c.id} onPress={() => handleCategoryPress(c.id)}
-                style={({ pressed }) => [styles.card, { width: CARD_WIDTH }, pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }]}
-              >
-                <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
-                  <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
-                    <View style={styles.cardLabelContainer}>
-                      <Text style={styles.cardTitle}>{t(c.id).toUpperCase()}</Text>
-                    </View>
-                  </LinearGradient>
-                </ImageBackground>
-              </Pressable>
-            );
-          })}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
