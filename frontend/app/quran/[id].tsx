@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Modal, FlatList, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Modal, FlatList, Platform, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
@@ -13,6 +14,7 @@ import { useIsFocused } from "@react-navigation/native";
 import quranData from "@/src/data/quran/quranData.json";
 import { JUZ_DATA, getJuzForAyah } from "@/src/data/juzData";
 import { TRANSLATION_MAP } from "@/src/data/quran/translationLanguages";
+import transliterationTajweedData from "@/src/data/quran/transliterationTajweed.json";
 
 type Ayah = {
   number: number;
@@ -28,55 +30,49 @@ type LocalSurah = { number: number; name: string; arabicName: string; totalAyahs
 // so the Quran can always be read without an internet connection.
 const QURAN: LocalSurah[] = quranData as LocalSurah[];
 
-// FIX: Only verified-working alquran.cloud audio editions.
-// "ar.saadalghamdi" is NOT a real edition on this API — that's why it silently failed.
-// Replaced with other confirmed-working reciters instead.
+// Single consolidated list of unique Quran reciters.
+// These stream continuous surah audio online and support caching for offline play.
 const RECITERS = [
-  { id: "ar.alafasy", name: "Mishary Rashid Alafasy" },
-  { id: "ar.abdurrahmaansudais", name: "Sheikh Sudais" },
-  { id: "ar.husary", name: "Mahmoud Khalil Al-Husary" },
-  { id: "ar.minshawi", name: "Mohamed Siddiq Al-Minshawi" },
-  { id: "ar.abdulbasitmurattal", name: "Abdul Basit (Murattal)" },
+  { qdcId: 7,   name: "Mishari Rashid al-Afasy",         style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 3,   name: "Abdur-Rahman as-Sudais",          style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 2,   name: "AbdulBaset AbdulSamad",           style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 6,   name: "Mahmoud Khalil Al-Husary",        style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 9,   name: "Mohamed Siddiq al-Minshawi",      style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 4,   name: "Abu Bakr al-Shatri",              style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 5,   name: "Hani ar-Rifai",                   style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 10,  name: "Sa'ud ash-Shuraym",               style: "Murattal",  hasWordSegments: true  },
+  { qdcId: 11,  name: "Mohamed al-Tablawi",              style: "Murattal",  hasWordSegments: false },
 ] as const;
 
-// Compute the global 1-based Quran ayah number for a given surah + ayah-in-surah.
-// Uses the local bundled dataset so no network call is needed.
-const getGlobalAyahNumber = (surahNumber: number, ayahNumberInSurah: number): number => {
-  let globalNum = 0;
-  for (let s = 1; s < surahNumber; s++) {
-    const surah = QURAN.find((item) => item.number === s);
-    if (surah) globalNum += surah.totalAyahs;
-  }
-  return globalNum + ayahNumberInSurah;
-};
-
-// Return the correct CDN bitrate for a given reciter.
-// Sudais and Abdul Basit are only available at 192 kbps; all others at 128 kbps.
-const getReciterBitrate = (reciterId: string): number =>
-  (reciterId === "ar.abdurrahmaansudais" || reciterId === "ar.abdulbasitmurattal") ? 192 : 128;
+type ReciterQdcId = typeof RECITERS[number]["qdcId"];
 
 export default function SurahDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [arabic, setArabic] = useState<Ayah[]>([]);
   const [trans, setTrans] = useState<Ayah[]>([]);
-  const [audio, setAudio] = useState<Ayah[]>([]);
   const [name, setName] = useState("");
   const [arName, setArName] = useState("");
   const [loading, setLoading] = useState(true);
   const [audioErr, setAudioErr] = useState(false);
   const [playingIdx, setPlayingIdx] = useState<number | null>(null);
-  const [reciter, setReciter] = useState<string>("ar.alafasy");
+  const [reciterId, setReciterId] = useState<ReciterQdcId>(7); // default: Mishary Alafasy
   const [continuous, setContinuous] = useState(false);
   const [showReciters, setShowReciters] = useState(false);
+  // Track download state per (reciterId, surahId): "idle" | "downloading" | "done"
+  const [downloadStatus, setDownloadStatus] = useState<Record<string, "idle" | "downloading" | "done">>({});
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [fontType, setFontType] = useState<"indopak" | "uthmani" | "naskh">("indopak");
   const [fontSize, setFontSize] = useState<number>(24);
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
   const [translit, setTranslit] = useState<Ayah[]>([]);
+  const [verseTimings, setVerseTimings] = useState<any[]>([]);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [activeWordIdx, setActiveWordIdx] = useState<number | null>(null);
 
-  const player = useAudioPlayer(null);
+  const player = useAudioPlayer(null, { updateInterval: 50 });
   const status = useAudioPlayerStatus(player);
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
@@ -182,7 +178,6 @@ export default function SurahDetail() {
   const scrollRef = useRef<ScrollView>(null);
   const ayahYPositions = useRef<Record<number, number>>({});
 
-  const [audioRequested, setAudioRequested] = useState(false);
 
   // Bookmarks
   const [bookmarkedAyahs, setBookmarkedAyahs] = useState<Set<number>>(new Set());
@@ -214,7 +209,6 @@ export default function SurahDetail() {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    setAudioRequested(false); // reset audio state on surah change
 
     const surahId = Number(id);
     const surah = QURAN.find((s) => s.number === surahId);
@@ -232,11 +226,15 @@ export default function SurahDetail() {
         text: a.translation,
       }));
 
-      const englishTranslit = surah.ayahs.map((a) => ({
-        number: a.numberInSurah,
-        numberInSurah: a.numberInSurah,
-        text: a.transliteration,
-      }));
+      const englishTranslit = surah.ayahs.map((a) => {
+        const key = `${surahId}:${a.numberInSurah}`;
+        const highQualityText = (transliterationTajweedData as Record<string, string>)[key] || a.transliteration;
+        return {
+          number: a.numberInSurah,
+          numberInSurah: a.numberInSurah,
+          text: highQualityText,
+        };
+      });
 
       if (language !== "en") {
         const cacheKey = `islamic_hikmah:quran_trans_${language}_${surahId}`;
@@ -401,30 +399,154 @@ export default function SurahDetail() {
     };
   }, [id, language]);
 
-  // Effect 2: Generate audio URLs locally using the Islamic Network CDN.
-  // Previously this fetched the full surah metadata from api.alquran.cloud on every
-  // screen open, adding a 1-3 s network round-trip before any audio was playable.
-  // Now we compute the CDN URL directly from the bundled QURAN dataset — instant,
-  // offline-friendly, and 100% identical to what the API would have returned.
+  // Returns the local filesystem path for a downloaded surah audio file.
+  const getOfflinePath = (qId: number, sId: number) =>
+    `${FileSystem.documentDirectory}hikmah_audio/${qId}_surah_${sId}.mp3`;
+
+  // Enable global background audio playback on mount
   useEffect(() => {
-    if (!audioRequested) return;
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+    }).catch((err) => {
+      console.warn("Failed to set audio mode:", err);
+    });
+  }, []);
+
+  // Effect 2: Eagerly fetch continuous recitation audio URL and word timings from Quran.com QDC API.
+  // Checks for a locally cached (downloaded) file first and uses it if available.
+  // Caches timings locally so playing downloaded files works offline!
+  useEffect(() => {
+    let active = true;
+    setAudioLoading(true);
+    setAudioErr(false);
+
     const surahId = Number(id);
-    const surah = QURAN.find((s) => s.number === surahId);
-    if (surah) {
-      const bitrate = getReciterBitrate(reciter);
-      const generatedAudio = surah.ayahs.map((a) => ({
-        number: a.numberInSurah,
-        numberInSurah: a.numberInSurah,
-        text: a.arabic,
-        audio: `https://cdn.islamic.network/quran/audio/${bitrate}/${reciter}/${getGlobalAyahNumber(surahId, a.numberInSurah)}.mp3`,
-      }));
-      setAudio(generatedAudio);
-      setAudioErr(false);
-    } else {
-      setAudio([]);
-      setAudioErr(true);
+    const url = `https://api.qurancdn.com/api/qdc/audio/reciters/${reciterId}/audio_files?chapter=${surahId}&segments=true`;
+
+    const isWeb = !FileSystem.documentDirectory;
+    const localPath = isWeb ? "" : getOfflinePath(reciterId, surahId);
+    const dlKey = `${reciterId}_${surahId}`;
+    const cacheKeyTimings = `hikmah:timings:${reciterId}:${surahId}`;
+
+    (async () => {
+      // 1. Check if we have a locally downloaded file already (only on native)
+      if (!isWeb) {
+        try {
+          const info = await FileSystem.getInfoAsync(localPath);
+          if (info.exists && info.size && info.size > 0) {
+            setDownloadStatus((s) => ({ ...s, [dlKey]: "done" }));
+          }
+        } catch {}
+      }
+
+      // 2. Try fetching the timing metadata & audio URL from the API
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("QDC API error");
+        const data = await res.json();
+        if (!active) return;
+        const file = data.audio_files?.[0];
+        if (file && file.audio_url) {
+          // Use the local file if it exists, otherwise use the streaming URL
+          let effectiveUrl = file.audio_url;
+          if (!isWeb) {
+            try {
+              const localInfo = await FileSystem.getInfoAsync(localPath);
+              if (localInfo.exists && (localInfo as any).size > 0) {
+                effectiveUrl = localPath;
+              }
+            } catch {}
+          }
+          setAudioUrl(effectiveUrl);
+
+          const timings = file.verse_timings || [];
+          setVerseTimings(timings);
+          setAudioErr(false);
+
+          // Cache timings for offline use
+          await AsyncStorage.setItem(cacheKeyTimings, JSON.stringify(timings));
+        } else {
+          setAudioUrl(null);
+          setVerseTimings([]);
+          setAudioErr(true);
+        }
+      } catch (err) {
+        if (!active) return;
+        console.log("Offline or fetch failed, checking local storage for:", dlKey);
+        // Load cached timings & local file for offline playback (only on native)
+        if (!isWeb) {
+          try {
+            const localInfo = await FileSystem.getInfoAsync(localPath);
+            const cachedTimings = await AsyncStorage.getItem(cacheKeyTimings);
+            if (localInfo.exists && cachedTimings) {
+              setAudioUrl(localPath);
+              setVerseTimings(JSON.parse(cachedTimings));
+              setAudioErr(false);
+              if (active) setAudioLoading(false);
+              return;
+            }
+          } catch {}
+        }
+        setAudioUrl(null);
+        setVerseTimings([]);
+        setAudioErr(true);
+      } finally {
+        if (active) setAudioLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [id, reciterId]);
+
+  // Download the current surah audio for offline use
+  const downloadSurah = useCallback(async () => {
+    const isWeb = !FileSystem.documentDirectory;
+    if (isWeb) {
+      Alert.alert("Not Supported", "Downloads are only supported on iOS and Android devices.");
+      return;
     }
-  }, [id, reciter, audioRequested]);
+    if (!audioUrl || audioUrl.startsWith(FileSystem.documentDirectory || "file://")) return;
+    const surahId = Number(id);
+    const localPath = getOfflinePath(reciterId, surahId);
+    const dlKey = `${reciterId}_${surahId}`;
+
+    // Ensure the directory exists
+    await FileSystem.makeDirectoryAsync(
+      `${FileSystem.documentDirectory}hikmah_audio/`,
+      { intermediates: true }
+    );
+
+    setDownloadStatus((s) => ({ ...s, [dlKey]: "downloading" }));
+    setDownloadProgress((p) => ({ ...p, [dlKey]: 0 }));
+
+    const downloadResumable = FileSystem.createDownloadResumable(
+      audioUrl,
+      localPath,
+      {},
+      (progress) => {
+        const pct = progress.totalBytesExpectedToWrite > 0
+          ? Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100)
+          : 0;
+        setDownloadProgress((p) => ({ ...p, [dlKey]: pct }));
+      }
+    );
+
+    try {
+      const result = await downloadResumable.downloadAsync();
+      if (result?.uri) {
+        setDownloadStatus((s) => ({ ...s, [dlKey]: "done" }));
+        setAudioUrl(result.uri);
+        Alert.alert("Downloaded!", `${name} (${RECITERS.find(r => r.qdcId === reciterId)?.name}) saved for offline use.`);
+      }
+    } catch (err) {
+      console.error("Download failed:", err);
+      setDownloadStatus((s) => ({ ...s, [dlKey]: "idle" }));
+      Alert.alert("Download Failed", "Please check your connection and try again.");
+    }
+  }, [audioUrl, id, reciterId, name]);
 
   const isFocused = useIsFocused();
 
@@ -453,185 +575,163 @@ export default function SurahDetail() {
     }
   }, [isFocused]);
 
-  // ── Dual-player pre-buffer system ──────────────────────────────────────────
-  // Root cause of the gaps: player.replace() on every ayah transition destroys
-  // the current audio session, starts a new network request, waits for buffering,
-  // and only then plays — creating a 0.5–2s dead silence between ayahs.
-  //
-  // Fix: use TWO expo-audio players (A and B). While player A plays ayah N,
-  // player B silently pre-loads ayah N+1. When A finishes, we immediately start
-  // B (which is already buffered) and use A to pre-load N+2. The swap is
-  // instant since the next URL is already in the native audio buffer.
-  //
-  // playerRef tracks which of the two players is currently "active".
-  const playerB = useAudioPlayer(null);
-  const statusB = useAudioPlayerStatus(playerB);
-
-  // 0 = player (A) is active, 1 = playerB (B) is active
-  const activePlayerRef = useRef<0 | 1>(0);
   const continuousRef = useRef(false);
   const playingIdxRef = useRef<number | null>(null);
-  const audioRef = useRef<Ayah[]>([]);
+  const stopAtMsRef = useRef<number | null>(null);
+  const loadedUriRef = useRef<string | null>(null);
+  const lastPlayTriggeredRef = useRef<number>(0);
 
-  // Keep refs in sync with state so effect closures always see current values
+  // Keep refs in sync with state so effects always see current values
   useEffect(() => { continuousRef.current = continuous; }, [continuous]);
   useEffect(() => { playingIdxRef.current = playingIdx; }, [playingIdx]);
-  useEffect(() => { audioRef.current = audio; }, [audio]);
 
-  // Pre-load the next ayah URL into the inactive player while the current plays
-  const preloadNext = useCallback((currentIdx: number) => {
-    const nextIdx = currentIdx + 1;
-    const nextUrl = audioRef.current[nextIdx]?.audio;
-    if (!nextUrl) return;
-    const inactive = activePlayerRef.current === 0 ? playerB : player;
-    try {
-      inactive.replace({ uri: nextUrl });
-      // Don't call play() — just buffer it silently
-    } catch {}
-  }, [player, playerB]);
-
-  // Handle finish for player A
-  useEffect(() => {
-    if (!status?.didJustFinish) return;
-    if (!continuousRef.current) { setPlayingIdx(null); return; }
-    const current = playingIdxRef.current;
-    if (current === null) return;
-    const next = current + 1;
-    if (next >= audioRef.current.length) {
-      setPlayingIdx(null);
-      setContinuous(false);
-      return;
-    }
-    // Player B was pre-buffering next ayah — swap and play it immediately
-    activePlayerRef.current = 1;
-    try { playerB.play(); } catch {}
-    setPlayingIdx(next);
-    // Pre-load next+1 into player A
-    preloadNext(next);
-  }, [status?.didJustFinish]);
-
-  // Handle finish for player B
-  useEffect(() => {
-    if (!statusB?.didJustFinish) return;
-    if (!continuousRef.current) { setPlayingIdx(null); return; }
-    const current = playingIdxRef.current;
-    if (current === null) return;
-    const next = current + 1;
-    if (next >= audioRef.current.length) {
-      setPlayingIdx(null);
-      setContinuous(false);
-      return;
-    }
-    // Player A was pre-buffering next ayah — swap and play it immediately
-    activePlayerRef.current = 0;
-    try { player.play(); } catch {}
-    setPlayingIdx(next);
-    // Pre-load next+1 into player B
-    preloadNext(next);
-  }, [statusB?.didJustFinish]);
-
-  // Auto-scroll to the currently playing ayah
+  // Handle auto-scroll to the active verse
   useEffect(() => {
     if (playingIdx !== null && ayahYPositions.current[playingIdx] !== undefined) {
       scrollRef.current?.scrollTo({ y: Math.max(0, ayahYPositions.current[playingIdx] - 100), animated: true });
     }
   }, [playingIdx]);
 
+  // Handle natural audio finish
+  useEffect(() => {
+    if (status?.didJustFinish) {
+      setPlayingIdx(null);
+      setActiveWordIdx(null);
+      setContinuous(false);
+      stopAtMsRef.current = null;
+    }
+  }, [status?.didJustFinish]);
+
+  // Listen to playback position (currentTime * 1000 ms) for highlighting & auto-pause
+  useEffect(() => {
+    if (!status?.playing || !status?.currentTime || verseTimings.length === 0) return;
+
+    // Ignore updates for a short duration after triggering a play/seek to avoid race conditions
+    if (Date.now() - lastPlayTriggeredRef.current < 800) {
+      return;
+    }
+
+    const ms = status.currentTime * 1000;
+
+    // Single verse play auto-pause check
+    if (!continuousRef.current && stopAtMsRef.current !== null) {
+      if (ms >= stopAtMsRef.current) {
+        try { player.pause(); } catch {}
+        stopAtMsRef.current = null;
+        setPlayingIdx(null);
+        setActiveWordIdx(null);
+        return;
+      }
+    }
+
+    // Find active verse timing
+    const activeVerseIdx = verseTimings.findIndex(
+      (vt) => ms >= vt.timestamp_from && ms <= vt.timestamp_to
+    );
+
+    if (activeVerseIdx !== -1) {
+      if (playingIdxRef.current !== activeVerseIdx) {
+        setPlayingIdx(activeVerseIdx);
+      }
+
+      // Find active word segment
+      const vt = verseTimings[activeVerseIdx];
+      if (vt && vt.segments) {
+        const activeSegment = vt.segments.find(
+          (seg: [number, number, number]) => ms >= seg[1] && ms <= seg[2]
+        );
+        if (activeSegment) {
+          const wIdx = activeSegment[0]; // 1-based word index
+          if (activeWordIdx !== wIdx) {
+            setActiveWordIdx(wIdx);
+          }
+        } else {
+          setActiveWordIdx(null);
+        }
+      } else {
+        setActiveWordIdx(null);
+      }
+    } else {
+      setActiveWordIdx(null);
+    }
+  }, [status?.currentTime, verseTimings, player]);
+
   const [audioLoading, setAudioLoading] = useState(false);
 
-  // Get whichever player is currently active
-  const activePlayer = useCallback(
-    () => (activePlayerRef.current === 0 ? player : playerB),
-    [player, playerB]
-  );
-
   const playAyah = useCallback((i: number) => {
-    // If audio not yet loaded, trigger the fetch first
-    if (!audioRequested) {
-      setAudioLoading(true);
-      setAudioRequested(true);
-      setPendingPlayIdx(i);
-      return;
-    }
-    const url = audio[i]?.audio;
-    if (!url) return;
-    // Toggle pause/resume if same ayah
+    if (!audioUrl || verseTimings.length === 0) return;
+    const vt = verseTimings[i];
+    if (!vt) return;
+
+    const startSeconds = vt.timestamp_from / 1000;
+
     if (playingIdx === i) {
-      const ap = activePlayer();
-      if (status?.playing || statusB?.playing) { try { ap.pause(); } catch {} }
-      else { try { ap.play(); } catch {} }
+      if (status?.playing) {
+        try { player.pause(); } catch {}
+      } else {
+        try { player.play(); } catch {}
+      }
       return;
     }
-    // New ayah — use player A, reset active ref
-    activePlayerRef.current = 0;
-    try {
-      player.replace({ uri: url });
-      player.play();
-    } catch {}
+
     setPlayingIdx(i);
+    setActiveWordIdx(null);
     setContinuous(false);
-    // Pre-buffer next ayah into player B immediately
-    preloadNext(i);
-    // Save last played position for Resume
+    stopAtMsRef.current = vt.timestamp_to;
+    lastPlayTriggeredRef.current = Date.now();
+
+    try {
+      if (loadedUriRef.current !== audioUrl) {
+        player.replace({ uri: audioUrl });
+        loadedUriRef.current = audioUrl;
+      }
+      player.seekTo(startSeconds);
+      player.play();
+    } catch (err) {
+      console.error("Player playback error:", err);
+    }
+
+    // Save last read position
     const surahId = Number(id);
     const surahData = QURAN.find((s) => s.number === surahId);
     if (surahData) {
       saveQuranLastRead({
         surahNumber: surahId,
         surahName: surahData.name,
-        ayahNumber: audio[i]?.numberInSurah ?? (i + 1),
+        ayahNumber: i + 1,
       }).catch(() => {});
     }
-  }, [audioRequested, audio, playingIdx, status, statusB, player, playerB, preloadNext, id]);
-
-  const [pendingPlayIdx, setPendingPlayIdx] = useState<number | null>(null);
-
-  // Once audio loads after a deferred request, auto-play the pending index
-  useEffect(() => {
-    if (audio.length > 0 && pendingPlayIdx !== null) {
-      setAudioLoading(false);
-      const url = audio[pendingPlayIdx]?.audio;
-      if (url) {
-        activePlayerRef.current = 0;
-        try {
-          player.replace({ uri: url });
-          player.play();
-        } catch {}
-        setPlayingIdx(pendingPlayIdx);
-        // Pre-buffer the next ayah if in continuous mode
-        preloadNext(pendingPlayIdx);
-      }
-      setPendingPlayIdx(null);
-    }
-  }, [audio]);
+  }, [audioUrl, verseTimings, playingIdx, status, player, id]);
 
   const playAll = useCallback(() => {
-    if (!audioRequested) {
-      setAudioLoading(true);
-      setAudioRequested(true);
-      setPendingPlayIdx(0);
-      setContinuous(true);
-      return;
-    }
-    if (audio.length === 0 || !audio[0]?.audio) return;
-    // Start from ayah 0 on player A
-    activePlayerRef.current = 0;
-    try {
-      player.replace({ uri: audio[0].audio });
-      player.play();
-    } catch {}
+    if (!audioUrl || verseTimings.length === 0) return;
+
+    const startSeconds = (verseTimings[0]?.timestamp_from || 0) / 1000;
     setPlayingIdx(0);
+    setActiveWordIdx(null);
     setContinuous(true);
-    // Immediately pre-buffer ayah 1 into player B
-    preloadNext(0);
-  }, [audioRequested, audio, player, preloadNext]);
+    stopAtMsRef.current = null;
+    lastPlayTriggeredRef.current = Date.now();
+
+    try {
+      if (loadedUriRef.current !== audioUrl) {
+        player.replace({ uri: audioUrl });
+        loadedUriRef.current = audioUrl;
+      }
+      player.seekTo(startSeconds);
+      player.play();
+    } catch (err) {
+      console.error("Play all error:", err);
+    }
+  }, [audioUrl, verseTimings, player]);
 
   const stopAll = useCallback(() => {
     try { player.pause(); } catch {}
-    try { playerB.pause(); } catch {}
     setPlayingIdx(null);
+    setActiveWordIdx(null);
     setContinuous(false);
-  }, [player, playerB]);
+    stopAtMsRef.current = null;
+  }, [player]);
 
   const onFavAyah = useCallback(async (i: number, a: Ayah) => {
     const favId = `ayah-${id}-${a.numberInSurah}`;
@@ -647,7 +747,11 @@ export default function SurahDetail() {
     setFavIds(new Set(fs.map((f) => f.id)));
   }, [id, name, trans]);
 
-  const currentReciterName = RECITERS.find((r) => r.id === reciter)?.name;
+  const currentReciter = RECITERS.find((r) => r.qdcId === reciterId);
+  const currentReciterName = currentReciter
+    ? `${currentReciter.name} · ${currentReciter.style}`
+    : "Unknown Reciter";
+  const currentModeLabel = "Online Streaming";
 
   // Reading mode color palette
   const READING_COLORS = {
@@ -708,37 +812,79 @@ export default function SurahDetail() {
       {showReciters ? (
         <View style={[styles.reciterBox, { backgroundColor: colors.surfaceSecondary }]} testID="reciter-list">
           <Text style={[styles.reciterHead, { color: colors.onSurfaceMuted }]}>Choose Qari</Text>
-          {RECITERS.map((r) => (
-            <Pressable
-              key={r.id}
-              onPress={() => {
-                setReciter(r.id);
-                setShowReciters(false);
-                stopAll();
-              }}
-              style={[styles.reciterItem, reciter === r.id && { backgroundColor: colors.brand + "15", borderRadius: 8 }]}
-              testID={`reciter-${r.id}`}
-            >
-              <MaterialCommunityIcons
-                name={reciter === r.id ? "check-circle" : "circle-outline"}
-                size={20}
-                color={reciter === r.id ? colors.brand : colors.onSurfaceMuted}
-              />
-              <Text style={[styles.reciterName, { color: colors.onSurface }]}>{r.name}</Text>
-            </Pressable>
-          ))}
+          <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+            {RECITERS.map((r) => {
+              const dlKey = `${r.qdcId}_${Number(id)}`;
+              const dlState = downloadStatus[dlKey] || "idle";
+              const isSelected = reciterId === r.qdcId;
+              return (
+                <Pressable
+                  key={`qdc-${r.qdcId}`}
+                  onPress={() => {
+                    setReciterId(r.qdcId as ReciterQdcId);
+                    setShowReciters(false);
+                    stopAll();
+                  }}
+                  style={[styles.reciterItem, isSelected && { backgroundColor: colors.brand + "15", borderRadius: 8 }]}
+                  testID={`reciter-qdc-${r.qdcId}`}
+                >
+                  <MaterialCommunityIcons
+                    name={isSelected ? "check-circle" : "circle-outline"}
+                    size={20}
+                    color={isSelected ? colors.brand : colors.onSurfaceMuted}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.reciterName, { color: colors.onSurface }]}>{r.name}</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 }}>
+                      <View style={{ backgroundColor: colors.brand + "22", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>{r.style}</Text>
+                      </View>
+                      {r.hasWordSegments && (
+                        <View style={{ backgroundColor: "#16a34a22", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                          <Text style={{ fontSize: 10, color: "#16a34a", fontWeight: "600" }}>Word Sync</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  {isSelected && !!FileSystem.documentDirectory && (
+                    <Pressable
+                      onPress={(e) => { e.stopPropagation?.(); downloadSurah(); }}
+                      hitSlop={8}
+                      style={{
+                        width: 30, height: 30, borderRadius: 15,
+                        backgroundColor: dlState === "done" ? "#16a34a22" : colors.brand + "22",
+                        alignItems: "center", justifyContent: "center",
+                      }}
+                    >
+                      {dlState === "downloading" ? (
+                        <ActivityIndicator size="small" color={colors.brand} />
+                      ) : dlState === "done" ? (
+                        <MaterialCommunityIcons name="check" size={15} color="#16a34a" />
+                      ) : (
+                        <MaterialCommunityIcons name="download" size={15} color={colors.brand} />
+                      )}
+                    </Pressable>
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </View>
       ) : (
         <View style={styles.currentReciter}>
           <MaterialCommunityIcons name="microphone" size={14} color={colors.onSurfaceMuted} />
-          <Text style={[styles.currentReciterTxt, { color: colors.onSurfaceMuted }]}>{currentReciterName}</Text>
+          <Text style={[styles.currentReciterTxt, { color: colors.onSurfaceMuted }]}>
+            {currentReciterName}
+          </Text>
         </View>
       )}
 
       <View style={styles.playAllRow}>
         <Pressable
           onPress={continuous ? stopAll : playAll}
-          style={[styles.playAllBtn, { backgroundColor: audioErr ? colors.onSurfaceMuted : colors.brand }]}
+          style={[styles.playAllBtn, {
+            backgroundColor: audioErr ? colors.onSurfaceMuted : colors.brand,
+          }]}
           disabled={audioErr || audioLoading}
           testID="play-all-btn"
         >
@@ -752,13 +898,49 @@ export default function SurahDetail() {
             />
           )}
           <Text style={[styles.playAllTxt, { color: colors.onBrandPrimary }]}>
-            {audioLoading ? "Loading audio…" : continuous ? "Stop" : "Play Full Surah"}
+            {audioLoading
+              ? "Loading audio…"
+              : continuous
+              ? "Stop"
+              : "Play Full Surah"}
           </Text>
         </Pressable>
+        {/* Download button for offline use */}
+        {!!FileSystem.documentDirectory && !audioErr && audioUrl && !audioUrl.startsWith(FileSystem.documentDirectory ?? "file://") && (
+          <Pressable
+            onPress={downloadSurah}
+            disabled={downloadStatus[`${reciterId}_${Number(id)}`] === "downloading"}
+            style={[
+              styles.playAllBtn,
+              {
+                backgroundColor: downloadStatus[`${reciterId}_${Number(id)}`] === "done"
+                  ? "#16a34a"
+                  : colors.surfaceSecondary,
+                flex: 0,
+                paddingHorizontal: 12,
+              },
+            ]}
+          >
+            {downloadStatus[`${reciterId}_${Number(id)}`] === "downloading" ? (
+              <>
+                <ActivityIndicator size="small" color={colors.brand} />
+                <Text style={{ fontSize: 11, color: colors.brand, marginLeft: 4 }}>
+                  {(downloadProgress ?? {})[`${reciterId}_${Number(id)}`] || 0}%
+                </Text>
+              </>
+            ) : downloadStatus[`${reciterId}_${Number(id)}`] === "done" ? (
+              <MaterialCommunityIcons name="check-circle" size={18} color="#fff" />
+            ) : (
+              <MaterialCommunityIcons name="download" size={18} color={colors.brand} />
+            )}
+          </Pressable>
+        )}
         {audioErr ? (
-          <Text style={[styles.bgHint, { color: theme.colors.error }]}>⚠️ Audio unavailable for this Qari</Text>
+          <Text style={[styles.bgHint, { color: theme.colors.error }]}>⚠️ Audio unavailable</Text>
         ) : (
-          <Text style={[styles.bgHint, { color: colors.onSurfaceMuted }]}>🔊 Plays in background</Text>
+          <Text style={[styles.bgHint, { color: colors.onSurfaceMuted }]}>
+            {!!FileSystem.documentDirectory && audioUrl?.startsWith(FileSystem.documentDirectory ?? "file://") ? "📥 Playing Offline" : "🔊 Online Stream"}
+          </Text>
         )}
       </View>
 
@@ -862,7 +1044,25 @@ export default function SurahDetail() {
                     },
                   ]}
                 >
-                  {a.text}
+                  {(() => {
+                    const words = a.text.trim().split(/\s+/);
+                    return words.map((word, wordIndex) => {
+                      const isWordHighlighted = isHighlighted && activeWordIdx === (wordIndex + 1);
+                      return (
+                        <Text
+                          key={wordIndex}
+                          style={[
+                            isWordHighlighted && {
+                              color: colors.brand,
+                              fontWeight: "700",
+                            },
+                          ]}
+                        >
+                          {word}{" "}
+                        </Text>
+                      );
+                    });
+                  })()}
                 </Text>
                 {showTransliteration && (
                   <Text style={[styles.translit, { color: rc.translit }]}>
