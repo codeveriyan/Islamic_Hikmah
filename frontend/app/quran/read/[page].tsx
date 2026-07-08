@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, Dimensions, FlatList, ActivityIndicator, Platform, ScrollView, Modal, TextInput } from "react-native";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { View, Text, StyleSheet, Pressable, Dimensions, FlatList, ActivityIndicator, Platform, ScrollView, Modal, TextInput, Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
@@ -15,6 +15,11 @@ import quranData from "@/src/data/quran/quranData.json";
 import pageMappingData from "@/src/data/quran/pageMapping.json";
 import { TRANSLATION_MAP } from "@/src/data/quran/translationLanguages";
 import transliterationTajweedData from "@/src/data/quran/transliterationTajweed.json";
+import transliterationSyllablesData from "@/src/data/quran/transliterationSyllables.json";
+import transliterationWbwData from "@/src/data/quran/transliterationWbw.json";
+import qpcV4LayoutData from "@/src/data/quran/qpcV4Layout.json";
+import * as FileSystem from "expo-file-system/legacy";
+import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 
 type QuranBookmark = {
   page: number;
@@ -41,9 +46,44 @@ const toArabicNumber = (num: number) => {
     .join("");
 };
 
+const READING_COLORS = {
+  default: {
+    bg: "#FFFFFF",
+    containerBg: "#FFFFFF",
+    mushafBg: "#FAF7F0",
+    headerBg: "#FFFFFF",
+    cardBg: "#F5EFE4",
+    text: "#2C1E10",
+    textMuted: "#6B4423",
+    border: "#E2E8F0",
+    icon: "#5C4E3C"
+  },
+  sepia: {
+    bg: "#F5ECD7",
+    containerBg: "#F5ECD7",
+    mushafBg: "#EDE0C4",
+    headerBg: "#F5ECD7",
+    cardBg: "#E3D5BA",
+    text: "#2C1A0E",
+    textMuted: "#6B4423",
+    border: "#EDE0C4",
+    icon: "#8B5E2A"
+  },
+  dark: {
+    bg: "#0D1829",
+    containerBg: "#0D1829",
+    mushafBg: "#0D1E2E",
+    headerBg: "#0D1829",
+    cardBg: "#152235",
+    text: "#FFFFFF",
+    textMuted: "#8BAFC8",
+    border: "#334155",
+    icon: "#FFFFFF"
+  }
+};
+
 interface QuranPageItemProps {
   item: number;
-  isNightMode: boolean;
   colors: any;
   zoomScale: number;
   playingAyah: { surah: number; ayah: number } | null;
@@ -51,11 +91,15 @@ interface QuranPageItemProps {
   onLongPressAyah: (ayah: any) => void;
   bookmarkedVerses: Set<string>; // "surahNum-ayahNum"
   fontType: "indopak" | "uthmani" | "naskh";
+  transliterationType: "tajweed" | "syllables" | "wbw";
+  fontSize: number;
+  readingMode: "default" | "sepia" | "dark";
+  mushafLayout?: "default" | "qpc_v4";
+  quranElements?: any[];
 }
 
 const QuranPageItem = ({
   item,
-  isNightMode,
   colors,
   zoomScale,
   playingAyah,
@@ -63,12 +107,140 @@ const QuranPageItem = ({
   onLongPressAyah,
   bookmarkedVerses,
   fontType,
+  transliterationType,
+  fontSize,
+  readingMode,
+  mushafLayout = "default",
+  quranElements = [],
 }: QuranPageItemProps) => {
+  const rc = READING_COLORS[readingMode];
+
+  if (mushafLayout === "qpc_v4") {
+    const pageLines = (qpcV4LayoutData as any)[String(item)] || [];
+    return (
+      <View style={{ flex: 1, paddingVertical: 8 }}>
+        {pageLines.map((line: any, lIdx: number) => {
+          const lineKey = `line-${lIdx}`;
+          if (line.type === "surah_name") {
+            const surah = QURAN.find((s) => s.number === line.surah);
+            return (
+              <View
+                key={lineKey}
+                style={[
+                  styles.surahHeader,
+                  {
+                    backgroundColor: rc.cardBg,
+                    borderColor: colors.brand,
+                    marginVertical: 4,
+                    paddingVertical: 10,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.surahHeaderArabic,
+                    {
+                      fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
+                      color: rc.text,
+                      fontSize: 20,
+                    },
+                  ]}
+                >
+                  سُورَةُ {surah?.arabicName}
+                </Text>
+                <Text style={[styles.surahHeaderEng, { color: colors.brand, fontSize: 11 }]}>
+                  Surah {surah?.name} ({surah?.type})
+                </Text>
+              </View>
+            );
+          }
+
+          if (line.type === "basmallah") {
+            return (
+              <View key={lineKey} style={[styles.bismillahBox, { marginVertical: 3, paddingVertical: 4 }]}>
+                <Text
+                  style={[
+                    styles.bismillahText,
+                    {
+                      fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
+                      color: rc.text,
+                      fontSize: 20,
+                    },
+                  ]}
+                >
+                  بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ
+                </Text>
+              </View>
+            );
+          }
+
+          // Ayah line
+          const startIdx = Math.max(0, Math.min(quranElements.length - 1, line.firstWord - 1));
+          const endIdx = Math.max(0, Math.min(quranElements.length - 1, line.lastWord - 1));
+          const lineElements = quranElements.slice(startIdx, endIdx + 1);
+
+          return (
+            <View key={lineKey} style={{ width: "100%", alignItems: "center", marginVertical: 2 }}>
+              <Text style={{ textAlign: "center" }}>
+                {lineElements.map((el, elIdx) => {
+                  const verseKey = `${el.surah}-${el.ayah}`;
+                  const isBookmarked = bookmarkedVerses.has(verseKey);
+                  const isPlaying = playingAyah?.surah === el.surah && playingAyah?.ayah === el.ayah;
+                  const isWord = el.type === "word";
+
+                  const verseObj = {
+                    surahNumber: el.surah,
+                    ayahNumber: el.ayah,
+                    arabic: QURAN.find(s => s.number === el.surah)?.ayahs.find(a => a.numberInSurah === el.ayah)?.arabic || "",
+                    translation: "",
+                    transliteration: "",
+                  };
+
+                  return (
+                    <Text
+                      key={elIdx}
+                      onPress={() => onTapAyah(verseObj)}
+                      onLongPress={() => onLongPressAyah(verseObj)}
+                      style={[
+                        styles.arabicWord,
+                        {
+                          fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
+                          fontSize: zoomScale * (fontSize - 3),
+                          lineHeight: zoomScale * (fontSize - 3) * 1.95,
+                          color: isPlaying
+                            ? colors.brandSecondary
+                            : isBookmarked
+                            ? colors.brand
+                            : isWord
+                            ? rc.text
+                            : rc.icon,
+                          backgroundColor: isPlaying
+                            ? colors.brandSecondary + "28"
+                            : isBookmarked
+                            ? colors.brand + "22"
+                            : "transparent",
+                          fontWeight: isBookmarked ? "900" : "400",
+                          borderRadius: 4,
+                        },
+                      ]}
+                    >
+                      {el.text}
+                    </Text>
+                  );
+                })}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
+
   const pageMap = PAGE_MAPPING.find((p) => p.page === item);
   if (!pageMap) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ color: isNightMode ? "#FFF" : "#333" }}>Page mapping not found.</Text>
+        <Text style={{ color: rc.text }}>Page mapping not found.</Text>
       </View>
     );
   }
@@ -77,7 +249,24 @@ const QuranPageItem = ({
     const surah = QURAN.find((s) => s.number === m.surah);
     const ayah = surah?.ayahs.find((a) => a.numberInSurah === m.ayah);
     const key = `${m.surah}:${m.ayah}`;
-    const highQualityText = (transliterationTajweedData as Record<string, string>)[key] || ayah?.transliteration || "";
+    let highQualityText = "";
+    if (transliterationType === "syllables") {
+      highQualityText = (transliterationSyllablesData as Record<string, string>)[key] || ayah?.transliteration || "";
+    } else if (transliterationType === "wbw") {
+      const words: string[] = [];
+      let wordIdx = 1;
+      while (true) {
+        const wordKey = `${m.surah}:${m.ayah}:${wordIdx}`;
+        const wordVal = (transliterationWbwData as Record<string, string>)[wordKey];
+        if (!wordVal) break;
+        words.push(wordVal);
+        wordIdx++;
+      }
+      highQualityText = words.length > 0 ? words.join(" ") : (ayah?.transliteration || "");
+    } else {
+      highQualityText = (transliterationTajweedData as Record<string, string>)[key] || ayah?.transliteration || "";
+    }
+
     return {
       surahNumber: m.surah,
       surahName: surah?.name || "",
@@ -165,7 +354,7 @@ const QuranPageItem = ({
               style={[
                 styles.surahHeader,
                 {
-                  backgroundColor: isNightMode ? "#152235" : "#F5EFE4",
+                  backgroundColor: rc.cardBg,
                   borderColor: colors.brand,
                 },
               ]}
@@ -175,7 +364,7 @@ const QuranPageItem = ({
                   styles.surahHeaderArabic,
                   {
                     fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
-                    color: isNightMode ? "#F0F4F8" : "#5C4E3C",
+                    color: rc.text,
                   },
                 ]}
               >
@@ -196,7 +385,7 @@ const QuranPageItem = ({
                   styles.bismillahText,
                   {
                     fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
-                    color: isNightMode ? "#F0F4F8" : "#2C1E10",
+                    color: rc.text,
                   },
                 ]}
               >
@@ -222,14 +411,14 @@ const QuranPageItem = ({
                       styles.arabicWord,
                       {
                         fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
-                        fontSize: zoomScale * 21,
-                        lineHeight: zoomScale * 21 * 1.95,
+                        fontSize: zoomScale * (fontSize - 3),
+                        lineHeight: zoomScale * (fontSize - 3) * 1.95,
                         // Priority: playing > bookmarked > normal
                         color: isPlaying
                           ? colors.brandSecondary   // teal while playing
                           : isBookmarked
                           ? colors.brand            // gold for bookmarked
-                          : isNightMode ? "#F0F4F8" : "#2C1E10",
+                          : rc.text,
                         // Bold weight for bookmarked verses
                         fontWeight: isBookmarked ? "900" : "400",
                         // Highlighted background for bookmarked
@@ -247,7 +436,7 @@ const QuranPageItem = ({
                       <Text style={{ color: colors.brand, fontSize: zoomScale * 11 }}>🔖</Text>
                     )}
                     <Text style={[styles.ayahEndCircle, {
-                      color: isPlaying ? colors.brandSecondary : colors.brand,
+                      color: isPlaying ? colors.brandSecondary : isBookmarked ? colors.brand : rc.icon,
                       fontSize: zoomScale * 14
                     }]}>
                       {` ۝${toArabicNumber(v.ayahNumber)} `}
@@ -271,9 +460,42 @@ export default function QuranReadScreen() {
 
   const [currentPage, setCurrentPage] = useState(Number(page) || 1);
   const [isNightMode, setIsNightMode] = useState(false);
+  const [readingMode, setReadingMode] = useState<"default" | "sepia" | "dark">("default");
+  const [fontSize, setFontSize] = useState<number>(24);
   const [bookmarks, setBookmarks] = useState<QuranBookmark[]>([]);
   const [zoomScale, setZoomScale] = useState(1);
   const [fontType, setFontType] = useState<"indopak" | "uthmani" | "naskh">(arabicFont as any);
+  const [transliterationType, setTransliterationType] = useState<"tajweed" | "syllables" | "wbw">("tajweed");
+  const [quranTransLang, setQuranTransLang] = useState<string>("en");
+  const [mushafLayout, setMushafLayout] = useState<"default" | "qpc_v4">("default");
+  const [layoutModalVisible, setLayoutModalVisible] = useState(false);
+
+  // Build global elements mapping on mount/render
+  const quranElements = useMemo(() => {
+    const list: { surah: number; ayah: number; text: string; type: "word" | "ayah_symbol"; wordIndex: number }[] = [];
+    QURAN.forEach((surah) => {
+      surah.ayahs.forEach((ayah) => {
+        const words = ayah.arabic.trim().split(/\s+/).filter(Boolean);
+        words.forEach((w, wIdx) => {
+          list.push({
+            surah: surah.number,
+            ayah: ayah.numberInSurah,
+            text: w,
+            type: "word",
+            wordIndex: wIdx + 1,
+          });
+        });
+        list.push({
+          surah: surah.number,
+          ayah: ayah.numberInSurah,
+          text: ` ۝${toArabicNumber(ayah.numberInSurah)} `,
+          type: "ayah_symbol",
+          wordIndex: 0,
+        });
+      });
+    });
+    return list;
+  }, []);
 
   // Bookmarked verses as a Set of "surahNum-ayahNum" strings for O(1) lookup
   const [bookmarkedVerses, setBookmarkedVerses] = useState<Set<string>>(new Set());
@@ -295,7 +517,7 @@ export default function QuranReadScreen() {
   const [pageTranslations, setPageTranslations] = useState<Record<number, Record<number, string>>>({});
 
   useEffect(() => {
-    if (language === "en") return;
+    if (quranTransLang === "en") return;
     let active = true;
 
     const pageMap = pageMappingData.find((p) => p.page === currentPage);
@@ -304,7 +526,7 @@ export default function QuranReadScreen() {
     const surahIds = Array.from(new Set(pageMap.ayahs.map((m) => m.surah)));
 
     const fetchTranslationForSurah = async (surahId: number) => {
-      const cacheKey = `islamic_hikmah:quran_trans_${language}_${surahId}`;
+      const cacheKey = `islamic_hikmah:quran_trans_${quranTransLang}_${surahId}`;
       try {
         const cached = await AsyncStorage.getItem(cacheKey);
         if (cached && active) {
@@ -323,7 +545,7 @@ export default function QuranReadScreen() {
           }
         }
 
-        if (language === "ta") {
+        if (quranTransLang === "ta") {
           const taJanTrust = require("@/src/data/quran/ta-jan-trust-simple.json");
           const pageMapLocal = pageMappingData.find((p) => p.page === currentPage);
           if (pageMapLocal && active) {
@@ -345,7 +567,7 @@ export default function QuranReadScreen() {
           return;
         }
 
-        const translationId = TRANSLATION_MAP[language as keyof typeof TRANSLATION_MAP];
+        const translationId = TRANSLATION_MAP[quranTransLang as keyof typeof TRANSLATION_MAP];
         if (translationId) {
           const response = await fetch(`https://api.quran.com/api/v4/quran/translations/${translationId}?chapter_number=${surahId}`);
           if (!active) return;
@@ -380,7 +602,7 @@ export default function QuranReadScreen() {
     return () => {
       active = false;
     };
-  }, [currentPage, language]);
+  }, [currentPage, quranTransLang]);
 
   // Tafsir Modal States
   const [tafsirModalVisible, setTafsirModalVisible] = useState(false);
@@ -388,6 +610,158 @@ export default function QuranReadScreen() {
   const [tafsirContent, setTafsirContent] = useState("");
   const [tafsirRef, setTafsirRef] = useState({ surah: 0, ayah: 0, arabic: "", trans: "" });
   const [activeTafsirId, setActiveTafsirId] = useState<number>(169); // 169 = Ibn Kathir (English), 160 = Al-Jalalayn (English by F. Hamza)
+
+  const availableTafsirs = useMemo(() => {
+    // Maps standard translation ISO codes to language tags in tarteel JSON
+    const langMap: Record<string, string> = {
+      en: "english",
+      ta: "tamil",
+      hi: "hindi",
+      ur: "urdu",
+      bn: "bengali",
+      te: "telugu",
+      kn: "kannada",
+      ml: "malayalam",
+      es: "spanish",
+      fr: "french",
+      de: "german",
+      tr: "turkish",
+      id: "indones", // matches indonesian and indoniesua
+      ru: "russian",
+      fa: "persian",
+      so: "somali",
+      ms: "malay",
+      uz: "uzbek",
+      yo: "yoruba",
+      ps: "pashto",
+      gu: "gujarati",
+      mr: "marathi",
+      pa: "punjabi",
+      sq: "albanian",
+      bs: "bosnian",
+      ro: "romanian",
+      sw: "swahili",
+      tg: "tajik",
+      az: "azeri",
+      zh: "chinese",
+      ja: "japanese",
+      ko: "korean",
+      ku: "kurdish",
+      pt: "portuguese",
+      th: "thai",
+      vi: "vietnamese",
+      si: "sinhalese",
+      tl: "tagalog",
+      ug: "uyghur",
+      ar: "arabic"
+    };
+
+    const targetLang = langMap[quranTransLang] || "english";
+    let filtered = (tafsirIndexData as any[]).filter((t) => {
+      const l = t.language.toLowerCase();
+      if (targetLang === "indones") {
+        return l.includes("indones") || l.includes("indoniesua");
+      }
+      return l.includes(targetLang) || targetLang.includes(l);
+    });
+
+    // Merge quran.com Tafsirs for specific major languages to offer more rich commentary
+    if (targetLang === "english") {
+      filtered = [
+        { id: "169", title: "Ibn Kathir (Eng)", language: "english" },
+        { id: "160", title: "Al-Jalalayn (Eng)", language: "english" },
+        ...filtered
+      ];
+    } else if (targetLang === "arabic") {
+      filtered = [
+        { id: "16", title: "Tafsir Muyassar", language: "arabic" },
+        { id: "91", title: "Tafsir Al-Sa'di", language: "arabic" },
+        ...filtered
+      ];
+    } else if (targetLang === "urdu") {
+      filtered = [
+        { id: "160", title: "Ibn Kathir (Urdu)", language: "urdu" },
+        ...filtered
+      ];
+    }
+
+    if (filtered.length === 0) {
+      filtered = [
+        { id: "266", title: "English Al-Mukhtasar", language: "english" }
+      ];
+    }
+    return filtered;
+  }, [quranTransLang]);
+
+  // Keep activeTafsirId synced when availableTafsirs changes
+  useEffect(() => {
+    if (availableTafsirs.length > 0) {
+      const exists = availableTafsirs.some(t => String(t.id) === String(activeTafsirId));
+      if (!exists) {
+        setActiveTafsirId(Number(availableTafsirs[0].id));
+      }
+    }
+  }, [availableTafsirs, activeTafsirId]);
+
+  // Track which local Tafsirs have been downloaded (on native)
+  const [downloadedTafsirs, setDownloadedTafsirs] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    const checkDownloads = async () => {
+      const isWeb = Platform.OS === 'web' || !FileSystem.documentDirectory;
+      if (isWeb) return;
+      const newMap: Record<number, boolean> = {};
+      for (const taf of availableTafsirs) {
+        const isLocal = (tafsirIndexData as any[]).some(t => String(t.id) === String(taf.id));
+        if (!isLocal) continue;
+        const localUri = `${FileSystem.documentDirectory}tafsirs/${taf.id}.json`;
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(localUri);
+          newMap[Number(taf.id)] = fileInfo.exists;
+        } catch {}
+      }
+      setDownloadedTafsirs(newMap);
+    };
+    checkDownloads();
+  }, [availableTafsirs]);
+
+  const downloadTafsirOffline = async (tafsirId: number) => {
+    const isWeb = Platform.OS === 'web' || !FileSystem.documentDirectory;
+    if (isWeb) {
+      Alert.alert("Offline Mode", "Offline downloads are supported on mobile devices.");
+      return;
+    }
+    
+    setTafsirLoading(true);
+    try {
+      const localUri = `${FileSystem.documentDirectory}tafsirs/${tafsirId}.json`;
+      const dirUri = `${FileSystem.documentDirectory}tafsirs/`;
+      
+      const dirInfo = await FileSystem.getInfoAsync(dirUri);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
+      }
+      
+      const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
+      console.log("Downloading Tafsir to offline cache:", downloadUrl);
+      const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
+      if (dlResult.status === 200) {
+        setDownloadedTafsirs(prev => ({ ...prev, [tafsirId]: true }));
+        Alert.alert("Success", "Tafsir downloaded successfully for offline use.");
+        // Reload current Tafsir content
+        if (tafsirRef.surah > 0 && tafsirRef.ayah > 0) {
+          openTafsirModal(tafsirRef.surah, tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, tafsirId);
+        }
+      } else {
+        throw new Error(`Download failed with status ${dlResult.status}`);
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Download Failed", "Please check your internet connection.");
+    } finally {
+      setTafsirLoading(false);
+    }
+  };
 
   const openTafsirModal = useCallback(async (surahNum: number, ayahNum: number, arabicText: string, transText: string, tafsirIdOverride?: number) => {
     const tafsirId = tafsirIdOverride ?? activeTafsirId;
@@ -405,15 +779,90 @@ export default function QuranReadScreen() {
         return;
       }
 
-      const response = await fetch(`https://api.quran.com/api/v4/tafsirs/${tafsirId}/by_ayah/${surahNum}:${ayahNum}`);
-      const data = await response.json();
-      if (data && data.tafsir && data.tafsir.text) {
-        let cleanText = data.tafsir.text.replace(/<\/?[^>]+(>|$)/g, "");
-        cleanText = cleanText.trim();
-        setTafsirContent(cleanText);
-        await AsyncStorage.setItem(cacheKey, cleanText);
+      // Check if this tafsirId is one of the local Tarteel Tafsirs
+      const isLocalTafsir = (tafsirIndexData as any[]).some(t => String(t.id) === String(tafsirId));
+
+      if (isLocalTafsir) {
+        const isWeb = Platform.OS === 'web' || !FileSystem.documentDirectory;
+        let jsonContent = null;
+
+        if (isWeb) {
+          // On Web, first try to fetch from local server's public folder, then fall back to GitHub
+          let response = null;
+          try {
+            const localUrl = window.location.origin + '/tafsirs/' + tafsirId + '.json';
+            console.log("Attempting local fetch:", localUrl);
+            response = await fetch(localUrl);
+          } catch (localErr) {
+            console.warn("Local fetch failed, falling back to GitHub:", localErr);
+          }
+
+          if (!response || !response.ok) {
+            const githubUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
+            console.log("Fetching from GitHub:", githubUrl);
+            response = await fetch(githubUrl);
+          }
+
+          if (response && response.ok) {
+            jsonContent = await response.json();
+          } else {
+            throw new Error(`Failed to load Tafsir: ${response ? response.status : 'network error'}`);
+          }
+        } else {
+          // On Native (iOS/Android), read from local file system or download if not exists
+          const localUri = `${FileSystem.documentDirectory}tafsirs/${tafsirId}.json`;
+          const dirUri = `${FileSystem.documentDirectory}tafsirs/`;
+
+          try {
+            const dirInfo = await FileSystem.getInfoAsync(dirUri);
+            if (!dirInfo.exists) {
+              await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
+            }
+
+            const fileInfo = await FileSystem.getInfoAsync(localUri);
+            if (fileInfo.exists) {
+              const raw = await FileSystem.readAsStringAsync(localUri);
+              jsonContent = JSON.parse(raw);
+            }
+          } catch (fsErr) {
+            console.warn("FS read error:", fsErr);
+          }
+
+          if (!jsonContent) {
+            // Download JSON from raw GitHub
+            const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
+            console.log("Downloading Tafsir from:", downloadUrl);
+            const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
+            if (dlResult.status === 200) {
+              const raw = await FileSystem.readAsStringAsync(localUri);
+              jsonContent = JSON.parse(raw);
+            } else {
+              throw new Error(`Download failed with status ${dlResult.status}`);
+            }
+          }
+        }
+
+        const key = `${surahNum}:${ayahNum}`;
+        if (jsonContent && jsonContent[key]) {
+          let text = jsonContent[key].text || "";
+          text = text.replace(/<\/?[^>]+(>|$)/g, "").trim();
+          setTafsirContent(text);
+          await AsyncStorage.setItem(cacheKey, text);
+        } else {
+          setTafsirContent("Commentary not available for this verse.");
+        }
       } else {
-        setTafsirContent("Commentary not available for this verse.");
+        // Quran.com API fallback
+        const response = await fetch(`https://api.quran.com/api/v4/tafsirs/${tafsirId}/by_ayah/${surahNum}:${ayahNum}`);
+        const data = await response.json();
+        if (data && data.tafsir && data.tafsir.text) {
+          let cleanText = data.tafsir.text.replace(/<\/?[^>]+(>|$)/g, "");
+          cleanText = cleanText.trim();
+          setTafsirContent(cleanText);
+          await AsyncStorage.setItem(cacheKey, cleanText);
+        } else {
+          setTafsirContent("Commentary not available for this verse.");
+        }
       }
     } catch (e) {
       console.error(e);
@@ -439,6 +888,47 @@ export default function QuranReadScreen() {
   const isFocused = useIsFocused();
 
   // Load preferences on focus
+  useEffect(() => {
+    if (isFocused) {
+      AsyncStorage.getItem("islamic_hikmah:transliteration_type").then((val) => {
+        if (val === "syllables" || val === "wbw" || val === "tajweed") {
+          setTransliterationType(val as any);
+        }
+      });
+      AsyncStorage.getItem("islamic_hikmah:quran_reading_mode").then((val) => {
+        if (val === "default" || val === "sepia" || val === "dark") {
+          setReadingMode(val as any);
+          setIsNightMode(val === "dark");
+        }
+      });
+      AsyncStorage.getItem("islamic_hikmah:quran_font_size").then((val) => {
+        if (val) {
+          setFontSize(Number(val));
+        }
+      });
+      AsyncStorage.getItem("islamic_hikmah:quran_translation_lang").then((val) => {
+        if (val) {
+          setQuranTransLang(val);
+        } else {
+          setQuranTransLang(language);
+        }
+      });
+      AsyncStorage.getItem("islamic_hikmah:mushaf_layout").then((val) => {
+        if (val === "default" || val === "qpc_v4") {
+          setMushafLayout(val);
+        }
+      });
+    }
+  }, [isFocused, language]);
+
+  useEffect(() => {
+    AsyncStorage.getItem("islamic_hikmah:quran_translation_lang").then((val) => {
+      if (!val) {
+        setQuranTransLang(language);
+      }
+    });
+  }, [language]);
+
   // Sync font type whenever ThemeContext arabicFont changes (user changed in Quick Settings)
   useEffect(() => {
     setFontType(arabicFont as any);
@@ -555,9 +1045,15 @@ export default function QuranReadScreen() {
 
   const toggleNightMode = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    const val = !isNightMode;
-    setIsNightMode(val);
-    await AsyncStorage.setItem("islamic_hikmah:read_night_mode", String(val));
+    let nextMode: "default" | "sepia" | "dark" = "default";
+    if (readingMode === "default") nextMode = "sepia";
+    else if (readingMode === "sepia") nextMode = "dark";
+    else nextMode = "default";
+
+    setReadingMode(nextMode);
+    setIsNightMode(nextMode === "dark");
+    await AsyncStorage.setItem("islamic_hikmah:quran_reading_mode", nextMode);
+    await AsyncStorage.setItem("islamic_hikmah:read_night_mode", String(nextMode === "dark"));
   };
 
   // Tap: play the verse immediately
@@ -696,35 +1192,41 @@ export default function QuranReadScreen() {
 
   const pagesData = Array.from({ length: TOTAL_PAGES }, (_, i) => i + 1);
 
-  const renderPage = useCallback(({ item }: { item: number }) => (
-    <View
-      style={{
-        width,
-        height: 780,
-        backgroundColor: isNightMode ? "#0D1E2E" : "#FAF7F0",
-        paddingHorizontal: 20,
-        paddingVertical: 24,
-        borderBottomWidth: 1,
-        borderBottomColor: isNightMode ? "#1E2F40" : "#E2E8F0",
-        justifyContent: "center",
-      }}
-    >
-      <Text style={{ fontSize: 11, color: colors.brand, fontWeight: "700", textAlign: "center", marginBottom: 8 }}>
-        PAGE {item}
-      </Text>
-      <QuranPageItem
-        item={item}
-        isNightMode={isNightMode}
-        colors={colors}
-        zoomScale={zoomScale}
-        playingAyah={playingAyah}
-        onTapAyah={onTapAyah}
-        onLongPressAyah={onLongPressAyah}
-        bookmarkedVerses={bookmarkedVerses}
-        fontType={fontType}
-      />
-    </View>
-  ), [isNightMode, colors, zoomScale, playingAyah, bookmarkedVerses, fontType, onTapAyah, onLongPressAyah]);
+  const renderPage = useCallback(({ item }: { item: number }) => {
+    const rc = READING_COLORS[readingMode];
+    return (
+      <View 
+        style={{ 
+          width,
+          backgroundColor: rc.mushafBg,
+          paddingHorizontal: 20,
+          paddingVertical: 24,
+          borderBottomWidth: 1,
+          borderBottomColor: rc.border,
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontSize: 11, color: colors.brand, fontWeight: "700", textAlign: "center", marginBottom: 8 }}>
+          PAGE {item}
+        </Text>
+        <QuranPageItem
+          item={item}
+          colors={colors}
+          zoomScale={zoomScale}
+          playingAyah={playingAyah}
+          onTapAyah={onTapAyah}
+          onLongPressAyah={onLongPressAyah}
+          bookmarkedVerses={bookmarkedVerses}
+          fontType={fontType}
+          transliterationType={transliterationType}
+          fontSize={fontSize}
+          readingMode={readingMode}
+          mushafLayout={mushafLayout}
+          quranElements={quranElements}
+        />
+      </View>
+    );
+  }, [colors, zoomScale, playingAyah, bookmarkedVerses, fontType, onTapAyah, onLongPressAyah, transliterationType, fontSize, readingMode, mushafLayout, quranElements]);
 
   // Touch gesture handlers for pinch to zoom
   const handleTouchStart = (e: any) => {
@@ -752,21 +1254,23 @@ export default function QuranReadScreen() {
     initialDist.current = null;
   };
 
+  const rc = READING_COLORS[readingMode];
+
   return (
-    <View style={[styles.container, { backgroundColor: isNightMode ? "#0D1829" : "#FFFFFF" }]}>
+    <View style={[styles.container, { backgroundColor: rc.bg }]}>
       {/* Reading progress bar */}
-      <View style={{ height: 3, backgroundColor: isNightMode ? "#1E3A55" : "#E2E8F0", width: "100%" }}>
+      <View style={{ height: 3, backgroundColor: rc.border, width: "100%" }}>
         <View style={{ height: 3, backgroundColor: "#C5A880", width: `${pageScrollPct}%` }} />
       </View>
 
 
       {/* Top Header */}
-      <View style={[styles.header, { borderBottomColor: isNightMode ? "#334155" : "#E2E8F0", backgroundColor: isNightMode ? "#0D1829" : "#FFFFFF" }]}>
+      <View style={[styles.header, { borderBottomColor: rc.border, backgroundColor: rc.headerBg }]}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={isNightMode ? "#FFF" : "#5C4E3C"} />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={rc.icon} />
         </Pressable>
         <View style={{ alignItems: "center" }}>
-          <Text style={[styles.title, { color: isNightMode ? "#F0F4F8" : "#5C4E3C" }]}>
+          <Text style={[styles.title, { color: rc.text }]}>
             Medina Mushaf - Page {currentPage}
           </Text>
           <Text style={{ fontSize: 10, color: "#C5A880", fontWeight: "700", marginTop: 1 }}>
@@ -777,7 +1281,7 @@ export default function QuranReadScreen() {
           setJumpPageInput(String(currentPage));
           setJumpModalVisible(true);
         }} hitSlop={10}>
-          <MaterialCommunityIcons name="magnify" size={24} color={isNightMode ? "#FFF" : "#5C4E3C"} />
+          <MaterialCommunityIcons name="magnify" size={24} color={rc.icon} />
         </Pressable>
       </View>
  
@@ -786,12 +1290,31 @@ export default function QuranReadScreen() {
         <ScrollView style={{ flex: 1, padding: 16 }} showsVerticalScrollIndicator={false}>
           {(() => {
             const pageMap = PAGE_MAPPING.find((p) => p.page === currentPage);
-            if (!pageMap) return <Text style={{ color: isNightMode ? "#FFF" : "#333", textAlign: "center" }}>Page mapping not found.</Text>;
+            if (!pageMap) return <Text style={{ color: rc.text, textAlign: "center" }}>Page mapping not found.</Text>;
             
             return pageMap.ayahs.map((m, idx) => {
               const surah = QURAN.find((s) => s.number === m.surah);
               const ayah = surah?.ayahs.find((a) => a.numberInSurah === m.ayah);
               const isPlaying = playingAyah?.surah === m.surah && playingAyah?.ayah === m.ayah;
+
+              const key = `${m.surah}:${m.ayah}`;
+              let highQualityText = "";
+              if (transliterationType === "syllables") {
+                highQualityText = (transliterationSyllablesData as Record<string, string>)[key] || ayah?.transliteration || "";
+              } else if (transliterationType === "wbw") {
+                const words: string[] = [];
+                let wordIdx = 1;
+                while (true) {
+                  const wordKey = `${m.surah}:${m.ayah}:${wordIdx}`;
+                  const wordVal = (transliterationWbwData as Record<string, string>)[wordKey];
+                  if (!wordVal) break;
+                  words.push(wordVal);
+                  wordIdx++;
+                }
+                highQualityText = words.length > 0 ? words.join(" ") : (ayah?.transliteration || "");
+              } else {
+                highQualityText = (transliterationTajweedData as Record<string, string>)[key] || ayah?.transliteration || "";
+              }
 
               return (
                 <View
@@ -799,7 +1322,7 @@ export default function QuranReadScreen() {
                   style={{
                     padding: 16,
                     borderRadius: 12,
-                    backgroundColor: isPlaying ? colors.brand + "15" : isNightMode ? "#152235" : "#F5EFE4",
+                    backgroundColor: isPlaying ? colors.brand + "15" : rc.cardBg,
                     marginBottom: 12,
                     borderWidth: isPlaying ? 1 : 0,
                     borderColor: colors.brand,
@@ -821,26 +1344,27 @@ export default function QuranReadScreen() {
                         onPress={() => openTafsirModal(m.surah, m.ayah, ayah?.arabic || "", pageTranslations[m.surah]?.[m.ayah] || ayah?.translation || "")}
                         hitSlop={10}
                       >
-                        <MaterialCommunityIcons name="comment-text-outline" size={22} color={colors.onSurfaceMuted} />
+                        <MaterialCommunityIcons name="comment-text-outline" size={22} color={rc.icon} />
                       </Pressable>
                     </View>
                   </View>
                   <Text
                     style={{
-                      fontSize: 22,
+                      fontSize: fontSize - 2,
                       fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
-                      color: isNightMode ? "#FFF" : "#2C1E10",
+                      color: rc.text,
                       textAlign: "right",
-                      lineHeight: 38,
+                      lineHeight: (fontSize - 2) * 1.7,
                       marginBottom: 8,
+                      fontWeight: fontType === "indopak" ? "800" : "400"
                     }}
                   >
                     {ayah?.arabic}
                   </Text>
-                  <Text style={{ fontSize: 13, color: isNightMode ? "#8BAFC8" : "#6B4423", fontStyle: "italic", marginBottom: 6 }}>
-                    {ayah?.transliteration}
+                  <Text style={{ fontSize: 13, color: rc.textMuted, fontStyle: "italic", marginBottom: 6 }}>
+                    {highQualityText}
                   </Text>
-                   <Text style={{ fontSize: 14, color: isNightMode ? "#D1D7DB" : "#333", lineHeight: 20 }}>
+                   <Text style={{ fontSize: 14, color: rc.text, lineHeight: 20 }}>
                     {pageTranslations[m.surah]?.[m.ayah] || ayah?.translation}
                   </Text>
                 </View>
@@ -883,14 +1407,14 @@ export default function QuranReadScreen() {
 
       {/* Bottom Bar Controls */}
       <View style={[styles.bottomBar, { 
-        borderTopColor: isNightMode ? "#334155" : "#E2E8F0",
-        backgroundColor: isNightMode ? "#0D1829" : "#FFFFFF"
+        borderTopColor: rc.border,
+        backgroundColor: rc.headerBg
       }]}>
         <Pressable onPress={toggleNightMode} style={styles.barBtn}>
           <MaterialCommunityIcons
-            name={isNightMode ? "brightness-7" : "brightness-4"}
+            name={readingMode === "dark" ? "brightness-7" : readingMode === "sepia" ? "brightness-5" : "brightness-4"}
             size={24}
-            color={isNightMode ? colors.brand : "#5C4E3C"}
+            color={readingMode === "dark" ? colors.brand : readingMode === "sepia" ? "#8B5E2A" : rc.icon}
           />
         </Pressable>
 
@@ -901,7 +1425,7 @@ export default function QuranReadScreen() {
           <MaterialCommunityIcons
             name={isPlayingContinuous ? "pause-circle" : "play-circle"}
             size={24}
-            color={isPlayingContinuous ? colors.brand : isNightMode ? "#F0F4F8" : "#5C4E3C"}
+            color={isPlayingContinuous ? colors.brand : rc.text}
           />
         </Pressable>
 
@@ -916,8 +1440,19 @@ export default function QuranReadScreen() {
           <MaterialCommunityIcons
             name={activeViewMode === "tafsir" ? "book-open-page-variant" : "comment-text-multiple-outline"}
             size={24}
-            color={activeViewMode === "tafsir" ? colors.brand : isNightMode ? "#FFF" : "#5C4E3C"}
+            color={activeViewMode === "tafsir" ? colors.brand : rc.icon}
           />
+        </Pressable>
+
+        {/* Mushaf Layout Selector Button */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            setLayoutModalVisible(true);
+          }}
+          style={styles.barBtn}
+        >
+          <MaterialCommunityIcons name="book-open-outline" size={24} color={rc.icon} />
         </Pressable>
 
         <Pressable
@@ -927,7 +1462,7 @@ export default function QuranReadScreen() {
           }}
           style={styles.barBtn}
         >
-          <MaterialCommunityIcons name="cog-outline" size={24} color={isNightMode ? "#FFF" : "#5C4E3C"} />
+          <MaterialCommunityIcons name="cog-outline" size={24} color={rc.icon} />
         </Pressable>
       </View>
 
@@ -939,41 +1474,58 @@ export default function QuranReadScreen() {
         onRequestClose={() => setTafsirModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.tafsirModalContent, { backgroundColor: isNightMode ? "#0D1E2E" : "#FAF7F0", borderColor: colors.border }]}>
+          <View style={[styles.tafsirModalContent, { backgroundColor: rc.mushafBg, borderColor: colors.border }]}>
             <View style={styles.tafsirModalHeader}>
-              <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
-                <Pressable
-                  onPress={() => {
-                    setActiveTafsirId(169);
-                    openTafsirModal(tafsirRef.surah, tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, 169);
-                  }}
-                  style={{
-                    borderBottomWidth: activeTafsirId === 169 ? 2 : 0,
-                    borderBottomColor: colors.brand,
-                    paddingBottom: 4,
-                  }}
-                >
-                  <Text style={[styles.tafsirModalTitle, { color: activeTafsirId === 169 ? colors.brand : colors.onSurfaceMuted, fontSize: 15 }]}>
-                    Ibn Kathir
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    setActiveTafsirId(160);
-                    openTafsirModal(tafsirRef.surah, tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, 160);
-                  }}
-                  style={{
-                    borderBottomWidth: activeTafsirId === 160 ? 2 : 0,
-                    borderBottomColor: colors.brand,
-                    paddingBottom: 4,
-                  }}
-                >
-                  <Text style={[styles.tafsirModalTitle, { color: activeTafsirId === 160 ? colors.brand : colors.onSurfaceMuted, fontSize: 15 }]}>
-                    Al-Jalalayn
-                  </Text>
-                </Pressable>
-              </View>
-              <Pressable onPress={() => setTafsirModalVisible(false)} hitSlop={10}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ flexDirection: "row", gap: 12, alignItems: "center" }}
+              >
+                {availableTafsirs.map((taf) => {
+                  const isActive = String(activeTafsirId) === String(taf.id);
+                  return (
+                    <Pressable
+                      key={taf.id}
+                      onPress={() => {
+                        setActiveTafsirId(Number(taf.id));
+                        openTafsirModal(tafsirRef.surah, tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, Number(taf.id));
+                      }}
+                      style={{
+                        borderBottomWidth: isActive ? 2 : 0,
+                        borderBottomColor: colors.brand,
+                        paddingBottom: 4,
+                        paddingHorizontal: 4,
+                      }}
+                    >
+                      <Text style={[styles.tafsirModalTitle, { color: isActive ? colors.brand : colors.onSurfaceMuted, fontSize: 14 }]}>
+                        {taf.title}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              {(() => {
+                const isLocal = tafsirIndexData.some(t => String(t.id) === String(activeTafsirId));
+                if (!isLocal) return null;
+                const isDownloaded = downloadedTafsirs[activeTafsirId];
+                return (
+                  <Pressable 
+                    onPress={() => isDownloaded ? null : downloadTafsirOffline(activeTafsirId)} 
+                    style={{ marginLeft: 12, flexDirection: "row", alignItems: "center", gap: 4 }}
+                    hitSlop={10}
+                  >
+                    <MaterialCommunityIcons 
+                      name={isDownloaded ? "cloud-check" : "cloud-download-outline"} 
+                      size={20} 
+                      color={isDownloaded ? colors.brand : colors.onSurfaceMuted} 
+                    />
+                    <Text style={{ fontSize: 11, color: isDownloaded ? colors.brand : colors.onSurfaceMuted }}>
+                      {isDownloaded ? "Saved" : "Save Offline"}
+                    </Text>
+                  </Pressable>
+                );
+              })()}
+              <Pressable onPress={() => setTafsirModalVisible(false)} hitSlop={10} style={{ marginLeft: 12 }}>
                 <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
               </Pressable>
             </View>
@@ -982,10 +1534,10 @@ export default function QuranReadScreen() {
               <Text style={{ fontSize: 13, color: colors.brand, fontWeight: "700", marginBottom: 8 }}>
                 Surah {tafsirRef.surah} · Ayah {tafsirRef.ayah}
               </Text>
-              <Text style={{ fontFamily: "AmiriBold", fontSize: 22, color: isNightMode ? "#FFF" : "#2C1E10", textAlign: "right", marginBottom: 12, lineHeight: 36 }}>
+              <Text style={{ fontFamily: "AmiriBold", fontSize: 22, color: rc.text, textAlign: "right", marginBottom: 12, lineHeight: 36 }}>
                 {tafsirRef.arabic}
               </Text>
-              <Text style={{ fontSize: 14, color: isNightMode ? "#D1D7DB" : "#333", marginBottom: 16, lineHeight: 22 }}>
+              <Text style={{ fontSize: 14, color: rc.textMuted, marginBottom: 16, lineHeight: 22 }}>
                 {tafsirRef.trans}
               </Text>
 
@@ -994,7 +1546,7 @@ export default function QuranReadScreen() {
               {tafsirLoading ? (
                 <ActivityIndicator color={colors.brand} style={{ marginVertical: 32 }} />
               ) : (
-                <Text style={{ fontSize: 14, color: isNightMode ? "#FFF" : "#2C1E10", lineHeight: 22, textAlign: "justify" }}>
+                <Text style={{ fontSize: 14, color: rc.text, lineHeight: 22, textAlign: "justify" }}>
                   {tafsirContent}
                 </Text>
               )}
@@ -1046,6 +1598,104 @@ export default function QuranReadScreen() {
                 <Text style={[styles.modalBtnTxt, { color: "#FFF" }]}>Go</Text>
               </Pressable>
             </View>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Mushaf Layout Selector Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={layoutModalVisible}
+        onRequestClose={() => setLayoutModalVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setLayoutModalVisible(false)}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, width: width * 0.85 }]}>
+            <Text style={[styles.modalTitle, { color: colors.onSurface, marginBottom: 4 }]}>Mushaf Layout</Text>
+            <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 16 }}>
+              Select your preferred page display style:
+            </Text>
+
+            <Pressable
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setMushafLayout("default");
+                await AsyncStorage.setItem("islamic_hikmah:mushaf_layout", "default");
+                setLayoutModalVisible(false);
+              }}
+              style={{
+                padding: 14,
+                borderRadius: 8,
+                backgroundColor: mushafLayout === "default" ? colors.brand + "15" : colors.surface,
+                borderWidth: 1,
+                borderColor: mushafLayout === "default" ? colors.brand : colors.border,
+                marginBottom: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <MaterialCommunityIcons
+                name="book-open-page-variant"
+                size={24}
+                color={mushafLayout === "default" ? colors.brand : colors.onSurfaceMuted}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: colors.onSurface }}>
+                  Medina Mushaf (Standard)
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>
+                  Centered continuous paragraph page view
+                </Text>
+              </View>
+              {mushafLayout === "default" && (
+                <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setMushafLayout("qpc_v4");
+                await AsyncStorage.setItem("islamic_hikmah:mushaf_layout", "qpc_v4");
+                setLayoutModalVisible(false);
+              }}
+              style={{
+                padding: 14,
+                borderRadius: 8,
+                backgroundColor: mushafLayout === "qpc_v4" ? colors.brand + "15" : colors.surface,
+                borderWidth: 1,
+                borderColor: mushafLayout === "qpc_v4" ? colors.brand : colors.border,
+                marginBottom: 20,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <MaterialCommunityIcons
+                name="format-list-numbered-rtl"
+                size={24}
+                color={mushafLayout === "qpc_v4" ? colors.brand : colors.onSurfaceMuted}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: colors.onSurface }}>
+                  KFGQPC V4 (15-Lines)
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>
+                  Authentic line-by-line page print (1441H)
+                </Text>
+              </View>
+              {mushafLayout === "qpc_v4" && (
+                <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={() => setLayoutModalVisible(false)}
+              style={[styles.modalBtn, { backgroundColor: colors.surface, width: "100%", alignSelf: "center" }]}
+            >
+              <Text style={[styles.modalBtnTxt, { color: colors.onSurfaceMuted }]}>Close</Text>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>

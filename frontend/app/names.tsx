@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, FlatList, Share, Dimensions } from "react-native";
+import { View, Text, StyleSheet, Pressable, FlatList, Share, Dimensions, ScrollView, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -19,6 +19,7 @@ export default function AllahNamesScreen() {
   const { t } = useTranslation(language);
   const [isGrid, setIsGrid] = useState(false);
   const [playingNumber, setPlayingNumber] = useState<number | null>(null);
+  const [selectedName, setSelectedName] = useState<AllahName | null>(null);
 
   const player = useAudioPlayer(null);
 
@@ -43,16 +44,17 @@ export default function AllahNamesScreen() {
     Haptics.selectionAsync().catch(() => {});
     try {
       setPlayingNumber(item.number);
-      // Format number to 3 digits (001, 002, etc.) to fetch from standard 99 names audio CDN
-      const paddedNum = String(item.number).padStart(3, "0");
-      const audioUrl = `https://www.alhabib.info/99-names-allah/audio/allah-99-names-${paddedNum}.mp3`;
+      // Use the reliable Github raw CDN for name audios
+      const audioUrl = `https://raw.githubusercontent.com/soachishti/Asma-ul-Husna/master/audio/${item.number}.mp3`;
       
       player.replace({ uri: audioUrl });
       player.play();
     } catch (err) {
       console.error("Failed to play name audio:", err);
     } finally {
-      setTimeout(() => setPlayingNumber(null), 3000);
+      setTimeout(() => {
+        setPlayingNumber(current => current === item.number ? null : current);
+      }, 4000);
     }
   }, [player]);
 
@@ -61,6 +63,7 @@ export default function AllahNamesScreen() {
     return (
       <Pressable 
         onPress={() => playNameAudio(item)}
+        onLongPress={() => setSelectedName(item)}
         style={({ pressed }) => [
           styles.listCard, 
           { backgroundColor: colors.surfaceSecondary },
@@ -73,6 +76,9 @@ export default function AllahNamesScreen() {
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
             {isPlaying && <MaterialCommunityIcons name="volume-high" size={18} color={colors.brand} />}
+            <Pressable onPress={() => setSelectedName(item)} hitSlop={8} style={styles.shareBtn}>
+              <MaterialCommunityIcons name="information-outline" size={18} color={colors.onSurfaceMuted} />
+            </Pressable>
             <Pressable onPress={() => handleShare(item)} hitSlop={8} style={styles.shareBtn}>
               <MaterialCommunityIcons name="share-variant" size={18} color={colors.onSurfaceMuted} />
             </Pressable>
@@ -94,6 +100,7 @@ export default function AllahNamesScreen() {
     return (
       <Pressable 
         onPress={() => playNameAudio(item)}
+        onLongPress={() => setSelectedName(item)}
         style={({ pressed }) => [
           styles.gridCard, 
           { backgroundColor: colors.surfaceSecondary, width: GRID_ITEM_WIDTH },
@@ -139,6 +146,68 @@ export default function AllahNamesScreen() {
         columnWrapperStyle={isGrid ? { gap: theme.spacing.md } : null}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* Name Details Modal */}
+      <Modal
+        visible={selectedName !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedName(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedName(null)}>
+          <View 
+            style={[
+              styles.modalContent, 
+              { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }
+            ]}
+          >
+            {selectedName && (
+              <View style={{ width: "100%" }}>
+                <View style={styles.modalHeader}>
+                  <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
+                    Name #{selectedName.number} Details
+                  </Text>
+                  <Pressable onPress={() => setSelectedName(null)} hitSlop={10}>
+                    <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
+                  </Pressable>
+                </View>
+
+                <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
+                  <View style={styles.detailCard}>
+                    <Text style={[styles.detailArabic, { color: colors.brand }]}>
+                      {selectedName.name}
+                    </Text>
+                    <Text style={[styles.detailTranslit, { color: colors.onSurface }]}>
+                      {selectedName.transliteration}
+                    </Text>
+                    <Text style={[styles.detailMeaning, { color: colors.onSurfaceMuted }]}>
+                      {selectedName.meaning}
+                    </Text>
+                  </View>
+
+                  {selectedName.explanation ? (
+                    <View style={styles.section}>
+                      <Text style={[styles.sectionTitle, { color: colors.brand }]}>Meaning &amp; Explanation</Text>
+                      <Text style={[styles.sectionBody, { color: colors.onSurface }]}>
+                        {selectedName.explanation}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {selectedName.benefit ? (
+                    <View style={styles.section}>
+                      <Text style={[styles.sectionTitle, { color: colors.brand }]}>Benefits of Recitation</Text>
+                      <Text style={[styles.sectionBody, { color: colors.onSurface }]}>
+                        {selectedName.benefit}
+                      </Text>
+                    </View>
+                  ) : null}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -189,4 +258,70 @@ const styles = StyleSheet.create({
   },
   arabicGridText: { fontFamily: "AmiriBold", fontSize: 22 },
   translitGridText: { fontSize: 11, fontWeight: "700", marginTop: 8 },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    width: width * 0.9,
+    maxHeight: "80%",
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: theme.spacing.lg,
+    alignItems: "center",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    width: "100%",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  modalScrollView: {
+    width: "100%",
+  },
+  detailCard: {
+    alignItems: "center",
+    paddingVertical: 16,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
+  },
+  detailArabic: {
+    fontFamily: "AmiriBold",
+    fontSize: 48,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  detailTranslit: {
+    fontSize: 22,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  detailMeaning: {
+    fontSize: 16,
+    textAlign: "center",
+    fontStyle: "italic",
+  },
+  section: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  sectionBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "justify",
+  },
 });

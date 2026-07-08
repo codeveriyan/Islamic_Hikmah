@@ -48,6 +48,8 @@ export default function PersonaliseScreen() {
   const [fontSize, setFontSize] = useState<number>(24);
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
+  const [transliterationType, setTransliterationType] = useState<"tajweed" | "syllables" | "wbw">("tajweed");
+  const [quranTransLang, setQuranTransLang] = useState<string>(language);
   const [tajweedEnabled, setTajweedEnabled] = useState<boolean>(true);
   const [readingMode, setReadingMode] = useState<"default" | "sepia" | "dark">("default");
 
@@ -69,10 +71,22 @@ export default function PersonaliseScreen() {
     AsyncStorage.getItem("islamic_hikmah:quran_show_transliteration").then((val) => {
       if (val !== null) setShowTransliteration(val === "true");
     });
+    AsyncStorage.getItem("islamic_hikmah:transliteration_type").then((val) => {
+      if (val === "syllables" || val === "wbw" || val === "tajweed") {
+        setTransliterationType(val as any);
+      }
+    });
+    AsyncStorage.getItem("islamic_hikmah:quran_translation_lang").then((val) => {
+      if (val) {
+        setQuranTransLang(val);
+      } else {
+        setQuranTransLang(language);
+      }
+    });
     AsyncStorage.getItem("islamic_hikmah:quran_reading_mode").then((val) => {
       if (val) setReadingMode(val as any);
     });
-  }, []);
+  }, [language]);
 
   const saveFontType = async (type: "indopak" | "uthmani" | "naskh") => {
     setFontType(type);
@@ -93,6 +107,18 @@ export default function PersonaliseScreen() {
   const saveTransliteration = async (val: boolean) => {
     setShowTransliteration(val);
     await AsyncStorage.setItem("islamic_hikmah:quran_show_transliteration", String(val));
+  };
+
+  const saveTransliterationType = async (type: "tajweed" | "syllables" | "wbw") => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setTransliterationType(type);
+    await AsyncStorage.setItem("islamic_hikmah:transliteration_type", type);
+  };
+
+  const saveQuranTransLang = async (langId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setQuranTransLang(langId);
+    await AsyncStorage.setItem("islamic_hikmah:quran_translation_lang", langId);
   };
 
   const saveReadingMode = async (val: "default" | "sepia" | "dark") => {
@@ -140,7 +166,11 @@ export default function PersonaliseScreen() {
         </Text>
         {showTransliteration && (
           <Text style={[styles.translitPreview, { color: colors.brand }]}>
-            Bismillaahir Rahmaanir Raheem.
+            {transliterationType === "syllables"
+              ? "bis-mil  la-hhir  rah-man-nir  raheem"
+              : transliterationType === "wbw"
+              ? "bis'mi l-lahi l-raḥmāni l-raḥīmi"
+              : "Bismillaahir Rahmaanir Raheem."}
           </Text>
         )}
         {showTranslation && (
@@ -238,7 +268,7 @@ export default function PersonaliseScreen() {
           </View>
           <View style={styles.rowRight}>
             <Text style={[styles.rowVal, { color: colors.brand }]}>
-              {LANGUAGES.find((l) => l.id === language)?.label ?? "English"}
+              {LANGUAGES.find((l) => l.id === quranTransLang)?.label ?? "English"}
             </Text>
             <MaterialCommunityIcons name="chevron-down" size={20} color={colors.onSurfaceMuted} />
           </View>
@@ -277,6 +307,57 @@ export default function PersonaliseScreen() {
             thumbColor="#FFF"
           />
         </View>
+
+        {showTransliteration && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingVertical: 14,
+              paddingLeft: 34,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+            }}
+          >
+            <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurfaceMuted }}>
+              Spelling Style
+            </Text>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {[
+                { label: "Tajweed", value: "tajweed" as const },
+                { label: "Syllable", value: "syllables" as const },
+                { label: "Word-by-Word", value: "wbw" as const },
+              ].map((styleOption) => {
+                const isSelected = transliterationType === styleOption.value;
+                return (
+                  <Pressable
+                    key={styleOption.value}
+                    onPress={() => saveTransliterationType(styleOption.value)}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? colors.brand : colors.surfaceTertiary,
+                      borderWidth: isSelected ? 1 : 0,
+                      borderColor: colors.brand,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: isSelected ? "700" : "500",
+                        color: isSelected ? colors.onBrandPrimary : colors.onSurfaceSecondary,
+                      }}
+                    >
+                      {styleOption.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* Report Feedback Row */}
         <Pressable
@@ -391,12 +472,12 @@ export default function PersonaliseScreen() {
                 key={lang.id}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  setLanguage(lang.id);
+                  saveQuranTransLang(lang.id);
                   setLangModalVisible(false);
                 }}
                 style={[
                   styles.modalItem,
-                  language === lang.id && { backgroundColor: colors.brand + "14" },
+                  quranTransLang === lang.id && { backgroundColor: colors.brand + "14" },
                 ]}
               >
                 <Text style={{ fontSize: 22, marginRight: 10 }}>{lang.flag}</Text>
@@ -405,14 +486,14 @@ export default function PersonaliseScreen() {
                     styles.modalLabelText,
                     {
                       flex: 1,
-                      color: language === lang.id ? colors.brand : colors.onSurface,
-                      fontWeight: language === lang.id ? "700" : "500",
+                      color: quranTransLang === lang.id ? colors.brand : colors.onSurface,
+                      fontWeight: quranTransLang === lang.id ? "700" : "500",
                     },
                   ]}
                 >
                   {lang.label}
                 </Text>
-                {language === lang.id && (
+                {quranTransLang === lang.id && (
                   <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />
                 )}
               </Pressable>

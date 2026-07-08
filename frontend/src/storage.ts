@@ -711,3 +711,67 @@ export async function saveQuranLastRead(lr: Omit<QuranLastRead, 'readAt'>): Prom
   await AsyncStorage.setItem(QURAN_LAST_READ_KEY, JSON.stringify({ ...lr, readAt: Date.now() }));
 }
 
+// ── Menstrual Mode & Calendar Settings Storage ──────────────────
+const MENSTRUAL_MODE_KEY = 'hikmah:menstrual-mode:v1';
+const CALENDAR_CONNECTED_KEY = 'hikmah:calendar-connected:v1';
+const CALENDAR_DISMISSED_KEY = 'hikmah:calendar-dismissed:v1';
+const DHIKR_COUNTS_KEY = 'hikmah:dhikr-counts:v1';
+const PRAYER_COMPLETIONS_KEY = 'hikmah:prayer-completions:v1';
+
+export async function getMenstrualModeActive(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(MENSTRUAL_MODE_KEY);
+    return raw === 'true';
+  } catch { return false; }
+}
+
+export async function setMenstrualModeActive(active: boolean): Promise<void> {
+  await AsyncStorage.setItem(MENSTRUAL_MODE_KEY, active ? 'true' : 'false');
+}
+
+export async function getGoogleCalendarConnected(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(CALENDAR_CONNECTED_KEY);
+    return raw === 'true';
+  } catch { return false; }
+}
+
+export async function setGoogleCalendarConnected(connected: boolean): Promise<void> {
+  await AsyncStorage.setItem(CALENDAR_CONNECTED_KEY, connected ? 'true' : 'false');
+}
+
+export async function getGoogleCalendarDismissed(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(CALENDAR_DISMISSED_KEY);
+    return raw === 'true';
+  } catch { return false; }
+}
+
+export async function setGoogleCalendarDismissed(dismissed: boolean): Promise<void> {
+  await AsyncStorage.setItem(CALENDAR_DISMISSED_KEY, dismissed ? 'true' : 'false');
+}
+
+export async function getDailyDhikrCounts(): Promise<Record<string, number>> {
+  try {
+    const raw = await AsyncStorage.getItem(`${DHIKR_COUNTS_KEY}:${todayKey()}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+export async function saveDailyDhikrCounts(counts: Record<string, number>): Promise<void> {
+  await AsyncStorage.setItem(`${DHIKR_COUNTS_KEY}:${todayKey()}`, JSON.stringify(counts));
+}
+
+export async function getPrayerCompletions(): Promise<Record<string, boolean>> {
+  try {
+    const raw = await AsyncStorage.getItem(`${PRAYER_COMPLETIONS_KEY}:${todayKey()}`);
+    return raw ? JSON.parse(raw) : { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false };
+  } catch {
+    return { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false };
+  }
+}
+
+export async function savePrayerCompletions(completions: Record<string, boolean>): Promise<void> {
+  await AsyncStorage.setItem(`${PRAYER_COMPLETIONS_KEY}:${todayKey()}`, JSON.stringify(completions));
+}
+

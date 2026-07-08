@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Platform,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Platform, Modal, Switch, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -13,10 +13,15 @@ import Svg, { Circle } from "react-native-svg";
 
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { DEFAULT_GOALS, CATEGORY_COLORS } from "@/src/data/goals";
+import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
   getActiveGoalIds, getPrayerSettings, updateStickyPrayerNotification,
+  getMenstrualModeActive, setMenstrualModeActive,
+  getGoogleCalendarConnected, setGoogleCalendarConnected,
+  getGoogleCalendarDismissed, setGoogleCalendarDismissed,
+  getDailyDhikrCounts, saveDailyDhikrCounts,
+  getPrayerCompletions, savePrayerCompletions,
 } from "@/src/storage";
 
 const { width } = Dimensions.get("window");
@@ -264,6 +269,20 @@ export default function HomeScreen() {
   const [completed, setCompleted] = useState<string[]>([]);
   const [activeIds, setActiveIds] = useState<string[]>([]);
 
+  // Calendar card states
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarDismissed, setCalendarDismissed] = useState(false);
+  // Menstrual mode
+  const [menstrualMode, setMenstrualMode] = useState(false);
+  // Dhikr counts
+  const [dhikrCounts, setDhikrCounts] = useState<Record<string, number>>({});
+  // Prayer completions
+  const [prayerCompletions, setPrayerCompletions] = useState<Record<string, boolean>>({
+    Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false
+  });
+  // Prayers Modal
+  const [prayersModalVisible, setPrayersModalVisible] = useState(false);
+
   // Load prayer times
   useEffect(() => {
     (async () => {
@@ -313,12 +332,25 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [times]);
 
-  // Load goals
+  // Load goals and new settings
   useEffect(() => {
     (async () => {
-      const [comp, ids] = await Promise.all([getCompletedGoals(), getActiveGoalIds()]);
+      const [comp, ids, menstrual, calConnected, calDismissed, dCounts, pCompletions] = await Promise.all([
+        getCompletedGoals(),
+        getActiveGoalIds(),
+        getMenstrualModeActive(),
+        getGoogleCalendarConnected(),
+        getGoogleCalendarDismissed(),
+        getDailyDhikrCounts(),
+        getPrayerCompletions(),
+      ]);
       setCompleted(comp);
       setActiveIds(ids);
+      setMenstrualMode(menstrual);
+      setCalendarConnected(calConnected);
+      setCalendarDismissed(calDismissed);
+      setDhikrCounts(dCounts || {});
+      setPrayerCompletions(pCompletions || { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false });
     })();
   }, []);
 
@@ -326,8 +358,21 @@ export default function HomeScreen() {
     const today = new Date().getDay();
     return DEFAULT_GOALS.filter(g => {
       if (!activeIds.includes(g.id)) return false;
+      // Skip obligatory prayers if menstrual mode is active
+      if (menstrualMode && ["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(g.id)) return false;
       if (g.repeat === 'weekly') return g.weekDay === today;
       return true;
+    });
+  }, [activeIds, menstrualMode]);
+
+  const upcomingGoals = useMemo(() => {
+    return DEFAULT_GOALS.filter(g => {
+      if (!activeIds.includes(g.id)) return false;
+      if (g.repeat === 'weekly') {
+        const today = new Date().getDay();
+        return g.weekDay !== today;
+      }
+      return false;
     });
   }, [activeIds]);
 
@@ -342,14 +387,34 @@ export default function HomeScreen() {
       other: { total: 0, done: 0 },
     };
     activeGoals.forEach(g => {
-      counts[g.category].total++;
-      if (completed.includes(g.id)) counts[g.category].done++;
+      if (["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(g.id)) {
+        const prayerName = g.id.charAt(0).toUpperCase() + g.id.slice(1);
+        counts.prayer.total++;
+        if (prayerCompletions[prayerName]) counts.prayer.done++;
+      } else {
+        counts[g.category].total++;
+        if (completed.includes(g.id)) counts[g.category].done++;
+      }
     });
     return counts;
-  }, [activeGoals, completed]);
+  }, [activeGoals, completed, prayerCompletions]);
 
-  const totalDone = useMemo(() => activeGoals.filter(g => completed.includes(g.id)).length, [activeGoals, completed]);
-  const totalGoals = activeGoals.length;
+  const totalDone = useMemo(() => {
+    let done = 0;
+    Object.values(goalCounts).forEach(c => {
+      done += c.done;
+    });
+    return done;
+  }, [goalCounts]);
+
+  const totalGoals = useMemo(() => {
+    let total = 0;
+    Object.values(goalCounts).forEach(c => {
+      total += c.total;
+    });
+    return total;
+  }, [goalCounts]);
+
   const overallProgress = totalGoals > 0 ? totalDone / totalGoals : 0;
 
   const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -361,6 +426,232 @@ export default function HomeScreen() {
     const comp = await getCompletedGoals();
     setCompleted(comp);
   }, []);
+
+  const togglePrayerCompletion = async (prayerName: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    const goalId = prayerName.toLowerCase();
+    await toggleGoal(goalId);
+    
+    const [comp, pCompletions] = await Promise.all([
+      getCompletedGoals(),
+      getPrayerCompletions()
+    ]);
+    
+    const updatedPrayers = { ...pCompletions, [prayerName]: !pCompletions[prayerName] };
+    setPrayerCompletions(updatedPrayers);
+    await savePrayerCompletions(updatedPrayers);
+    setCompleted(comp);
+  };
+
+  const handleMenstrualModeToggle = async (value: boolean) => {
+    Haptics.selectionAsync().catch(() => {});
+    setMenstrualMode(value);
+    await setMenstrualModeActive(value);
+  };
+
+  const handleDhikrTap = async (goalId: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    const currentCount = dhikrCounts[goalId] || 0;
+    let nextCount = currentCount + 1;
+    if (nextCount > 3) {
+      nextCount = 0;
+    }
+    
+    const updatedCounts = { ...dhikrCounts, [goalId]: nextCount };
+    setDhikrCounts(updatedCounts);
+    await saveDhikrCounts(updatedCounts);
+    
+    const isCompleted = completed.includes(goalId);
+    if (nextCount === 3 && !isCompleted) {
+      await toggleGoal(goalId);
+    } else if (nextCount === 0 && isCompleted) {
+      await toggleGoal(goalId);
+    }
+    
+    const comp = await getCompletedGoals();
+    setCompleted(comp);
+  };
+
+  const handleCalendarDismiss = async () => {
+    Haptics.selectionAsync().catch(() => {});
+    setCalendarDismissed(true);
+    await setGoogleCalendarDismissed(true);
+  };
+
+  const handleCalendarSync = async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const nextConnected = !calendarConnected;
+    setCalendarConnected(nextConnected);
+    await setGoogleCalendarConnected(nextConnected);
+    Alert.alert(
+      nextConnected ? "Sync Successful" : "Disconnected",
+      nextConnected
+        ? "Your Google Calendar has been connected. Prayer times will now sync automatically."
+        : "Google Calendar sync disabled."
+    );
+  };
+
+  const handleSuggestedGoal = (action: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    if (action === "dhikr") {
+      router.push("/goal-settings" as any);
+    } else {
+      Alert.alert("Sadqa Logged", "May Allah accept your charity today! ❤️");
+    }
+  };
+
+  const activePrayerToDisplay = useMemo(() => {
+    if (!times) return "Asr";
+    const periods = getPrayerPeriods(times);
+    if (!periods) return "Asr";
+    let name = periods.next?.name || periods.current?.name || "Asr";
+    if (name === "Sunrise") name = "Dhuhr";
+    return name;
+  }, [times]);
+
+  const renderInlineGoalItem = (goal: Goal) => {
+    const catColor = CATEGORY_COLORS[goal.category] || colors.brand;
+    const isDhikr = goal.category === 'dhikr';
+    const dhikrCount = dhikrCounts[goal.id] || 0;
+    const isCompleted = completed.includes(goal.id);
+    const titleText = isDhikr ? `${goal.title} (${dhikrCount}/3)` : goal.title;
+    
+    return (
+      <View key={goal.id} style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+        <Pressable 
+          onPress={() => isDhikr ? handleDhikrTap(goal.id) : handleGoalTap(goal.id)}
+          style={styles.goalCheckArea}
+        >
+          <View style={[styles.goalCircleCheck, { borderColor: isCompleted ? catColor : colors.onSurfaceMuted, backgroundColor: isCompleted ? catColor : "transparent" }]}>
+            {isCompleted && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
+          </View>
+        </Pressable>
+        
+        <Pressable 
+          onPress={() => isDhikr ? handleDhikrTap(goal.id) : handleGoalTap(goal.id)}
+          style={{ flex: 1 }}
+        >
+          <Text style={[styles.goalItemTitle, { color: colors.onSurface, textDecorationLine: isCompleted ? 'line-through' : 'none' }]}>
+            {titleText}
+          </Text>
+          {goal.subtitle && !goal.arabic && (
+            <Text style={[styles.goalItemSub, { color: colors.onSurfaceMuted }]}>{goal.subtitle}</Text>
+          )}
+          {goal.arabic && (
+            <Text style={[styles.goalItemArabic, { color: colors.brand }]}>{goal.arabic}</Text>
+          )}
+        </Pressable>
+        
+        <Pressable 
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            Alert.alert("Goal Options", "Options for " + goal.title, [
+              { text: "Log Reminder", onPress: () => router.push("/goal-settings" as any) },
+              { text: "Skip Today", style: "destructive" },
+              { text: "Cancel", style: "cancel" }
+            ]);
+          }}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name="dots-vertical" size={20} color={colors.onSurfaceMuted} />
+        </Pressable>
+      </View>
+    );
+  };
+
+  const renderUpcomingGoalItem = (goal: Goal) => {
+    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const targetDay = weekdays[goal.weekDay ?? 0];
+    const subText = `Repeats weekly on ${targetDay}`;
+    return (
+      <View key={goal.id} style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, opacity: 0.6 }]}>
+        <View style={styles.goalCheckArea}>
+          <View style={[styles.goalCircleCheck, { borderColor: colors.onSurfaceMuted, backgroundColor: "transparent" }]} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.goalItemTitle, { color: colors.onSurface }]}>
+            {goal.title}
+          </Text>
+          <Text style={[styles.goalItemSub, { color: colors.onSurfaceMuted }]}>{subText}</Text>
+        </View>
+        <Pressable 
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            Alert.alert("Upcoming Goal", `This goal is scheduled for ${targetDay}s.`);
+          }}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name="dots-vertical" size={20} color={colors.onSurfaceMuted} />
+        </Pressable>
+      </View>
+    );
+  };
+
+  const renderSuggestedGoalItem = (title: string, action: 'dhikr' | 'sadqa') => {
+    return (
+      <Pressable 
+        key={action}
+        onPress={() => handleSuggestedGoal(action)}
+        style={({ pressed }) => [
+          styles.goalRowItem, 
+          { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+          pressed && { opacity: 0.8 }
+        ]}
+      >
+        <View style={{ flex: 1, paddingLeft: 12 }}>
+          <Text style={[styles.goalItemTitle, { color: colors.onSurface }]}>
+            {title}
+          </Text>
+        </View>
+        <MaterialCommunityIcons name="plus-circle-outline" size={24} color={colors.brand} style={{ marginRight: 4 }} />
+      </Pressable>
+    );
+  };
+
+  const renderCollapsedPrayerRow = () => {
+    const isCompleted = prayerCompletions[activePrayerToDisplay];
+    const catColor = CATEGORY_COLORS.prayer;
+    
+    return (
+      <View key="collapsed-prayer" style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+        <Pressable 
+          onPress={() => togglePrayerCompletion(activePrayerToDisplay)}
+          style={styles.goalCheckArea}
+        >
+          <View style={[styles.goalCircleCheck, { borderColor: isCompleted ? catColor : colors.onSurfaceMuted, backgroundColor: isCompleted ? catColor : "transparent" }]}>
+            {isCompleted && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
+          </View>
+        </Pressable>
+        
+        <Pressable 
+          onPress={() => setPrayersModalVisible(true)}
+          style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.goalItemTitle, { color: colors.onSurface, textDecorationLine: isCompleted ? 'line-through' : 'none' }]}>
+              Offer {activePrayerToDisplay}
+            </Text>
+            <Text style={[styles.goalItemSub, { color: colors.onSurfaceMuted }]}>Tap to show all</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-down" size={20} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
+        </Pressable>
+        
+        <Pressable 
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            Alert.alert("Prayer Options", "Options for " + activePrayerToDisplay, [
+              { text: "Log Reminder", onPress: () => router.push("/goal-settings" as any) },
+              { text: "Skip Today", style: "destructive" },
+              { text: "Cancel", style: "cancel" }
+            ]);
+          }}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name="dots-vertical" size={20} color={colors.onSurfaceMuted} />
+        </Pressable>
+      </View>
+    );
+  };
 
   const handleQuickAction = useCallback((route: string) => {
     Haptics.selectionAsync().catch(() => {});
@@ -444,18 +735,37 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Daily Goals */}
-        <Pressable 
-          onPress={() => router.push("/goals" as any)}
-          style={({ pressed }) => [
-            styles.goalsCard, 
-            { backgroundColor: colors.surfaceSecondary },
-            pressed && { opacity: 0.7 }
-          ]}
-        >
+        {/* Connection & Daily Goals Section */}
+        
+        {/* Google Calendar Card */}
+        {!calendarDismissed && (
+          <View style={[styles.calendarCard, { backgroundColor: colors.surfaceSecondary }]}>
+            <View style={styles.calendarHeader}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={[styles.calendarTitle, { color: colors.onSurface }]}>
+                  Connect your Google calendar with Athan to sync Prayer times.
+                </Text>
+              </View>
+              <Pressable onPress={handleCalendarDismiss} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={20} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+            <Pressable 
+              onPress={handleCalendarSync}
+              style={[styles.calendarBtn, { backgroundColor: calendarConnected ? colors.onSurfaceMuted : colors.brand }]}
+            >
+              <Text style={styles.calendarBtnTxt}>
+                {calendarConnected ? "Disconnect" : "Start syncing"}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Daily Goals Summary */}
+        <View style={[styles.goalsCard, { backgroundColor: colors.surfaceSecondary }]}>
           <View style={styles.goalsHeader}>
             <Text style={[styles.goalsTitle, { color: colors.onSurface }]}>
-              {t("completeGoalsToday").replace("{total}", String(totalGoals))}
+              Complete {totalGoals} goals today
             </Text>
           </View>
 
@@ -466,20 +776,132 @@ export default function HomeScreen() {
 
           {/* Category pills */}
           <View style={styles.catPills}>
-            {Object.entries(goalCounts).map(([cat, { total, done }]) => total > 0 ? (
-              <View key={cat} style={styles.pill}>
-                <View style={[styles.pillDot, { backgroundColor: CATEGORY_COLORS[cat] }]} />
-                <Text style={[styles.pillTxt, { color: colors.onSurfaceMuted }]}>
-                  {done}/{total} {t(cat === "prayer" ? "prayers" : cat === "quran" ? "quran" : cat === "dhikr" ? "dhikrAdhkar" : "otherDeeds")}
-                </Text>
-              </View>
-            ) : null)}
+            <View style={styles.pill}>
+              <View style={[styles.pillDot, { backgroundColor: CATEGORY_COLORS.prayer }]} />
+              <Text style={[styles.pillTxt, { color: colors.onSurfaceMuted }]}>
+                {goalCounts.prayer.done}/{goalCounts.prayer.total} Prayers
+              </Text>
+            </View>
+            <View style={styles.pill}>
+              <View style={[styles.pillDot, { backgroundColor: CATEGORY_COLORS.quran }]} />
+              <Text style={[styles.pillTxt, { color: colors.onSurfaceMuted }]}>
+                {goalCounts.quran.done}/{goalCounts.quran.total} Quran
+              </Text>
+            </View>
+            <View style={styles.pill}>
+              <View style={[styles.pillDot, { backgroundColor: CATEGORY_COLORS.dhikr }]} />
+              <Text style={[styles.pillTxt, { color: colors.onSurfaceMuted }]}>
+                {goalCounts.dhikr.done}/{goalCounts.dhikr.total} Dhikr
+              </Text>
+            </View>
+            <View style={styles.pill}>
+              <View style={[styles.pillDot, { backgroundColor: CATEGORY_COLORS.other }]} />
+              <Text style={[styles.pillTxt, { color: colors.onSurfaceMuted }]}>
+                {goalCounts.other.done}/{goalCounts.other.total} Other
+              </Text>
+            </View>
           </View>
+        </View>
 
-        </Pressable>
-
+        {/* Goal Checklist Container */}
+        <View style={styles.goalsListContainer}>
+          {/* Obligatory Prayers Row (if active and not excused) */}
+          {!menstrualMode && activeIds.some(id => ["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(id)) && (
+            renderCollapsedPrayerRow()
+          )}
+          
+          {/* Other active goals today */}
+          {activeGoals
+            .filter(g => !["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(g.id))
+            .map(g => renderInlineGoalItem(g))}
+            
+          {/* Upcoming Section */}
+          {upcomingGoals.length > 0 && (
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.sectionTitleHeader, { color: colors.onSurface }]}>Upcoming</Text>
+              {upcomingGoals.map(g => renderUpcomingGoalItem(g))}
+            </View>
+          )}
+          
+          {/* Suggested Goals Section */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={[styles.sectionTitleHeader, { color: colors.onSurface }]}>Suggested goals</Text>
+            {renderSuggestedGoalItem("Add New Dhikr", "dhikr")}
+            {renderSuggestedGoalItem("Give Sadqa", "sadqa")}
+          </View>
+          
+          {/* Bottom Navigation Buttons */}
+          <View style={styles.bottomButtonsRow}>
+            <Pressable 
+              onPress={() => router.push("/previous-goals")}
+              style={[styles.bottomOutlineBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.bottomBtnText, { color: colors.onSurface }]}>View Previous Goals</Text>
+            </Pressable>
+            
+            <Pressable 
+              onPress={() => router.push("/goal-settings")}
+              style={[styles.bottomOutlineBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.bottomBtnText, { color: colors.onSurface }]}>Goal Settings</Text>
+            </Pressable>
+          </View>
+        </View>
 
       </ScrollView>
+
+      {/* All Prayers Modal */}
+      <Modal
+        visible={prayersModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPrayersModalVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setPrayersModalVisible(false)}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>All Prayers</Text>
+              <Pressable onPress={() => setPrayersModalVisible(false)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+            
+            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
+              {["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"].map((pName) => {
+                const isDone = prayerCompletions[pName];
+                return (
+                  <Pressable 
+                    key={pName} 
+                    onPress={() => togglePrayerCompletion(pName)}
+                    style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{pName}</Text>
+                    <View style={[styles.goalCircleCheck, { borderColor: isDone ? CATEGORY_COLORS.prayer : colors.onSurfaceMuted, backgroundColor: isDone ? CATEGORY_COLORS.prayer : "transparent" }]}>
+                      {isDone && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
+                    </View>
+                  </Pressable>
+                );
+              })}
+              
+              {/* Menstrual Mode Section */}
+              <View style={[styles.menstrualCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={[styles.menstrualTitle, { color: colors.onSurface }]}>Menstrual Mode</Text>
+                  <Text style={[styles.menstrualSub, { color: colors.onSurfaceMuted }]}>
+                    Menstrual mode will excuse your Prayers until you turn it off at the end of your period.
+                  </Text>
+                </View>
+                <Switch 
+                  value={menstrualMode}
+                  onValueChange={handleMenstrualModeToggle}
+                  trackColor={{ false: colors.border, true: colors.brand }}
+                  thumbColor={Platform.OS === 'ios' ? undefined : colors.surfaceSecondary}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -561,4 +983,156 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.08)",
   },
   cardTitle: { color: "#FFFFFF", fontSize: 11, fontWeight: "800", letterSpacing: 0.8, textAlign: "center" },
+  
+  // Google Calendar Card
+  calendarCard: {
+    marginHorizontal: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
+  },
+  calendarHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  calendarTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  calendarBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  calendarBtnTxt: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  
+  // Goal checklist items
+  goalsListContainer: {
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
+  },
+  goalRowItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  goalCheckArea: {
+    paddingRight: 12,
+  },
+  goalCircleCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  goalItemTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  goalItemSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  goalItemArabic: {
+    fontSize: 12,
+    fontFamily: "Amiri",
+    marginTop: 2,
+  },
+  sectionTitleHeader: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  bottomButtonsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  bottomOutlineBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottomBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  
+  // Prayers Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    width: width * 0.9,
+    maxHeight: "80%",
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: theme.spacing.lg,
+    alignItems: "center",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    width: "100%",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  modalPrayerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  modalPrayerLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  menstrualCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  menstrualTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  menstrualSub: {
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 16,
+  },
 });
