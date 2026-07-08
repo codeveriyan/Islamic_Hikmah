@@ -45,6 +45,19 @@ const MOCK_HALAL: MapPlace[] = [
   { id: "6", name: "Zam Zam Arabic Restaurant", address: "Town Hall, Coimbatore", distance: "2.8 km", lat: 11.0150, lng: 76.9590 },
 ];
 
+function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): string {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c;
+  return d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`;
+}
+
 export default function FinderScreen() {
   const router = useRouter();
   const { type } = useLocalSearchParams<{ type: "mosque" | "halal" }>();
@@ -55,6 +68,7 @@ export default function FinderScreen() {
   const [city, setCity] = useState("");
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [isMapView, setIsMapView] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
 
   const title = type === "halal" ? "Halal Food Finder" : "Mosque Finder";
   const icon = type === "halal" ? "food-fork-drink" : "mosque";
@@ -64,7 +78,58 @@ export default function FinderScreen() {
       try {
         const loc = await resolveUserLocation();
         setCity(loc.city || "Nearby");
-        setPlaces(type === "halal" ? MOCK_HALAL : MOCK_MOSQUES);
+        setUserCoords({ lat: loc.lat, lon: loc.lon });
+
+        const queryTerm = type === "halal" ? "halal restaurant" : "mosque";
+        const delta = 0.15; // ~15km view box search
+        const viewbox = `${loc.lon - delta},${loc.lat + delta},${loc.lon + delta},${loc.lat - delta}`;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryTerm)}&bounded=1&viewbox=${viewbox}&addressdetails=1`;
+
+        let fetchedData = [];
+        try {
+          const res = await fetch(url, {
+            headers: {
+              'User-Agent': 'Islamic_Hikmah_App/1.0',
+              'Accept-Language': 'en'
+            }
+          });
+          fetchedData = await res.json();
+        } catch (fetchErr) {
+          console.warn("Nominatim fetch failed, using fallback:", fetchErr);
+        }
+
+        if (Array.isArray(fetchedData) && fetchedData.length > 0) {
+          const parsed = fetchedData.map((item: any, index: number) => {
+            const name = item.name || item.display_name.split(",")[0] || (type === "halal" ? "Halal Place" : "Mosque");
+            let address = item.display_name;
+            if (address.startsWith(name + ",")) {
+              address = address.substring(name.length + 1).trim();
+            }
+            const itemLat = parseFloat(item.lat);
+            const itemLng = parseFloat(item.lon);
+            return {
+              id: item.place_id?.toString() || index.toString(),
+              name,
+              address,
+              distance: getDistance(loc.lat, loc.lon, itemLat, itemLng),
+              lat: itemLat,
+              lng: itemLng
+            };
+          });
+          setPlaces(parsed);
+        } else {
+          // Fallback to high-fidelity mock places with updated distances
+          const mockList = type === "halal" ? MOCK_HALAL : MOCK_MOSQUES;
+          const updatedMock = mockList.map(item => ({
+            ...item,
+            distance: getDistance(loc.lat, loc.lon, item.lat, item.lng)
+          }));
+          updatedMock.sort((a, b) => {
+            const getVal = (s: string) => parseFloat(s.split(" ")[0]);
+            return getVal(a.distance) - getVal(b.distance);
+          });
+          setPlaces(updatedMock);
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -85,31 +150,6 @@ export default function FinderScreen() {
     }
   };
 
-  // Listen to Leaflet Map iframe postMessages on Web
-  useEffect(() => {
-    if (Platform.OS === 'web') {
-      const handleWebMessage = (event: MessageEvent) => {
-        if (event.data && event.data.action === 'navigate' && event.data.place) {
-          handleOpenPlace(event.data.place);
-        }
-      };
-      window.addEventListener('message', handleWebMessage);
-      return () => window.removeEventListener('message', handleWebMessage);
-    }
-  }, []);
-
-  // Handle native Webview message events
-  const handleNativeMessage = (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data && data.action === 'navigate' && data.place) {
-        handleOpenPlace(data.place);
-      }
-    } catch (e) {
-      console.error("Map message parsing error:", e);
-    }
-  };
-
   const renderItem = ({ item }: { item: MapPlace }) => (
     <Pressable 
       onPress={() => handleOpenPlace(item)}
@@ -127,7 +167,7 @@ export default function FinderScreen() {
         <Text style={[styles.placeName, { color: colors.onSurface }]}>{item.name}</Text>
         <Text style={[styles.placeAddress, { color: colors.onSurfaceMuted }]}>{item.address}</Text>
       </View>
-
+      
       <View style={styles.distanceWrap}>
         <Text style={[styles.distanceText, { color: colors.brand }]}>{item.distance}</Text>
         <MaterialCommunityIcons name="navigation" size={14} color={colors.brand} style={{ marginTop: 2 }} />
@@ -135,61 +175,12 @@ export default function FinderScreen() {
     </Pressable>
   );
 
-  // Generate Leaflet Map HTML content dynamically
-  const mapHtmlContent = useMemo(() => {
-    if (places.length === 0) return "";
-    const centerLat = places[0].lat;
-    const centerLng = places[0].lng;
-
-    const markersCode = places.map((p) => {
-      const popupHtml = `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:6px;width:160px;">
-          <h4 style="margin:0 0 4px;font-size:13px;color:#1e3c3a;font-weight:700;">${p.name}</h4>
-          <p style="margin:0 0 8px;font-size:11px;color:#7f8c8d;line-height:1.3;">${p.address}</p>
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <span style="font-size:11px;font-weight:800;color:${colors.brand};">📏 ${p.distance}</span>
-            <button onclick="
-              const payload = { action: 'navigate', place: ${JSON.stringify(p)} };
-              if (window.ReactNativeWebView) {
-                window.ReactNativeWebView.postMessage(JSON.stringify(payload));
-              } else {
-                window.parent.postMessage(payload, '*');
-              }
-            " style="background:${colors.brand};color:#FFF;border:none;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;">
-              Directions
-            </button>
-          </div>
-        </div>
-      `;
-      return `L.marker([${p.lat}, ${p.lng}]).addTo(map).bindPopup(\`${popupHtml.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`);`;
-    }).join("\n");
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-        <style>
-          body, html, #map { margin:0; padding:0; height:100%; width:100%; }
-          .leaflet-popup-content-wrapper { border-radius: 8px; }
-        </style>
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          var map = L.map('map', { zoomControl: true }).setView([${centerLat}, ${centerLng}], 13);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap'
-          }).addTo(map);
-          ${markersCode}
-        </script>
-      </body>
-      </html>
-    `;
-  }, [places, colors.brand]);
+  // Generate Google Maps Embed URL
+  const googleMapsUrl = useMemo(() => {
+    if (!userCoords) return "";
+    const query = type === "halal" ? "halal+restaurant+OR+halal+food" : "mosque+OR+masjid";
+    return `https://maps.google.com/maps?q=${query}&ll=${userCoords.lat},${userCoords.lon}&z=14&output=embed`;
+  }, [userCoords, type]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
@@ -216,17 +207,16 @@ export default function FinderScreen() {
           <ActivityIndicator color={colors.brand} size="large" />
         </View>
       ) : isMapView ? (
-        // Map Mode
+        // Map Mode - Dynamic Google Maps Embed
         Platform.OS === 'web' ? (
           <iframe 
-            srcDoc={mapHtmlContent} 
+            src={googleMapsUrl} 
             style={{ flex: 1, border: 'none', width: '100%', height: '100%' }} 
           />
         ) : (
           <WebView
             originWhitelist={['*']}
-            source={{ html: mapHtmlContent }}
-            onMessage={handleNativeMessage}
+            source={{ uri: googleMapsUrl }}
             style={{ flex: 1 }}
           />
         )

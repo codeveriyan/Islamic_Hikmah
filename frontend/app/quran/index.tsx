@@ -20,6 +20,7 @@ import * as Haptics from "expo-haptics";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
+import { useAuth } from "@/src/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import pageMapping from "@/src/data/quran/pageMapping.json";
 import { SURAH_LIST } from "@/src/data/surahList";
@@ -87,14 +88,99 @@ import LearnQuranView from "./learn";
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function QuranIndex() {
   const router = useRouter();
+  const { profile } = useAuth();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
   const isFocused = useIsFocused();
 
   const [loading] = useState(false);
 
+  // Selector state
+  const [modeSelected, setModeSelected] = useState<boolean>(false);
+
   // Top tabs
   const [activeTab, setActiveTab] = useState<"read" | "listen" | "learn">("read");
+
+  const handleBack = () => {
+    if (modeSelected) {
+      setModeSelected(false);
+    } else {
+      router.back();
+    }
+  };
+
+  const renderSelectionDashboard = () => {
+    const selectorItems = [
+      {
+        id: "read",
+        title: "Read Quran",
+        subtitle: "Recite Medina Mushaf & study translations",
+        icon: "book-open-variant",
+        color: "#10B981",
+        description: "Open chapters, Juz, page numbers, and custom translations."
+      },
+      {
+        id: "listen",
+        title: "Listen Quran",
+        subtitle: "Continuous audio recitations with word sync",
+        icon: "volume-high",
+        color: "#14B8A6",
+        description: "Listen to world-renowned reciters with auto-scroll highlighting."
+      },
+      {
+        id: "learn",
+        title: "Learn Quran",
+        subtitle: "Study translation vocabulary & quizzes",
+        icon: "school",
+        color: "#0284C7",
+        description: "Interactive tools to understand Quranic words and meanings."
+      }
+    ];
+
+    return (
+      <ScrollView contentContainerStyle={styles.dashboardScroll}>
+        <View style={styles.dashboardHero}>
+          <View style={[styles.dashboardHeroIconWrap, { backgroundColor: colors.brand + "18" }]}>
+            <MaterialCommunityIcons name="book-open-page-variant" size={44} color={colors.brand} />
+          </View>
+          <Text style={[styles.dashboardHeroTitle, { color: colors.onSurface }]}>Al-Qur'aan</Text>
+          <Text style={[styles.dashboardHeroSub, { color: colors.brand }]}>القرآن الكريم</Text>
+        </View>
+
+        <View style={styles.dashboardGrid}>
+          {selectorItems.map((item) => (
+            <Pressable
+              key={item.id}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                if (item.id === "listen" && profile?.tier !== "premium") {
+                  router.push("/premium");
+                  return;
+                }
+                setActiveTab(item.id as any);
+                setModeSelected(true);
+              }}
+              style={({ pressed }) => [
+                styles.dashboardCard,
+                { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+                pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }
+              ]}
+            >
+              <View style={[styles.dashboardIconWrap, { backgroundColor: item.color + "18" }]}>
+                <MaterialCommunityIcons name={item.icon as any} size={26} color={item.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.dashboardCardTitle, { color: colors.onSurface }]}>{item.title}</Text>
+                <Text style={[styles.dashboardCardSub, { color: colors.onSurfaceMuted }]}>{item.subtitle}</Text>
+                <Text style={[styles.dashboardCardDesc, { color: colors.onSurfaceMuted }]}>{item.description}</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={24} color={colors.onSurfaceMuted} />
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+    );
+  };
 
   // Surah Info Modal state
   const [selectedSurahForInfo, setSelectedSurahForInfo] = useState<Surah | null>(null);
@@ -494,15 +580,19 @@ export default function QuranIndex() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={10} testID="quran-back">
+        <Pressable onPress={handleBack} hitSlop={10} testID="quran-back">
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
         <Text style={[styles.title, { color: colors.onSurface }]}>{t("nobleQuran")}</Text>
         <View style={{ width: 28 }} />
       </View>
 
-      {/* Read vs Listen vs Learn Segment */}
-      <View style={[styles.segmentContainer, { backgroundColor: colors.surfaceSecondary }]}>
+      {!modeSelected ? (
+        renderSelectionDashboard()
+      ) : (
+        <>
+          {/* Read vs Listen vs Learn Segment */}
+          <View style={[styles.segmentContainer, { backgroundColor: colors.surfaceSecondary }]}>
         <Pressable
           onPress={() => setActiveTab("read")}
           style={[styles.segmentBtn, activeTab === "read" && [styles.segmentBtnActive, { backgroundColor: colors.brand }]]}
@@ -708,6 +798,8 @@ export default function QuranIndex() {
             />
           )}
         </View>
+      )}
+        </>
       )}
 
       {/* Personal Note Edit Modal */}
@@ -1069,6 +1161,68 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 16,
+  },
+  
+  // Selection Dashboard Styles
+  dashboardScroll: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xl,
+    paddingBottom: 40,
+    gap: 24,
+  },
+  dashboardHero: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginVertical: 12,
+  },
+  dashboardHeroIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  dashboardHeroTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  dashboardHeroSub: {
+    fontFamily: "Amiri",
+    fontSize: 18,
+  },
+  dashboardGrid: {
+    gap: theme.spacing.md,
+  },
+  dashboardCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    gap: 16,
+  },
+  dashboardIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dashboardCardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  dashboardCardSub: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  dashboardCardDesc: {
+    fontSize: 11,
+    marginTop: 6,
+    lineHeight: 15,
   },
 });
 

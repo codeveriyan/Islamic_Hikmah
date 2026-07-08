@@ -303,12 +303,11 @@ export default function QiblaScreen() {
   const isAligned = relativeAngle < 5 || relativeAngle > 355;
   const isFlat = Math.abs(tilt.x) < 0.15 && Math.abs(tilt.y) < 0.15;
 
-  // Trigger haptic click when aligning perfectly
   useEffect(() => {
     if (isAligned && isFlat) {
       const now = Date.now();
       if (now - lastHapticRef.current > 1500) {
-        Haptics.notificationAsync(Haps => Haptics.NotificationFeedbackType.Success).catch(() => {});
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         lastHapticRef.current = now;
       }
     }
@@ -478,7 +477,7 @@ export default function QiblaScreen() {
             
             {/* 3D Outer Beveled Casing */}
             <LinearGradient
-              colors={activeSkin.caseGradient}
+              colors={activeSkin.caseGradient as [string, string, ...string[]]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.caseOuterBorder}
