@@ -13,6 +13,7 @@ import Svg, { Circle } from "react-native-svg";
 
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useAuth } from "@/src/AuthContext";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
@@ -252,6 +253,7 @@ function getPrayerPeriods(times: Record<string, string>) {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
   const greeting = useMemo(() => getGreeting(), []);
@@ -459,7 +461,7 @@ export default function HomeScreen() {
     
     const updatedCounts = { ...dhikrCounts, [goalId]: nextCount };
     setDhikrCounts(updatedCounts);
-    await saveDhikrCounts(updatedCounts);
+    await saveDailyDhikrCounts(updatedCounts);
     
     const isCompleted = completed.includes(goalId);
     if (nextCount === 3 && !isCompleted) {
@@ -479,6 +481,11 @@ export default function HomeScreen() {
   };
 
   const handleCalendarSync = async () => {
+    if (profile?.tier !== "premium") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      router.push("/premium");
+      return;
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     const nextConnected = !calendarConnected;
     setCalendarConnected(nextConnected);
@@ -677,6 +684,9 @@ export default function HomeScreen() {
           <Pressable onPress={() => router.push("/search" as any)} hitSlop={10} testID="home-search">
             <MaterialCommunityIcons name="magnify" size={26} color={colors.onSurface} />
           </Pressable>
+          <Pressable onPress={() => router.push("/profile" as any)} hitSlop={10}>
+            <MaterialCommunityIcons name="account-circle-outline" size={26} color={colors.onSurface} />
+          </Pressable>
           <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
             <MaterialCommunityIcons name="cog-outline" size={26} color={colors.onSurface} />
           </Pressable>
@@ -833,14 +843,26 @@ export default function HomeScreen() {
           {/* Bottom Navigation Buttons */}
           <View style={styles.bottomButtonsRow}>
             <Pressable 
-              onPress={() => router.push("/previous-goals")}
+              onPress={() => {
+                if (profile?.tier !== "premium") {
+                  router.push("/premium");
+                } else {
+                  router.push("/previous-goals");
+                }
+              }}
               style={[styles.bottomOutlineBtn, { borderColor: colors.border }]}
             >
               <Text style={[styles.bottomBtnText, { color: colors.onSurface }]}>View Previous Goals</Text>
             </Pressable>
             
             <Pressable 
-              onPress={() => router.push("/goal-settings")}
+              onPress={() => {
+                if (profile?.tier !== "premium") {
+                  router.push("/premium");
+                } else {
+                  router.push("/goal-settings");
+                }
+              }}
               style={[styles.bottomOutlineBtn, { borderColor: colors.border }]}
             >
               <Text style={[styles.bottomBtnText, { color: colors.onSurface }]}>Goal Settings</Text>

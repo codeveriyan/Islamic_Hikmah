@@ -35,6 +35,39 @@ const ERA_ORDER: SeerahEra[] = [
   "final-years",
 ];
 
+const LOCAL_ERA_META: Record<SeerahEra, { label: string; sub: string; icon: string; color: string }> = {
+  "pre-islamic": { 
+    label: "Pre-Islamic Era", 
+    sub: "Arabia before revelation", 
+    icon: "camel", 
+    color: "#D97706" 
+  },
+  "early-life": { 
+    label: "Early Life", 
+    sub: "Birth, childhood & youth", 
+    icon: "hands-pray", 
+    color: "#059669" 
+  },
+  "meccan": { 
+    label: "Meccan Period", 
+    sub: "First revelation & trials", 
+    icon: "mosque", 
+    color: "#3B82F6" 
+  },
+  "medinan": { 
+    label: "Medinan Period", 
+    sub: "Statehood & community", 
+    icon: "mosque", 
+    color: "#10B981" 
+  },
+  "final-years": { 
+    label: "Final Years & Legacy", 
+    sub: "Completion & farewell", 
+    icon: "scroll", 
+    color: "#8B5CF6" 
+  },
+};
+
 export default function SeerahIndexScreen() {
   const router = useRouter();
   const { colors, mode, language } = useTheme();
@@ -72,6 +105,71 @@ export default function SeerahIndexScreen() {
   const totalRead = readChapters.size;
   const total = SEERAH_CHAPTERS.length;
   const progressPct = total > 0 ? totalRead / total : 0;
+
+  const renderEraDashboard = () => {
+    return (
+      <View style={styles.dashboardContainer}>
+        <Text style={[styles.dashboardTitle, { color: colors.onSurface }]}>Select Era</Text>
+        <View style={styles.gridContainer}>
+          {ERA_ORDER.map((era, index) => {
+            const meta = LOCAL_ERA_META[era];
+            const isFullWidth = index === ERA_ORDER.length - 1;
+            return (
+              <Pressable
+                key={era}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setSelectedEra(era);
+                }}
+                style={({ pressed }) => [
+                  styles.eraCard,
+                  { 
+                    backgroundColor: colors.surfaceSecondary, 
+                    borderColor: colors.border,
+                    width: isFullWidth ? "100%" : "48%"
+                  },
+                  pressed && { opacity: 0.85 }
+                ]}
+              >
+                <View style={[styles.eraCardIconWrap, { backgroundColor: meta.color + "15" }]}>
+                  <MaterialCommunityIcons name={meta.icon as any} size={24} color={meta.color} />
+                </View>
+                <Text style={[styles.eraCardTitle, { color: colors.onSurface }]}>{meta.label}</Text>
+                <Text style={[styles.eraCardSub, { color: colors.onSurfaceMuted }]}>{meta.sub}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  const renderFilterBanner = () => {
+    if (selectedEra === "all") return null;
+    const meta = LOCAL_ERA_META[selectedEra];
+    const count = SEERAH_CHAPTERS.filter((c) => c.era === selectedEra).length;
+    
+    return (
+      <View style={[styles.filterBanner, { backgroundColor: meta.color + "12", borderColor: meta.color + "30" }]}>
+        <View style={[styles.eraCardIconWrap, { backgroundColor: meta.color + "18", marginRight: 12 }]}>
+          <MaterialCommunityIcons name={meta.icon as any} size={22} color={meta.color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.filterEraTitle, { color: colors.onSurface }]}>{meta.label}</Text>
+          <Text style={[styles.filterEraCount, { color: colors.onSurfaceMuted }]}>{count} chapters found</Text>
+        </View>
+        <Pressable 
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setSelectedEra("all");
+          }}
+          style={styles.clearFilterBtn}
+        >
+          <MaterialCommunityIcons name="close-circle" size={22} color={colors.onSurfaceMuted} />
+        </Pressable>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView
@@ -166,82 +264,87 @@ export default function SeerahIndexScreen() {
       </View>
 
       {/* Era Filter Chips */}
-      <View style={styles.eraScrollWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.eraRow}
-          style={{ flex: 1 }}
-        >
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-              setSelectedEra("all");
-            }}
-            style={[
-              styles.eraChip,
-              {
-                backgroundColor:
-                  selectedEra === "all" ? colors.brand : colors.surfaceSecondary,
-              },
-            ]}
+      {(selectedEra !== "all" || searchQuery.length > 0) && (
+        <View style={styles.eraScrollWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.eraRow}
+            style={{ flex: 1 }}
           >
-            <Text
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {}); // fallback or selection
+                setSelectedEra("all");
+              }}
               style={[
-                styles.eraChipTxt,
+                styles.eraChip,
                 {
-                  color:
-                    selectedEra === "all" ? colors.onBrandPrimary : colors.onSurfaceMuted,
+                  backgroundColor:
+                    selectedEra === "all" ? colors.brand : colors.surfaceSecondary,
                 },
               ]}
             >
-              {t("all")} ({total})
-            </Text>
-          </Pressable>
-          {ERA_ORDER.map((era) => {
-            const count = SEERAH_CHAPTERS.filter((c) => c.era === era).length;
-            const active = selectedEra === era;
-            return (
-              <Pressable
-                key={era}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  setSelectedEra(era);
-                }}
+              <Text
                 style={[
-                  styles.eraChip,
+                  styles.eraChipTxt,
                   {
-                    backgroundColor: active
-                      ? ERA_COLORS[era]
-                      : colors.surfaceSecondary,
+                    color:
+                      selectedEra === "all" ? colors.onBrandPrimary : colors.onSurfaceMuted,
                   },
                 ]}
               >
-                <MaterialCommunityIcons
-                  name={ERA_ICONS[era] as any}
-                  size={14}
-                  color={active ? "#fff" : colors.onSurfaceMuted}
-                  style={{ marginRight: 4 }}
-                />
-                <Text
+                {t("all")} ({total})
+              </Text>
+            </Pressable>
+            {ERA_ORDER.map((era) => {
+              const count = SEERAH_CHAPTERS.filter((c) => c.era === era).length;
+              const active = selectedEra === era;
+              return (
+                <Pressable
+                  key={era}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setSelectedEra(era);
+                  }}
                   style={[
-                    styles.eraChipTxt,
-                    { color: active ? "#fff" : colors.onSurfaceMuted },
+                    styles.eraChip,
+                    {
+                      backgroundColor: active
+                        ? ERA_COLORS[era]
+                        : colors.surfaceSecondary,
+                    },
                   ]}
                 >
-                  {t(era.replace("-", "")) || ERA_LABELS[era]} ({count})
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
+                  <MaterialCommunityIcons
+                    name={ERA_ICONS[era] as any}
+                    size={14}
+                    color={active ? "#fff" : colors.onSurfaceMuted}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    style={[
+                      styles.eraChipTxt,
+                      { color: active ? "#fff" : colors.onSurfaceMuted },
+                    ]}
+                  >
+                    {t(era.replace("-", "")) || ERA_LABELS[era]} ({count})
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Chapter List */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       >
+        {selectedEra === "all" && searchQuery === "" && renderEraDashboard()}
+        {selectedEra !== "all" && renderFilterBanner()}
+
         {filtered.length === 0 ? (
           <View style={styles.empty}>
             <MaterialCommunityIcons
@@ -495,4 +598,65 @@ const styles = StyleSheet.create({
 
   empty: { alignItems: "center", paddingTop: 60, gap: 12 },
   emptyTxt: { fontSize: 14 },
+  
+  // Seerah Era Dashboard Grid
+  dashboardContainer: {
+    paddingHorizontal: 4,
+    marginBottom: 16,
+  },
+  dashboardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 16,
+  },
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  eraCard: {
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: theme.spacing.lg,
+    marginBottom: 12,
+  },
+  eraCardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eraCardTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 10,
+  },
+  eraCardSub: {
+    fontSize: 11,
+    marginTop: 4,
+    lineHeight: 14,
+  },
+  
+  // Filter active state banner
+  filterBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  filterEraTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  filterEraCount: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  clearFilterBtn: {
+    padding: 4,
+    marginLeft: "auto",
+  },
 });

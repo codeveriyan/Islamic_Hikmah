@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ThemeProvider, useTheme } from "@/src/ThemeContext";
+import { AuthProvider } from "@/src/AuthContext";
 
 LogBox.ignoreAllLogs(true);
 
@@ -143,7 +144,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
+          <AuthProvider>
+            <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
+          </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

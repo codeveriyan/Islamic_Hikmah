@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,12 +7,12 @@ import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 
 export const HADITH_BOOKS = [
-  { id: "bukhari", name: "Sahih al-Bukhari", compiler: "Imam Bukhari", total: 7563, color: "#10B981" },
-  { id: "muslim", name: "Sahih Muslim", compiler: "Imam Muslim", total: 7563, color: "#3B82F6" },
-  { id: "nasai", name: "Sunan an-Nasa'i", compiler: "Imam An-Nasa'i", total: 5758, color: "#EC4899" },
-  { id: "abudawud", name: "Sunan Abi Dawud", compiler: "Imam Abu Dawud", total: 5274, color: "#F59E0B" },
-  { id: "tirmidhi", name: "Jami' at-Tirmidhi", compiler: "Imam Al-Tirmidhi", total: 3956, color: "#8B5CF6" },
-  { id: "ibnmajah", name: "Sunan Ibn Majah", compiler: "Imam Ibn Majah", total: 4341, color: "#EF4444" },
+  { id: "bukhari", name: "Sahih al-Bukhari", compiler: "Imam Bukhari", total: 7563, color: "#10B981", cover: require("../../assets/images/hadith_bukhari_cover.jpg") },
+  { id: "muslim", name: "Sahih Muslim", compiler: "Imam Muslim", total: 7563, color: "#3B82F6", cover: require("../../assets/images/hadith_muslim_cover.jpg") },
+  { id: "nasai", name: "Sunan an-Nasa'i", compiler: "Imam An-Nasa'i", total: 5758, color: "#EC4899", cover: require("../../assets/images/hadith_nasai_cover.jpg") },
+  { id: "abudawud", name: "Sunan Abi Dawud", compiler: "Imam Abu Dawud", total: 5274, color: "#F59E0B", cover: require("../../assets/images/hadith_abudawud_cover.jpg") },
+  { id: "tirmidhi", name: "Jami' at-Tirmidhi", compiler: "Imam Al-Tirmidhi", total: 3956, color: "#8B5CF6", cover: require("../../assets/images/hadith_tirmidhi_cover.jpg") },
+  { id: "ibnmajah", name: "Sunan Ibn Majah", compiler: "Imam Ibn Majah", total: 4341, color: "#EF4444", cover: require("../../assets/images/hadith_ibnmajah_cover.jpg") },
 ] as const;
 
 export default function HadithIndexScreen() {
@@ -53,9 +53,11 @@ export default function HadithIndexScreen() {
                 pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
               ]}
             >
-              <View style={[styles.iconWrap, { backgroundColor: book.color + "18" }]}>
-                <MaterialCommunityIcons name="book" size={24} color={book.color} />
-              </View>
+              <Image 
+                source={book.cover} 
+                style={styles.bookCoverImage} 
+                resizeMode="cover" 
+              />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.bookName, { color: colors.onSurface }]}>{t(book.id)}</Text>
                 <Text style={[styles.bookDetail, { color: colors.onSurfaceMuted }]}>
@@ -100,12 +102,10 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     gap: 16,
   },
-  iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
+  bookCoverImage: {
+    width: 44,
+    height: 58,
+    borderRadius: 6,
   },
   bookName: { fontSize: 16, fontWeight: "700" },
   bookDetail: { fontSize: 12, marginTop: 4 },

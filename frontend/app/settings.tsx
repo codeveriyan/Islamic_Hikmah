@@ -437,7 +437,7 @@ export default function SettingsScreen() {
                   key={lang.code}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                    setLanguage(lang.code);
+                    setLanguage(lang.code as any);
                   }}
                   style={[styles.langRow, { backgroundColor: language === lang.code ? colors.brand + "18" : "transparent" }]}
                 >
