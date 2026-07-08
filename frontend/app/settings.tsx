@@ -69,6 +69,7 @@ export default function SettingsScreen() {
 
   const [translationEnabled, setTranslationEnabled] = useState(true);
   const [transliterationEnabled, setTransliterationEnabled] = useState(true);
+  const [transliterationType, setTransliterationType] = useState<"tajweed" | "syllables" | "wbw">("tajweed");
 
   const [audioSpeed, setAudioSpeed] = useState("1.0x");
   const [tasbihVibe, setTasbihVibe] = useState(true);
@@ -109,7 +110,36 @@ export default function SettingsScreen() {
     AsyncStorage.getItem("background_azaan_enabled").then((val) => {
       if (val !== null) setBgAzaan(val !== "false");
     });
+    AsyncStorage.getItem("islamic_hikmah:quran_show_translation").then((val) => {
+      if (val !== null) setTranslationEnabled(val === "true");
+    });
+    AsyncStorage.getItem("islamic_hikmah:quran_show_transliteration").then((val) => {
+      if (val !== null) setTransliterationEnabled(val === "true");
+    });
+    AsyncStorage.getItem("islamic_hikmah:transliteration_type").then((val) => {
+      if (val === "syllables" || val === "wbw" || val === "tajweed") {
+        setTransliterationType(val as any);
+      }
+    });
   }, []);
+
+  const handleToggleTranslation = async (val: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setTranslationEnabled(val);
+    await AsyncStorage.setItem("islamic_hikmah:quran_show_translation", String(val));
+  };
+
+  const handleToggleTransliteration = async (val: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setTransliterationEnabled(val);
+    await AsyncStorage.setItem("islamic_hikmah:quran_show_transliteration", String(val));
+  };
+
+  const handleTransliterationTypeChange = async (type: "tajweed" | "syllables" | "wbw") => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setTransliterationType(type);
+    await AsyncStorage.setItem("islamic_hikmah:transliteration_type", type);
+  };
 
   const handleToggleBgAzaan = async (val: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -212,15 +242,46 @@ export default function SettingsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show Translation</Text>
               </View>
-              <Switch value={translationEnabled} onValueChange={setTranslationEnabled} trackColor={{ true: colors.brand }} />
+              <Switch value={translationEnabled} onValueChange={handleToggleTranslation} trackColor={{ true: colors.brand }} />
             </View>
 
             <View style={styles.optionRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show Transliteration</Text>
               </View>
-              <Switch value={transliterationEnabled} onValueChange={setTransliterationEnabled} trackColor={{ true: colors.brand }} />
+              <Switch value={transliterationEnabled} onValueChange={handleToggleTransliteration} trackColor={{ true: colors.brand }} />
             </View>
+
+            {transliterationEnabled && (
+              <View style={{ marginTop: 12 }}>
+                <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted, marginBottom: 8 }]}>Transliteration Style</Text>
+                <View style={styles.speedRow}>
+                  {[
+                    { label: "Tajweed", value: "tajweed" as const },
+                    { label: "Syllable", value: "syllables" as const },
+                    { label: "Word-by-Word", value: "wbw" as const }
+                  ].map((item) => (
+                    <Pressable
+                      key={item.value}
+                      onPress={() => handleTransliterationTypeChange(item.value)}
+                      style={[
+                        styles.speedBtn,
+                        { backgroundColor: transliterationType === item.value ? colors.brand : colors.surfaceTertiary }
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.speedTxt,
+                          { color: transliterationType === item.value ? colors.onBrandPrimary : colors.onSurface }
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
 
             <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted, marginTop: 16 }]}>Font Size</Text>
             <View style={[styles.speedRow, { marginBottom: 12 }]}>
@@ -258,6 +319,15 @@ export default function SettingsScreen() {
               {translationEnabled && (
                 <Text style={[styles.transPreview, { color: getPreviewTextColor(), fontSize: getPreviewTransSize() }]}>
                   In the name of God, the Most Gracious, the Dispenser of Grace.
+                </Text>
+              )}
+              {transliterationEnabled && (
+                <Text style={[styles.transPreview, { color: colors.brand, fontSize: getPreviewTransSize(), marginTop: 6 }]}>
+                  {transliterationType === "syllables"
+                    ? "bis-mil  la-hhir  rah-man-nir  raheem"
+                    : transliterationType === "wbw"
+                    ? "bis'mi l-lahi l-raḥmāni l-raḥīmi"
+                    : "Bismil laahir Rahmaanir Raheem"}
                 </Text>
               )}
             </View>
