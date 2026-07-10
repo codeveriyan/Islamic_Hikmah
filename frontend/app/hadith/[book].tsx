@@ -10,6 +10,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { HADITH_BOOKS } from "./index";
 import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
+import { 
+  toggleFavourite, 
+  getFavourites, 
+  toggleHadithBookmark, 
+  getHadithBookmarks 
+} from "@/src/storage";
 
 type Hadith = {
   hadithnumber: number;
@@ -23,6 +29,48 @@ export default function HadithDetailScreen() {
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
   const arabicFontFamily = useArabicFont();
+
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+
+  const loadSavedStates = useCallback(() => {
+    Promise.all([getFavourites(), getHadithBookmarks()]).then(([favs, bms]) => {
+      setFavIds(new Set(favs.map((f) => f.id)));
+      setBookmarkedIds(new Set(bms.map((b) => b.id)));
+    });
+  }, []);
+
+  useEffect(() => {
+    loadSavedStates();
+  }, [loadSavedStates]);
+
+  const handleToggleFavourite = async (item: Hadith) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const id = `hadith-${book}-${item.hadithnumber}`;
+    await toggleFavourite({
+      id,
+      type: "hadith",
+      title: `${bookMeta?.name || "Hadith"} · Hadith #${item.hadithnumber}`,
+      arabic: item.arabicText || "",
+      translation: item.text,
+      addedAt: Date.now(),
+    });
+    loadSavedStates();
+  };
+
+  const handleToggleBookmark = async (item: Hadith) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const id = `hadith-${book}-${item.hadithnumber}`;
+    await toggleHadithBookmark({
+      id,
+      bookId: String(book),
+      hadithnumber: item.hadithnumber,
+      text: item.text,
+      arabicText: item.arabicText,
+      addedAt: Date.now(),
+    });
+    loadSavedStates();
+  };
 
   const bookMeta = useMemo(() => HADITH_BOOKS.find((b) => b.id === book), [book]);
   const chapters = useMemo(() => HADITH_CHAPTERS[String(book)] || [], [book]);
@@ -210,6 +258,9 @@ export default function HadithDetailScreen() {
     const isTranslating = translatingIds.has(item.hadithnumber);
     const tamilText = translatedTexts[item.hadithnumber];
 
+    const isFav = favIds.has(`hadith-${book}-${item.hadithnumber}`);
+    const isBookmarked = bookmarkedIds.has(`hadith-${book}-${item.hadithnumber}`);
+
     return (
       <View style={[styles.hadithCard, { backgroundColor: colors.surfaceSecondary }]}>
         <View style={styles.cardHeader}>
@@ -217,6 +268,20 @@ export default function HadithDetailScreen() {
             <Text style={[styles.badgeTxt, { color: colors.brand }]}>Hadith #{item.hadithnumber}</Text>
           </View>
           <View style={styles.headerRight}>
+            <Pressable onPress={() => handleToggleFavourite(item)} hitSlop={8} style={styles.headerBtn}>
+              <MaterialCommunityIcons 
+                name={isFav ? "heart" : "heart-outline"} 
+                size={20} 
+                color={isFav ? colors.error : colors.onSurfaceMuted} 
+              />
+            </Pressable>
+            <Pressable onPress={() => handleToggleBookmark(item)} hitSlop={8} style={styles.headerBtn}>
+              <MaterialCommunityIcons 
+                name={isBookmarked ? "bookmark" : "bookmark-outline"} 
+                size={20} 
+                color={isBookmarked ? colors.brand : colors.onSurfaceMuted} 
+              />
+            </Pressable>
             <Pressable onPress={() => handleShare(item)} hitSlop={8} style={styles.headerBtn}>
               <MaterialCommunityIcons name="share-variant" size={20} color={colors.onSurfaceMuted} />
             </Pressable>
@@ -273,7 +338,7 @@ export default function HadithDetailScreen() {
         )}
       </View>
     );
-  }, [colors, translatedTexts, translatingIds, bookMeta]);
+  }, [colors, translatedTexts, translatingIds, bookMeta, favIds, bookmarkedIds]);
 
   if (!bookMeta) {
     return (
@@ -302,9 +367,14 @@ export default function HadithDetailScreen() {
             );
           })()}
         </View>
-        <Pressable onPress={() => router.push("/")} hitSlop={10} testID="hadith-home">
-          <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="hadith-home">
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       {/* Reading progress bar */}
@@ -413,6 +483,7 @@ export default function HadithDetailScreen() {
       ) : (
         <FlatList
           data={paginated}
+          extraData={[favIds, bookmarkedIds]}
           keyExtractor={(item) => String(item.hadithnumber)}
           renderItem={renderItem}
           onEndReached={loadMore}

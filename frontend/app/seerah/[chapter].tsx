@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Share,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -17,12 +18,19 @@ import * as Haptics from "expo-haptics";
 
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
+import { 
+  toggleFavourite, 
+  getFavourites, 
+  toggleSeerahBookmark, 
+  getSeerahBookmarks 
+} from "@/src/storage";
 import { theme } from "@/src/theme";
 import {
   SEERAH_CHAPTERS,
   ERA_LABELS,
   ERA_COLORS,
 } from "@/src/data/seerahData";
+import { translateText } from "@/src/services/translationService";
 
 const STORAGE_KEY = "islamic_hikmah:seerah_read_chapters";
 
@@ -37,10 +45,61 @@ export default function SeerahChapterScreen() {
   const [scrollProgress, setScrollProgress] = useState(0);
   const [contentHeight, setContentHeight] = useState(1);
   const [scrollViewHeight, setScrollViewHeight] = useState(1);
-  const [fontSize, setFontSize] = useState<"small" | "medium" | "large">("medium");
+  const [fontSize, setFontSize] = useState<"small" | "medium" | "large" | "xlarge">("medium");
+
+  const [translatedTitle, setTranslatedTitle] = useState("");
+  const [translatedContent, setTranslatedContent] = useState("");
+
+  const [isFav, setIsFav] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
 
   const chapterIndex = SEERAH_CHAPTERS.findIndex((c) => c.id === chapterId);
   const chapter = SEERAH_CHAPTERS[chapterIndex];
+
+  const loadSavedStates = useCallback(() => {
+    if (!chapterId) return;
+    const favId = `seerah-${chapterId}`;
+    Promise.all([
+      getFavourites(),
+      getSeerahBookmarks()
+    ]).then(([favs, bms]) => {
+      setIsFav(favs.some((f) => f.id === favId));
+      setIsBookmarked(bms.some((b) => b.id === chapterId));
+    });
+  }, [chapterId]);
+
+  useEffect(() => {
+    loadSavedStates();
+  }, [loadSavedStates]);
+
+  const handleToggleFavourite = async () => {
+    if (!chapter) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const favId = `seerah-${chapter.id}`;
+    await toggleFavourite({
+      id: favId,
+      type: "seerah",
+      title: chapter.title,
+      arabic: chapter.arabicTitle || "",
+      translation: chapter.description || "",
+      addedAt: Date.now(),
+    });
+    loadSavedStates();
+  };
+
+  const handleToggleBookmark = async () => {
+    if (!chapter) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    await toggleSeerahBookmark({
+      id: chapter.id,
+      chapterId: chapter.id,
+      title: chapter.title,
+      arabicTitle: chapter.arabicTitle,
+      content: chapter.content,
+      addedAt: Date.now(),
+    });
+    loadSavedStates();
+  };
   const prevChapter = chapterIndex > 0 ? SEERAH_CHAPTERS[chapterIndex - 1] : null;
   const nextChapter =
     chapterIndex < SEERAH_CHAPTERS.length - 1
@@ -58,6 +117,32 @@ export default function SeerahChapterScreen() {
       }
     });
   }, []);
+
+  // Translate chapter title and content automatically
+  useEffect(() => {
+    if (!chapter) return;
+    if (language === "en") {
+      setTranslatedTitle(chapter.title);
+      setTranslatedContent(chapter.content);
+      return;
+    }
+
+    setTranslatedTitle("");
+    setTranslatedContent("");
+
+    (async () => {
+      try {
+        const tTitle = await translateText(chapter.title, language);
+        setTranslatedTitle(tTitle);
+        const tContent = await translateText(chapter.content, language);
+        setTranslatedContent(tContent);
+      } catch (err) {
+        console.warn("Failed to translate Seerah chapter:", err);
+        setTranslatedTitle(chapter.title);
+        setTranslatedContent(chapter.content);
+      }
+    })();
+  }, [chapter, language]);
 
   const handleMarkRead = async () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -94,8 +179,8 @@ export default function SeerahChapterScreen() {
     router.replace(`/seerah/${id}` as any);
   };
 
-  const fontSizeMap = { small: 14, medium: 16, large: 19 };
-  const lineHeightMap = { small: 22, medium: 26, large: 30 };
+  const fontSizeMap = { small: 14, medium: 16, large: 19, xlarge: 23 };
+  const lineHeightMap = { small: 22, medium: 26, large: 30, xlarge: 35 };
   const contentFontSize = fontSizeMap[fontSize];
   const contentLineHeight = lineHeightMap[fontSize];
 
@@ -234,7 +319,7 @@ export default function SeerahChapterScreen() {
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
               setFontSize((s) =>
-                s === "small" ? "medium" : s === "medium" ? "large" : "small"
+                s === "small" ? "medium" : s === "medium" ? "large" : s === "large" ? "xlarge" : "small"
               );
             }}
             hitSlop={8}
@@ -247,6 +332,32 @@ export default function SeerahChapterScreen() {
             />
           </Pressable>
 
+          {/* Favorite */}
+          <Pressable
+            onPress={handleToggleFavourite}
+            hitSlop={8}
+            style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MaterialCommunityIcons
+              name={isFav ? "heart" : "heart-outline"}
+              size={18}
+              color={isFav ? colors.error : colors.onSurfaceMuted}
+            />
+          </Pressable>
+
+          {/* Bookmark */}
+          <Pressable
+            onPress={handleToggleBookmark}
+            hitSlop={8}
+            style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MaterialCommunityIcons
+              name={isBookmarked ? "bookmark" : "bookmark-outline"}
+              size={18}
+              color={isBookmarked ? colors.brand : colors.onSurfaceMuted}
+            />
+          </Pressable>
+
           {/* Share */}
           <Pressable
             onPress={handleShare}
@@ -255,6 +366,32 @@ export default function SeerahChapterScreen() {
           >
             <MaterialCommunityIcons
               name="share-variant"
+              size={18}
+              color={colors.onSurfaceMuted}
+            />
+          </Pressable>
+
+          {/* Home */}
+          <Pressable
+            onPress={() => router.replace("/(tabs)")}
+            hitSlop={8}
+            style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MaterialCommunityIcons
+              name="home-outline"
+              size={18}
+              color={colors.onSurfaceMuted}
+            />
+          </Pressable>
+
+          {/* Settings */}
+          <Pressable
+            onPress={() => router.push("/settings")}
+            hitSlop={8}
+            style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MaterialCommunityIcons
+              name="cog-outline"
               size={18}
               color={colors.onSurfaceMuted}
             />
@@ -287,7 +424,7 @@ export default function SeerahChapterScreen() {
             </Text>
           </View>
           <Text style={[styles.chapterTitle, { color: colors.onSurface }]}>
-            {chapter.title}
+            {translatedTitle || chapter.title}
           </Text>
           <Text style={[styles.chapterArabic, { color: colors.brand }]}>
             {chapter.arabicTitle}
@@ -309,7 +446,14 @@ export default function SeerahChapterScreen() {
         onContentSizeChange={(_, h) => setContentHeight(h)}
         contentContainerStyle={styles.contentContainer}
       >
-        {renderParagraphs(chapter.content)}
+        {translatedContent ? (
+          renderParagraphs(translatedContent)
+        ) : (
+          <View style={{ padding: 40, alignItems: "center", justifyContent: "center" }}>
+            <ActivityIndicator size="large" color={colors.brand} />
+            <Text style={{ color: colors.onSurfaceMuted, marginTop: 12 }}>Translating to {language.toUpperCase()}...</Text>
+          </View>
+        )}
 
         {/* Mark as Read button */}
         <Pressable

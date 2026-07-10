@@ -319,8 +319,11 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
   
-    "mosqueFinder": "Mosque Finder",
+    "mosqueFinder": "Masjid Finder",
     "halalFoodFinder": "Halal Food Finder",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   ar: {
     tasbihCounter: "عداد التسبيح",
@@ -541,6 +544,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "مكتشف المساجد",
     "halalFoodFinder": "مكتشف الطعام الحلال",
+    "pillarsOfIslam": "أركان الإسلام",
+    "zakatCalculator": "حاسبة الزكاة",
+    "hajjUmrahGuide": "دليل الحج والعمرة",
   },
   ur: {
     tasbihCounter: "تسبیح کاؤنٹر",
@@ -703,6 +709,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "مسجد تلاش کنندہ",
     "halalFoodFinder": "حلال کھانے تلاش کنندہ",
+    "pillarsOfIslam": "اسلام کے ارکان",
+    "zakatCalculator": "زکوٰۃ کیلکولیٹر",
+    "hajjUmrahGuide": "حج اور عمرہ گائیڈ",
   },
   hi: {
     tasbihCounter: "तस्बीह काउंटर",
@@ -865,6 +874,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "मस्जिद खोजक",
     "halalFoodFinder": "हलाल भोजन खोजक",
+    "pillarsOfIslam": "इस्लाम के स्तंभ",
+    "zakatCalculator": "जकात कैलकुलेटर",
+    "hajjUmrahGuide": "हज और उमराह गाइड",
   },
   bn: {
     tasbihCounter: "তাসবিহ কাউন্টার",
@@ -1027,6 +1039,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "মসজিদ অনুসন্ধানকারী",
     "halalFoodFinder": "হালাল খাবার অনুসন্ধানকারী",
+    "pillarsOfIslam": "ইসলামের স্তম্ভ",
+    "zakatCalculator": "যাকাত ক্যালকুলেটর",
+    "hajjUmrahGuide": "হজ্জ ও ওমরাহ গাইড",
   },
   id: {
     tasbihCounter: "Penghitung Tasbih",
@@ -1084,6 +1099,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Pencari Masjid",
     "halalFoodFinder": "Pencari Makanan Halal",
+    "pillarsOfIslam": "Rukun Islam",
+    "zakatCalculator": "Kalkulator Zakat",
+    "hajjUmrahGuide": "Panduan Haji & Umrah",
   },
   tr: {
     tasbihCounter: "Zikirmatik",
@@ -1141,6 +1159,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Cami Bulucu",
     "halalFoodFinder": "Helal Yemek Bulucu",
+    "pillarsOfIslam": "İslam'ın Şartları",
+    "zakatCalculator": "Zekat Hesaplayıcı",
+    "hajjUmrahGuide": "Hac ve Umre Rehberi",
   },
   fr: {
     tasbihCounter: "Tasbih / Chapelet",
@@ -1198,6 +1219,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Chercheur de Mosquées",
     "halalFoodFinder": "Chercheur de Nourriture Halal",
+    "pillarsOfIslam": "Les piliers de l'Islam",
+    "zakatCalculator": "Calculateur de Zakat",
+    "hajjUmrahGuide": "Guide Hajj & Omra",
   },
   es: {
     tasbihCounter: "Contador de Tasbih",
@@ -1255,6 +1279,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Buscador de Mezquitas",
     "halalFoodFinder": "Buscador de Comida Halal",
+    "pillarsOfIslam": "Pilares del Islam",
+    "zakatCalculator": "Calculadora de Zakat",
+    "hajjUmrahGuide": "Guía de Hajj y Umrah",
   },
   fa: {
     tasbihCounter: "صلوات شمار",
@@ -1312,6 +1339,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "مسجد یاب",
     "halalFoodFinder": "غذای حلال یاب",
+    "pillarsOfIslam": "ارکان اسلام",
+    "zakatCalculator": "ماشین حساب زکات",
+    "hajjUmrahGuide": "راهنمای حج و عمره",
   },
   ha: {
     tasbihCounter: "Lissafin Tasbihi",
@@ -1369,6 +1399,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Neman Masallaci",
     "halalFoodFinder": "Neman Abincin Halal",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   ms: {
     tasbihCounter: "Penghitung Tasbih",
@@ -1426,6 +1459,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Pencari Masjid",
     "halalFoodFinder": "Pencari Makanan Halal",
+    "pillarsOfIslam": "Rukun Islam",
+    "zakatCalculator": "Kalkulator Zakat",
+    "hajjUmrahGuide": "Panduan Haji & Umrah",
   },
   ta: {
     tasbihCounter: "தஸ்பீஹ் கவுண்டர்",
@@ -1483,6 +1519,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "பள்ளிவாசல் தேடி",
     "halalFoodFinder": "ஹலால் உணவு தேடி",
+    "pillarsOfIslam": "இஸ்லாத்தின் தூண்கள்",
+    "zakatCalculator": "ஜகாத் கால்குலேட்டர்",
+    "hajjUmrahGuide": "ஹஜ் & உம்ரா வழிகாட்டி",
   },
   te: {
     tasbihCounter: "తస్బీహ్ కౌంటర్",
@@ -1540,6 +1579,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "మసీదుల అన్వేషణ",
     "halalFoodFinder": "హలాల్ ఆహార అన్వేషణ",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   kn: {
     tasbihCounter: "ತಸ್ಬೀಹ್ ಕೌಂಟರ್",
@@ -1597,6 +1639,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "ಮಸೀದಿ ಅನ್ವೇಷಕ",
     "halalFoodFinder": "ಹಲಾಲ್ ಆಹಾರ ಅನ್ವೇಷಕ",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   ml: {
     tasbihCounter: "തസ്ബീഹ് കൗണ്ടർ",
@@ -1654,6 +1699,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "പള്ളി തിരച്ചിൽ",
     "halalFoodFinder": "ഹലാൽ ഭക്ഷണ തിരച്ചിൽ",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   gu: {
     tasbihCounter: "તસ્બીહ કાઉન્ટર",
@@ -1711,6 +1759,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "મસ્જિદ શોધક",
     "halalFoodFinder": "હલાલ ખોરાક શોધક",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   mr: {
     tasbihCounter: "तस्बीह काउंटर",
@@ -1768,6 +1819,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "मस्जिद शोधक",
     "halalFoodFinder": "हलाल अन्न शोधक",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   pa: {
     tasbihCounter: "ਤਸਬੀਹ ਕਾਊਂਟਰ",
@@ -1825,6 +1879,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "ਮਸਜਿਦ ਖੋਜੀ",
     "halalFoodFinder": "ਹਲਾਲ ਭੋਜਨ ਖੋਜੀ",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   ru: {
     tasbihCounter: "Тасбих счетчик",
@@ -1882,6 +1939,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Поиск мечетей",
     "halalFoodFinder": "Поиск халяльной еды",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   so: {
     tasbihCounter: "Tusbax Erayga",
@@ -1939,6 +1999,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Helaha Masaajidda",
     "halalFoodFinder": "Helaha Cuntada Xalaasha ah",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   uz: {
     tasbihCounter: "Tasbeh hisoblagich",
@@ -1996,6 +2059,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Masjid topuvchi",
     "halalFoodFinder": "Halol taom topuvchi",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   yo: {
     tasbihCounter: "Onka Tasbih",
@@ -2053,6 +2119,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Oluwari Mossalasi",
     "halalFoodFinder": "Oluwari Ounje Halal",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   },
   ps: {
     tasbihCounter: "د تسبيح حسابونکی",
@@ -2110,6 +2179,9 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "د جومات لټونکی",
     "halalFoodFinder": "د حلال خواړو لټونکی",
+    "pillarsOfIslam": "Pillars of Islam",
+    "zakatCalculator": "Zakat Calculator",
+    "hajjUmrahGuide": "Hajj & Umrah",
   }
 };
 

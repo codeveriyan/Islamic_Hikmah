@@ -22,31 +22,44 @@ type MapPlace = {
   lng: number;
 };
 
-// High-fidelity local mocked results for realistic places with coordinates (Palakkad / Coimbatore regions)
+// ─── HIGH-FIDELITY MOCK FALLBACKS ───
 const MOCK_MOSQUES: MapPlace[] = [
-  { id: "1", name: "Thajul Islam Sunnath Hanafi Jamath", address: "Palakkad Main Road", distance: "1.1 km", lat: 10.7867, lng: 76.6548 },
-  { id: "2", name: "Thajul Islam Hanafi Masjid", address: "Palakkad, Kerala", distance: "1.2 km", lat: 10.7880, lng: 76.6580 },
-  { id: "3", name: "Ahle Sunnath Jamath Thagni Masjid", address: "Palakkad Main Road", distance: "1.1 km", lat: 10.7850, lng: 76.6520 },
-  { id: "4", name: "Hidhayathul Islam Masjid", address: "Coimbatore, Tamil Nadu", distance: "2.0 km", lat: 11.0020, lng: 76.9600 },
-  { id: "5", name: "Masjidhul Jannah", address: "Coimbatore Road", distance: "2.2 km", lat: 11.0110, lng: 76.9480 },
-  { id: "6", name: "மஸ்ஜித் மதனியா (Masjid Madania)", address: "Coimbatore 641001", distance: "2.6 km", lat: 11.0180, lng: 76.9580 },
-  { id: "7", name: "Salafi Masjid", address: "Palakkad Bypass", distance: "2.6 km", lat: 10.7920, lng: 76.6450 },
-  { id: "8", name: "Shafi Sunnath Jamath Masjith", address: "Kuniyamuthur, Coimbatore", distance: "2.7 km", lat: 10.9780, lng: 76.9420 },
-  { id: "9", name: "Hanafi Sunth Jamath Mosque", address: "Coimbatore 641042", distance: "3.0 km", lat: 11.0250, lng: 76.9350 },
-  { id: "10", name: "Thareekkathul Islam Shaffihiya Jamath", address: "Podanur, Coimbatore", distance: "3.7 km", lat: 10.9620, lng: 76.9680 },
+  { id: "m1", name: "Chinna Palli", address: "Kuniyamuthur, Coimbatore", distance: "1.0 km", lat: 10.9790, lng: 76.9450 },
+  { id: "m2", name: "Masjidur", address: "Podanur, Coimbatore", distance: "1.2 km", lat: 10.9630, lng: 76.9620 },
+  { id: "m3", name: "Masjid maalikul mulk (JAQH)", address: "Easwar Nagar, Coimbatore", distance: "1.5 km", lat: 10.9580, lng: 76.9720 },
+  { id: "m4", name: "Masjide Noorul Islam", address: "Podanur Main Road, Coimbatore", distance: "1.6 km", lat: 10.9660, lng: 76.9650 },
+  { id: "m5", name: "Jamathul Muthakeem Shafiayya Jamath", address: "Kuniyamuthur, Coimbatore", distance: "1.7 km", lat: 10.9760, lng: 76.9410 },
+  { id: "m6", name: "Masjid ul ihsaan", address: "Cheran Nagar, Coimbatore", distance: "1.9 km", lat: 10.9520, lng: 76.9780 },
+  { id: "m7", name: "Iqlas Mosque", address: "Kuniyamuthur, Coimbatore", distance: "2.0 km", lat: 10.9820, lng: 76.9490 },
+  { id: "m8", name: "Masjid-e-Madeenah Dakhni Sunnath", address: "Podanur, Coimbatore", distance: "2.1 km", lat: 10.9610, lng: 76.9600 },
+  { id: "m9", name: "Tajul Islam Hanafi Sunnah Jamath", address: "Kuniyamuthur, Coimbatore", distance: "2.2 km", lat: 10.9770, lng: 76.9400 },
+  { id: "m10", name: "Hedayadul Islam Kabarstan Masjid", address: "Kuniyamuthur, Coimbatore", distance: "2.4 km", lat: 10.9750, lng: 76.9380 },
+  { id: "m11", name: "Thajul Islam Sunnath Hanafi Jamath", address: "Palakkad Main Road", distance: "38.5 km", lat: 10.7867, lng: 76.6548 },
+  { id: "m12", name: "Hidhayathul Islam Masjid", address: "Coimbatore, Tamil Nadu", distance: "5.0 km", lat: 11.0020, lng: 76.9600 },
 ];
 
 const MOCK_HALAL: MapPlace[] = [
-  { id: "1", name: "Al-Rehman Family Restaurant (Halal)", address: "Palakkad Bypass Road", distance: "0.8 km", lat: 10.7960, lng: 76.6420 },
-  { id: "2", name: "Kabab Magic & Biryani", address: "Kuniyamuthur, Coimbatore", distance: "1.2 km", lat: 10.9790, lng: 76.9410 },
-  { id: "3", name: "Tandoori Knights", address: "Palakkad Main Road", distance: "1.5 km", lat: 10.7840, lng: 76.6590 },
-  { id: "4", name: "Madina Grill & Shawarma", address: "Coimbatore Junction", distance: "1.9 km", lat: 11.0120, lng: 76.9620 },
-  { id: "5", name: "Rahmath Biryani Hotel", address: "Podanur Road", distance: "2.3 km", lat: 10.9630, lng: 76.9690 },
-  { id: "6", name: "Zam Zam Arabic Restaurant", address: "Town Hall, Coimbatore", distance: "2.8 km", lat: 11.0150, lng: 76.9590 },
+  { id: "f1", name: "Rahmath Biryani Hotel", address: "Podanur Road", distance: "1.7 km", lat: 10.9620, lng: 76.9690 },
+  { id: "f2", name: "Kabab Magic & Biryani", address: "Kuniyamuthur, Coimbatore", distance: "3.1 km", lat: 10.9790, lng: 76.9410 },
+  { id: "f3", name: "Madina Grill & Shawarma", address: "Coimbatore Junction", distance: "6.4 km", lat: 11.0120, lng: 76.9620 },
+  { id: "f4", name: "Zam Zam Arabic Restaurant", address: "Town Hall, Coimbatore", distance: "6.7 km", lat: 11.0150, lng: 76.9590 },
+  { id: "f5", name: "Tandoori Knights", address: "Palakkad Main Road", distance: "37.5 km", lat: 10.7840, lng: 76.6590 },
+  { id: "f6", name: "Al-Rehman Family Restaurant (Halal)", address: "Palakkad Bypass Road", distance: "38.5 km", lat: 10.7960, lng: 76.6420 },
+  { id: "f7", name: "Al-MAJLIS Kudil Restaurant", address: "Podanur, Coimbatore", distance: "1.9 km", lat: 10.9650, lng: 76.9680 },
+  { id: "f8", name: "Street Arabiya Podanur", address: "Podanur, Coimbatore", distance: "2.0 km", lat: 10.9640, lng: 76.9710 },
+  { id: "f9", name: "Halaal Foods", address: "Kuniyamuthur, Coimbatore", distance: "2.3 km", lat: 10.9850, lng: 76.9460 },
+];
+
+const MOCK_BUTCHERS: MapPlace[] = [
+  { id: "b1", name: "HALAL CHICKEN Center", address: "Easwar Nagar, Podanur, Coimbatore", distance: "1.4 km", lat: 10.9550, lng: 76.9750 },
+  { id: "b2", name: "Zabiha Halal Meat Shop", address: "Kuniyamuthur, Coimbatore", distance: "1.8 km", lat: 10.9800, lng: 76.9430 },
+  { id: "b3", name: "Fresh Halal Mutton & Beef Stall", address: "Podanur Main Road, Coimbatore", distance: "2.0 km", lat: 10.9630, lng: 76.9660 },
+  { id: "b4", name: "Easwar Nagar Halal Poultry Farm", address: "Easwar Nagar, Coimbatore", distance: "2.2 km", lat: 10.9590, lng: 76.9710 },
+  { id: "b5", name: "Al Halali Meat Shop", address: "Kuniyamuthur, Coimbatore", distance: "2.5 km", lat: 10.9810, lng: 76.9440 },
 ];
 
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): string {
-  const R = 6371; // Radius of the earth in km
+  const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a =
@@ -69,9 +82,89 @@ export default function FinderScreen() {
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [isMapView, setIsMapView] = useState(false);
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [halalSubTab, setHalalSubTab] = useState<"food" | "butcher">("food");
 
-  const title = type === "halal" ? "Halal Food Finder" : "Mosque Finder";
-  const icon = type === "halal" ? "food-fork-drink" : "mosque";
+  const title = type === "halal"
+    ? (halalSubTab === "food" ? "Halal Food Finder" : "Halal Meat Shop Finder")
+    : "Masjid Finder";
+
+  const iconName = type === "halal"
+    ? (halalSubTab === "food" ? "food-fork-drink" : "store-outline")
+    : "mosque";
+
+  const fetchPlaces = useCallback(async (loc: { lat: number; lon: number; city?: string }) => {
+    setLoading(true);
+
+    let queryTerm: string;
+    if (type === "mosque") {
+      queryTerm = "mosque OR masjid";
+    } else if (halalSubTab === "food") {
+      queryTerm = "halal restaurant OR halal food";
+    } else {
+      queryTerm = "halal butcher OR halal meat OR chicken stall";
+    }
+
+    const delta = 0.15;
+    const viewbox = `${loc.lon - delta},${loc.lat + delta},${loc.lon + delta},${loc.lat - delta}`;
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryTerm)}&bounded=1&viewbox=${viewbox}&addressdetails=1`;
+
+    let fetchedData: any[] = [];
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Islamic_Hikmah_App/1.0',
+          'Accept-Language': 'en'
+        }
+      });
+      fetchedData = await res.json();
+    } catch (fetchErr) {
+      console.warn("Nominatim fetch failed, using fallback:", fetchErr);
+    }
+
+    if (Array.isArray(fetchedData) && fetchedData.length > 0) {
+      const parsed = fetchedData.map((item: any, index: number) => {
+        const name = item.name || item.display_name.split(",")[0] || (type === "halal" ? "Halal Place" : "Mosque");
+        let address = item.display_name;
+        if (address.startsWith(name + ",")) {
+          address = address.substring(name.length + 1).trim();
+        }
+        const itemLat = parseFloat(item.lat);
+        const itemLng = parseFloat(item.lon);
+        return {
+          id: item.place_id?.toString() || index.toString(),
+          name,
+          address,
+          distance: getDistance(loc.lat, loc.lon, itemLat, itemLng),
+          lat: itemLat,
+          lng: itemLng
+        };
+      });
+      // Sort by distance
+      parsed.sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
+      setPlaces(parsed);
+    } else {
+      // Fallback to high-fidelity mock places
+      let mockList: MapPlace[];
+      if (type === "mosque") {
+        mockList = MOCK_MOSQUES;
+      } else if (halalSubTab === "food") {
+        mockList = MOCK_HALAL;
+      } else {
+        mockList = MOCK_BUTCHERS;
+      }
+      const updatedMock = mockList.map(item => ({
+        ...item,
+        distance: getDistance(loc.lat, loc.lon, item.lat, item.lng)
+      }));
+      updatedMock.sort((a, b) => {
+        const getVal = (s: string) => parseFloat(s.split(" ")[0]);
+        return getVal(a.distance) - getVal(b.distance);
+      });
+      setPlaces(updatedMock);
+    }
+
+    setLoading(false);
+  }, [type, halalSubTab]);
 
   useEffect(() => {
     (async () => {
@@ -79,64 +172,16 @@ export default function FinderScreen() {
         const loc = await resolveUserLocation();
         setCity(loc.city || "Nearby");
         setUserCoords({ lat: loc.lat, lon: loc.lon });
-
-        const queryTerm = type === "halal" ? "halal restaurant" : "mosque";
-        const delta = 0.15; // ~15km view box search
-        const viewbox = `${loc.lon - delta},${loc.lat + delta},${loc.lon + delta},${loc.lat - delta}`;
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryTerm)}&bounded=1&viewbox=${viewbox}&addressdetails=1`;
-
-        let fetchedData = [];
-        try {
-          const res = await fetch(url, {
-            headers: {
-              'User-Agent': 'Islamic_Hikmah_App/1.0',
-              'Accept-Language': 'en'
-            }
-          });
-          fetchedData = await res.json();
-        } catch (fetchErr) {
-          console.warn("Nominatim fetch failed, using fallback:", fetchErr);
-        }
-
-        if (Array.isArray(fetchedData) && fetchedData.length > 0) {
-          const parsed = fetchedData.map((item: any, index: number) => {
-            const name = item.name || item.display_name.split(",")[0] || (type === "halal" ? "Halal Place" : "Mosque");
-            let address = item.display_name;
-            if (address.startsWith(name + ",")) {
-              address = address.substring(name.length + 1).trim();
-            }
-            const itemLat = parseFloat(item.lat);
-            const itemLng = parseFloat(item.lon);
-            return {
-              id: item.place_id?.toString() || index.toString(),
-              name,
-              address,
-              distance: getDistance(loc.lat, loc.lon, itemLat, itemLng),
-              lat: itemLat,
-              lng: itemLng
-            };
-          });
-          setPlaces(parsed);
-        } else {
-          // Fallback to high-fidelity mock places with updated distances
-          const mockList = type === "halal" ? MOCK_HALAL : MOCK_MOSQUES;
-          const updatedMock = mockList.map(item => ({
-            ...item,
-            distance: getDistance(loc.lat, loc.lon, item.lat, item.lng)
-          }));
-          updatedMock.sort((a, b) => {
-            const getVal = (s: string) => parseFloat(s.split(" ")[0]);
-            return getVal(a.distance) - getVal(b.distance);
-          });
-          setPlaces(updatedMock);
-        }
+        await fetchPlaces({ lat: loc.lat, lon: loc.lon, city: loc.city });
       } catch (e) {
         console.error(e);
-      } finally {
-        setLoading(false);
+        // Still show mock data with default coords if location fails
+        const defaultLoc = { lat: 10.979, lon: 76.945 };
+        setUserCoords(defaultLoc);
+        await fetchPlaces(defaultLoc);
       }
     })();
-  }, [type]);
+  }, [fetchPlaces]);
 
   const handleOpenPlace = (place: MapPlace) => {
     const query = encodeURIComponent(`${place.name} ${place.address}`);
@@ -151,7 +196,7 @@ export default function FinderScreen() {
   };
 
   const renderItem = ({ item }: { item: MapPlace }) => (
-    <Pressable 
+    <Pressable
       onPress={() => handleOpenPlace(item)}
       style={({ pressed }) => [
         styles.card,
@@ -160,14 +205,18 @@ export default function FinderScreen() {
       ]}
     >
       <View style={[styles.iconWrap, { backgroundColor: colors.brand + "18" }]}>
-        <MaterialCommunityIcons name={icon} size={22} color={colors.brand} />
+        <MaterialCommunityIcons name={iconName} size={22} color={colors.brand} />
       </View>
-      
+
       <View style={{ flex: 1 }}>
-        <Text style={[styles.placeName, { color: colors.onSurface }]}>{item.name}</Text>
-        <Text style={[styles.placeAddress, { color: colors.onSurfaceMuted }]}>{item.address}</Text>
+        <Text style={[styles.placeName, { color: colors.onSurface }]} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={[styles.placeAddress, { color: colors.onSurfaceMuted }]} numberOfLines={1}>
+          {item.address}
+        </Text>
       </View>
-      
+
       <View style={styles.distanceWrap}>
         <Text style={[styles.distanceText, { color: colors.brand }]}>{item.distance}</Text>
         <MaterialCommunityIcons name="navigation" size={14} color={colors.brand} style={{ marginTop: 2 }} />
@@ -175,12 +224,15 @@ export default function FinderScreen() {
     </Pressable>
   );
 
-  // Generate Google Maps Embed URL
+  // Google Maps Embed URL
   const googleMapsUrl = useMemo(() => {
     if (!userCoords) return "";
-    const query = type === "halal" ? "halal+restaurant+OR+halal+food" : "mosque+OR+masjid";
+    let query = "mosque+OR+masjid";
+    if (type === "halal") {
+      query = halalSubTab === "food" ? "halal+restaurant+OR+halal+food" : "halal+butcher+OR+halal+meat";
+    }
     return `https://maps.google.com/maps?q=${query}&ll=${userCoords.lat},${userCoords.lon}&z=14&output=embed`;
-  }, [userCoords, type]);
+  }, [userCoords, type, halalSubTab]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
@@ -193,25 +245,55 @@ export default function FinderScreen() {
           <Text style={[styles.title, { color: colors.onSurface }]}>{title}</Text>
           <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>📍 {city}</Text>
         </View>
-        <Pressable onPress={() => setIsMapView(!isMapView)} hitSlop={10}>
-          <MaterialCommunityIcons 
-            name={isMapView ? "format-list-bulleted" : "map-marker-radius-outline"} 
-            size={24} 
-            color={colors.onSurface} 
-          />
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+          <Pressable onPress={() => setIsMapView(!isMapView)} hitSlop={10}>
+            <MaterialCommunityIcons
+              name={isMapView ? "format-list-bulleted" : "map-marker-radius-outline"}
+              size={24}
+              color={colors.onSurface}
+            />
+          </Pressable>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
+
+      {/* Halal Sub-segment selector */}
+      {type === "halal" && !isMapView && (
+        <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
+          <Pressable
+            onPress={() => setHalalSubTab("food")}
+            style={[styles.tabItem, halalSubTab === "food" && { borderBottomColor: colors.brand }]}
+          >
+            <Text style={[styles.tabText, { color: halalSubTab === "food" ? colors.brand : colors.onSurfaceMuted }]}>
+              Halal Restaurants
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setHalalSubTab("butcher")}
+            style={[styles.tabItem, halalSubTab === "butcher" && { borderBottomColor: colors.brand }]}
+          >
+            <Text style={[styles.tabText, { color: halalSubTab === "butcher" ? colors.brand : colors.onSurfaceMuted }]}>
+              Halal Meat Shops
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.brand} size="large" />
         </View>
       ) : isMapView ? (
-        // Map Mode - Dynamic Google Maps Embed
         Platform.OS === 'web' ? (
-          <iframe 
-            src={googleMapsUrl} 
-            style={{ flex: 1, border: 'none', width: '100%', height: '100%' }} 
+          <iframe
+            src={googleMapsUrl}
+            style={{ flex: 1, border: 'none', width: '100%', height: '100%' }}
+            title="Maps Embed"
           />
         ) : (
           <WebView
@@ -221,7 +303,6 @@ export default function FinderScreen() {
           />
         )
       ) : (
-        // List Mode
         <FlatList
           data={places}
           keyExtractor={(item) => item.id}
@@ -230,7 +311,7 @@ export default function FinderScreen() {
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Text style={{ color: colors.onSurfaceMuted }}>No results found</Text>
+              <Text style={{ color: colors.onSurfaceMuted }}>No results found nearby</Text>
             </View>
           }
         />
@@ -274,4 +355,19 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   distanceText: { fontSize: 12, fontWeight: "800" },
+  tabRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+  },
+  tabItem: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
 });

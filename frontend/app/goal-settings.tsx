@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Switch, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Switch, Alert, Platform, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,6 +7,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
+import { 
+  getActiveGoalIds, 
+  getGoalNotifTimes, 
+  scheduleGoalNotifications 
+} from "@/src/storage";
 
 const STORAGE_KEYS = {
   logReminder: "hikmah:settings:log-reminder",
@@ -30,6 +35,7 @@ export default function GoalSettingsScreen() {
   const [selectedAdhkar, setSelectedAdhkar] = useState(3);
   const [dhikrReminder, setDhikrReminder] = useState(true);
   const [hapticEffect, setHapticEffect] = useState(true);
+  const [activePicker, setActivePicker] = useState<"duration" | "schedule" | "adhkar" | null>(null);
 
   // Load settings on mount
   useEffect(() => {
@@ -62,8 +68,15 @@ export default function GoalSettingsScreen() {
   const saveSetting = async (key: string, value: string) => {
     try {
       await AsyncStorage.setItem(key, value);
+      
+      // Auto-reschedule notifications to apply setting changes instantly
+      const activeIds = await getActiveGoalIds();
+      const timingsRaw = await AsyncStorage.getItem("last_fetched_timings");
+      const prayerTimings = timingsRaw ? JSON.parse(timingsRaw) : {};
+      const goalTimes = await getGoalNotifTimes();
+      await scheduleGoalNotifications(activeIds, prayerTimings, goalTimes);
     } catch (e) {
-      console.error("Failed to save setting:", e);
+      console.error("Failed to save setting and reschedule:", e);
     }
   };
 
@@ -95,50 +108,21 @@ export default function GoalSettingsScreen() {
     if (hapticEffect) {
       Haptics.selectionAsync().catch(() => {});
     }
-    Alert.alert(
-      "Recitation Duration",
-      "Choose daily recitation goal duration:",
-      [
-        { text: "5 minutes", onPress: () => { setRecitationDuration(5); saveSetting(STORAGE_KEYS.recitationDuration, "5"); } },
-        { text: "10 minutes", onPress: () => { setRecitationDuration(10); saveSetting(STORAGE_KEYS.recitationDuration, "10"); } },
-        { text: "15 minutes", onPress: () => { setRecitationDuration(15); saveSetting(STORAGE_KEYS.recitationDuration, "15"); } },
-        { text: "30 minutes", onPress: () => { setRecitationDuration(30); saveSetting(STORAGE_KEYS.recitationDuration, "30"); } },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+    setActivePicker("duration");
   };
 
   const handleScheduleChange = () => {
     if (hapticEffect) {
       Haptics.selectionAsync().catch(() => {});
     }
-    Alert.alert(
-      "Schedule Reminder",
-      "Choose reminder time:",
-      [
-        { text: "06:00 PM", onPress: () => { setScheduleReminder("06:00 PM"); saveSetting(STORAGE_KEYS.scheduleReminder, "06:00 PM"); } },
-        { text: "08:00 PM", onPress: () => { setScheduleReminder("08:00 PM"); saveSetting(STORAGE_KEYS.scheduleReminder, "08:00 PM"); } },
-        { text: "09:00 PM", onPress: () => { setScheduleReminder("09:00 PM"); saveSetting(STORAGE_KEYS.scheduleReminder, "09:00 PM"); } },
-        { text: "10:00 PM", onPress: () => { setScheduleReminder("10:00 PM"); saveSetting(STORAGE_KEYS.scheduleReminder, "10:00 PM"); } },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+    setActivePicker("schedule");
   };
 
   const handleAdhkarChange = () => {
     if (hapticEffect) {
       Haptics.selectionAsync().catch(() => {});
     }
-    Alert.alert(
-      "Select Daily Adhkar",
-      "Choose number of daily Adhkar goals:",
-      [
-        { text: "1 Adhkar", onPress: () => { setSelectedAdhkar(1); saveSetting(STORAGE_KEYS.selectedAdhkar, "1"); } },
-        { text: "3 Adhkar", onPress: () => { setSelectedAdhkar(3); saveSetting(STORAGE_KEYS.selectedAdhkar, "3"); } },
-        { text: "5 Adhkar", onPress: () => { setSelectedAdhkar(5); saveSetting(STORAGE_KEYS.selectedAdhkar, "5"); } },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+    setActivePicker("adhkar");
   };
 
   return (
@@ -238,6 +222,110 @@ export default function GoalSettingsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Custom dropdown picker modal */}
+      <Modal
+        visible={activePicker !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActivePicker(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setActivePicker(null)}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
+                {activePicker === "duration" 
+                  ? "Recitation Duration" 
+                  : activePicker === "schedule" 
+                  ? "Schedule Reminder" 
+                  : "Select Daily Adhkar"}
+              </Text>
+              <Pressable onPress={() => setActivePicker(null)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+            
+            <View style={{ width: "100%", gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+              {activePicker === "duration" && [
+                { val: 5, label: "5 minutes" },
+                { val: 10, label: "10 minutes" },
+                { val: 15, label: "15 minutes" },
+                { val: 30, label: "30 minutes" },
+              ].map((opt) => {
+                const isActive = recitationDuration === opt.val;
+                return (
+                  <Pressable
+                    key={opt.val}
+                    onPress={() => {
+                      if (hapticEffect) Haptics.selectionAsync().catch(() => {});
+                      setRecitationDuration(opt.val);
+                      saveSetting(STORAGE_KEYS.recitationDuration, String(opt.val));
+                      setActivePicker(null);
+                    }}
+                    style={[styles.modalRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.modalRowLabel, { color: colors.onSurface, fontWeight: isActive ? "700" : "400" }]}>
+                      {opt.label}
+                    </Text>
+                    {isActive && <MaterialCommunityIcons name="check" size={18} color={colors.brand} />}
+                  </Pressable>
+                );
+              })}
+
+              {activePicker === "schedule" && [
+                "06:00 PM",
+                "08:00 PM",
+                "09:00 PM",
+                "10:00 PM",
+              ].map((opt) => {
+                const isActive = scheduleReminder === opt;
+                return (
+                  <Pressable
+                    key={opt}
+                    onPress={() => {
+                      if (hapticEffect) Haptics.selectionAsync().catch(() => {});
+                      setScheduleReminder(opt);
+                      saveSetting(STORAGE_KEYS.scheduleReminder, opt);
+                      setActivePicker(null);
+                    }}
+                    style={[styles.modalRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.modalRowLabel, { color: colors.onSurface, fontWeight: isActive ? "700" : "400" }]}>
+                      {opt}
+                    </Text>
+                    {isActive && <MaterialCommunityIcons name="check" size={18} color={colors.brand} />}
+                  </Pressable>
+                );
+              })}
+
+              {activePicker === "adhkar" && [
+                { val: 1, label: "1 Adhkar" },
+                { val: 3, label: "3 Adhkars" },
+                { val: 5, label: "5 Adhkars" },
+              ].map((opt) => {
+                const isActive = selectedAdhkar === opt.val;
+                return (
+                  <Pressable
+                    key={opt.val}
+                    onPress={() => {
+                      if (hapticEffect) Haptics.selectionAsync().catch(() => {});
+                      setSelectedAdhkar(opt.val);
+                      saveSetting(STORAGE_KEYS.selectedAdhkar, String(opt.val));
+                      setActivePicker(null);
+                    }}
+                    style={[styles.modalRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.modalRowLabel, { color: colors.onSurface, fontWeight: isActive ? "700" : "400" }]}>
+                      {opt.label}
+                    </Text>
+                    {isActive && <MaterialCommunityIcons name="check" size={18} color={colors.brand} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -283,5 +371,40 @@ const styles = StyleSheet.create({
   valueText: {
     fontSize: 14,
     marginRight: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: theme.spacing.lg,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: theme.spacing.lg,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  modalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+  },
+  modalRowLabel: {
+    fontSize: 14,
   },
 });

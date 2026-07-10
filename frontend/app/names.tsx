@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, FlatList, Share, Dimensions, ScrollView, Modal } from "react-native";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { View, Text, StyleSheet, Pressable, FlatList, Share, Dimensions, ScrollView, Modal, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAudioPlayer } from "expo-audio";
+import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
@@ -13,6 +13,13 @@ import { ALLAH_NAMES, AllahName } from "@/src/data/names";
 const { width } = Dimensions.get("window");
 const GRID_ITEM_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md * 2) / 3;
 
+function formatTime(secs: number) {
+  if (isNaN(secs) || secs === undefined || secs === null) return "00:00";
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 export default function AllahNamesScreen() {
   const router = useRouter();
   const { colors, language } = useTheme();
@@ -21,7 +28,18 @@ export default function AllahNamesScreen() {
   const [playingNumber, setPlayingNumber] = useState<number | null>(null);
   const [selectedName, setSelectedName] = useState<AllahName | null>(null);
 
+  // Play All state (Single MP3 track of Mishary Rashid Alafasy)
+  const [isPlayingAll, setIsPlayingAll] = useState(false);
+
+  const flatListRef = useRef<FlatList>(null);
   const player = useAudioPlayer(null);
+  const status = useAudioPlayerStatus(player);
+
+  const [progressBarWidth, setProgressBarWidth] = useState(0);
+
+  const currentTime = status?.currentTime || 0;
+  const duration = status?.duration || 0;
+  const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   // Stop audio on unmount
   useEffect(() => {
@@ -40,23 +58,72 @@ export default function AllahNamesScreen() {
     }
   };
 
+  // Play individual Name audio (raw CDN MP3 files)
   const playNameAudio = useCallback(async (item: AllahName) => {
     Haptics.selectionAsync().catch(() => {});
+    if (isPlayingAll) {
+      // Stop full track if active
+      setIsPlayingAll(false);
+    }
     try {
       setPlayingNumber(item.number);
-      // Use the reliable Github raw CDN for name audios
       const audioUrl = `https://raw.githubusercontent.com/soachishti/Asma-ul-Husna/master/audio/${item.number}.mp3`;
       
       player.replace({ uri: audioUrl });
       player.play();
     } catch (err) {
       console.error("Failed to play name audio:", err);
-    } finally {
-      setTimeout(() => {
-        setPlayingNumber(current => current === item.number ? null : current);
-      }, 4000);
+    }
+  }, [player, isPlayingAll]);
+
+  // Play full 99 names track (Alafasy)
+  const startPlayAll = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setPlayingNumber(null);
+    setIsPlayingAll(true);
+    try {
+      player.replace(require("../assets/audio/asma_ul_husna.mp3"));
+      player.play();
+    } catch (err) {
+      console.error("Failed to play full Asma ul Husna audio:", err);
     }
   }, [player]);
+
+  const pausePlayAll = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    player.pause();
+  }, [player]);
+
+  const resumePlayAll = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    player.play();
+  }, [player]);
+
+  const stopPlayAll = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    setIsPlayingAll(false);
+    player.pause();
+  }, [player]);
+
+  const handleSeek = (e: any) => {
+    if (progressBarWidth > 0 && duration) {
+      const pct = Math.max(0, Math.min(1, e.nativeEvent.locationX / progressBarWidth));
+      const targetSeconds = pct * duration;
+      player.seekTo(targetSeconds);
+    }
+  };
+
+  const skipForward = useCallback(() => {
+    if (duration > 0) {
+      const nextTime = Math.min(duration, currentTime + 10);
+      player.seekTo(nextTime);
+    }
+  }, [currentTime, duration, player]);
+
+  const skipBackward = useCallback(() => {
+    const prevTime = Math.max(0, currentTime - 10);
+    player.seekTo(prevTime);
+  }, [currentTime, player]);
 
   const renderListItem = useCallback(({ item }: { item: AllahName }) => {
     const isPlaying = playingNumber === item.number;
@@ -118,21 +185,53 @@ export default function AllahNamesScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
+      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
         <Text style={[styles.title, { color: colors.onSurface }]}>Asma Al-Husna</Text>
-        <Pressable onPress={() => setIsGrid((g) => !g)} hitSlop={10}>
-          <MaterialCommunityIcons
-            name={isGrid ? "view-list-outline" : "view-grid-outline"}
-            size={24}
-            color={colors.brand}
-          />
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+          <Pressable onPress={() => setIsGrid((g) => !g)} hitSlop={10}>
+            <MaterialCommunityIcons
+              name={isGrid ? "view-list-outline" : "view-grid-outline"}
+              size={24}
+              color={colors.brand}
+            />
+          </Pressable>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
+      {/* Play Asma Al Husna Banner */}
+      {!isPlayingAll && (
+        <Pressable 
+          onPress={startPlayAll}
+          style={({ pressed }) => [
+            styles.playAllBanner,
+            { backgroundColor: colors.brand + "18", borderColor: colors.brand + "33" },
+            pressed && { opacity: 0.85 }
+          ]}
+        >
+          <View style={[styles.playIconCircle, { backgroundColor: colors.brand }]}>
+            <MaterialCommunityIcons name="play" size={24} color="#FFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.playBannerTitle, { color: colors.onSurface }]}>Play Asma Al Husna</Text>
+            <Text style={[styles.playBannerSub, { color: colors.onSurfaceMuted }]}>Listen to all 99 Names of Allah recited in one go</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={24} color={colors.brand} />
+        </Pressable>
+      )}
+
+      {/* Names List */}
       <FlatList
+        ref={flatListRef}
         key={isGrid ? "grid" : "list"}
         data={ALLAH_NAMES}
         keyExtractor={(item) => String(item.number)}
@@ -141,11 +240,63 @@ export default function AllahNamesScreen() {
         contentContainerStyle={{
           padding: theme.spacing.lg,
           gap: theme.spacing.md,
-          paddingBottom: 40,
+          paddingBottom: isPlayingAll ? 130 : 40,
         }}
         columnWrapperStyle={isGrid ? { gap: theme.spacing.md } : null}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* ─── Premium Floating Music Player Bar (Full track) ─── */}
+      {isPlayingAll && (
+        <View style={[styles.floatingPlayer, { backgroundColor: colors.surfaceSecondary, borderTopColor: colors.border }]}>
+          {/* Progress seekable timeline bar */}
+          <Pressable 
+            onPress={handleSeek}
+            onLayout={(e) => setProgressBarWidth(e.nativeEvent.layout.width)}
+            style={styles.playerProgressBg}
+          >
+            <View style={[styles.playerProgressFill, { backgroundColor: colors.brand, width: `${progressPercentage}%` }]} />
+          </Pressable>
+
+          <View style={styles.playerContent}>
+            {/* Left track info */}
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={[styles.playerTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                Asma-ul-Husna Recitation
+              </Text>
+              <Text style={[styles.playerSubtitle, { color: colors.brand }]} numberOfLines={1}>
+                Sheikh Mishary Rashid Alafasy
+              </Text>
+              <Text style={[styles.playerTimeText, { color: colors.onSurfaceMuted }]}>
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </Text>
+            </View>
+
+            {/* Player Controls */}
+            <View style={styles.playerControls}>
+              <Pressable onPress={skipBackward} style={styles.controlBtn} hitSlop={6}>
+                <MaterialCommunityIcons name="rewind" size={28} color={colors.onSurface} />
+              </Pressable>
+
+              <Pressable 
+                onPress={player.playing ? pausePlayAll : resumePlayAll} 
+                style={[styles.playerPlayBtn, { backgroundColor: colors.brand }]}
+                hitSlop={6}
+              >
+                <MaterialCommunityIcons name={player.playing ? "pause" : "play"} size={26} color="#FFF" />
+              </Pressable>
+
+              <Pressable onPress={skipForward} style={styles.controlBtn} hitSlop={6}>
+                <MaterialCommunityIcons name="fast-forward" size={28} color={colors.onSurface} />
+              </Pressable>
+
+              <Pressable onPress={stopPlayAll} style={[styles.controlBtn, { marginLeft: 4 }]} hitSlop={6}>
+                <MaterialCommunityIcons name="close-circle-outline" size={24} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Name Details Modal */}
       <Modal
@@ -222,6 +373,31 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
   },
   title: { fontSize: 20, fontWeight: "700" },
+  playAllBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: theme.spacing.lg,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    gap: 12,
+    marginBottom: theme.spacing.sm,
+  },
+  playIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playBannerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  playBannerSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
   listCard: {
     padding: theme.spacing.md,
     borderRadius: theme.radius.lg,
@@ -258,6 +434,71 @@ const styles = StyleSheet.create({
   },
   arabicGridText: { fontFamily: "AmiriBold", fontSize: 22 },
   translitGridText: { fontSize: 11, fontWeight: "700", marginTop: 8 },
+
+  // Floating Player
+  floatingPlayer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopWidth: 1,
+    paddingBottom: 24,
+    paddingTop: 8,
+    paddingHorizontal: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  playerProgressBg: {
+    height: 4,
+    backgroundColor: "rgba(128,128,128,0.15)",
+    borderRadius: 2,
+    marginBottom: 8,
+  },
+  playerProgressFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
+  playerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  playerTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  playerSubtitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  playerTimeText: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+  playerControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  controlBtn: {
+    padding: 4,
+  },
+  playerPlayBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
 
   modalOverlay: {
     flex: 1,

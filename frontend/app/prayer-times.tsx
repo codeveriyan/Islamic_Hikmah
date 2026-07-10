@@ -6,11 +6,26 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
+import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
-import { resolveUserLocation, getPrayerSettings, savePrayerSettings, PrayerSettings, schedulePrayerNotifications, scheduleGoalNotifications, getActiveGoalIds, getGoalNotifTimes } from "@/src/storage";
+import { useAuth } from "@/src/AuthContext";
+import { DEFAULT_GOALS } from "@/src/data/goals";
+import { 
+  resolveUserLocation, 
+  getPrayerSettings, 
+  savePrayerSettings, 
+  PrayerSettings, 
+  schedulePrayerNotifications, 
+  scheduleGoalNotifications, 
+  getActiveGoalIds, 
+  getGoalNotifTimes,
+  getGoogleCalendarConnected,
+  setGoogleCalendarConnected,
+  getCompletedGoals,
+} from "@/src/storage";
 
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Qiyam"];
 const PRAYER_ICONS: Record<string, string> = {
@@ -57,6 +72,8 @@ export default function PrayerTimesScreen() {
   const router = useRouter();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
+  const { profile } = useAuth();
+  
   const [times, setTimes] = useState<Record<string, string> | null>(null);
   const [city, setCity] = useState("");
   const [date, setDate] = useState("");
@@ -67,6 +84,15 @@ export default function PrayerTimesScreen() {
   const [showJuristicPicker, setShowJuristicPicker] = useState(false);
   const [showOffsetPicker, setShowOffsetPicker] = useState(false);
   const [now, setNow] = useState(new Date());
+  
+  const [calendarConnected, setCalendarConnected] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const connected = await getGoogleCalendarConnected();
+      setCalendarConnected(connected);
+    })();
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -131,6 +157,72 @@ export default function PrayerTimesScreen() {
       await load(s);
     })();
   }, []);
+
+  const handleCalendarSync = async () => {
+    if (profile?.tier !== "premium") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      router.push("/premium");
+      return;
+    }
+
+    if (calendarConnected) {
+      Haptics.selectionAsync().catch(() => {});
+      Alert.alert(
+        "Disconnect Google Calendar 🗓️",
+        "Are you sure you want to disconnect Google Calendar from syncing with your Hijri Calendar?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Disconnect",
+            style: "destructive",
+            onPress: async () => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+              setCalendarConnected(false);
+              await setGoogleCalendarConnected(false);
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setCalendarConnected(true);
+    await setGoogleCalendarConnected(true);
+
+    try {
+      const activeIds = await getActiveGoalIds();
+      const completedIds = await getCompletedGoals();
+      const activeGoals = DEFAULT_GOALS.filter(g => activeIds.includes(g.id));
+      
+      const hijriDate = date;
+      const today = new Date();
+      const dateLabel = today.toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+      const goalLines = activeGoals.map(g => {
+        const done = completedIds.includes(g.id);
+        return `${done ? "✅" : "⬜"} ${g.title}`;
+      }).join("\n");
+
+      const eventTitle = encodeURIComponent(`Islamic Hikmah: Daily Goals — ${hijriDate}`);
+      const eventDetails = encodeURIComponent(
+        `📅 ${dateLabel}\n🕌 Hijri: ${hijriDate}\n\n🎯 Today's Goals:\n${goalLines}\n\nSynced from Islamic Hikmah App`
+      );
+      const startDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const endDate = startDate;
+      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
+
+      const { Linking } = require("react-native");
+      await Linking.openURL(calUrl);
+    } catch (e) {
+      console.warn("Calendar sync error:", e);
+    }
+
+    Alert.alert(
+      "Sync Successful 🌙",
+      `Your daily goals have been synced to Google Calendar with today's Hijri date. Goals are now saved in both your Hijri calendar and Google Calendar!`
+    );
+  };
 
   const getPrayerTime = useCallback((p: string) => {
     if (!times) return "";
@@ -249,6 +341,9 @@ export default function PrayerTimesScreen() {
               <Pressable onPress={() => router.push("/qibla" as any)} hitSlop={10}>
                 <MaterialCommunityIcons name="compass" size={26} color="#fff" />
               </Pressable>
+              <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+                <MaterialCommunityIcons name="home-outline" size={24} color="#fff" />
+              </Pressable>
               <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
                 <MaterialCommunityIcons name="cog-outline" size={24} color="#fff" />
               </Pressable>
@@ -294,6 +389,28 @@ export default function PrayerTimesScreen() {
           removeClippedSubviews
           ListFooterComponent={
             <View style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}>
+              {/* Google Calendar Card */}
+              <View style={[styles.calendarCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1 }]}>
+                <View style={styles.calendarHeader}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={[styles.calendarTitle, { color: colors.onSurface }]}>
+                      Connect your Google Calendar with Hijri Calendar to sync complete goals.
+                    </Text>
+                  </View>
+                </View>
+                <Pressable 
+                  onPress={handleCalendarSync}
+                  style={[
+                    styles.calendarBtn, 
+                    { backgroundColor: calendarConnected ? "#22c55e" : colors.brand }
+                  ]}
+                >
+                  <Text style={styles.calendarBtnTxt}>
+                    {calendarConnected ? "Connected" : "Start sync"}
+                  </Text>
+                </Pressable>
+              </View>
+
               {/* Juristic Method */}
               <Pressable onPress={() => setShowJuristicPicker(true)}
                 style={[styles.settingRow, { backgroundColor: colors.surfaceSecondary }]}>
@@ -469,4 +586,31 @@ const styles = StyleSheet.create({
   pickerRow: { flexDirection: "row", alignItems: "center", padding: theme.spacing.lg, borderRadius: theme.radius.lg, marginBottom: 4 },
   pickerName: { fontSize: 15, fontWeight: "600" },
   pickerNote: { fontSize: 12, marginTop: 2 },
+  calendarCard: {
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
+  },
+  calendarHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  calendarTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  calendarBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  calendarBtnTxt: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
 });

@@ -490,10 +490,138 @@ export default function SettingsScreen() {
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
         <Text style={[styles.title, { color: colors.onSurface }]}>{t("settings")}</Text>
-        <View style={{ width: 28 }} />
+        <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="settings-home">
+          <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md }}>
+        {/* Quick Settings Section */}
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, color: colors.brand, marginBottom: 12 }}>
+            Quick Settings
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            {/* 1. Dark Mode */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setMode(mode === "dark" ? "light" : "dark");
+              }}
+              style={{
+                flex: 1,
+                minWidth: "45%",
+                backgroundColor: colors.surfaceSecondary,
+                padding: 12,
+                borderRadius: theme.radius.md,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name={mode === "dark" ? "weather-night" : "weather-sunny"} size={20} color={colors.brand} />
+                <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Dark Mode</Text>
+              </View>
+              <Switch
+                value={mode === "dark"}
+                onValueChange={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setMode(mode === "dark" ? "light" : "dark");
+                }}
+                trackColor={{ true: colors.brand }}
+              />
+            </Pressable>
+
+            {/* 2. Background Azaan */}
+            <Pressable
+              onPress={() => handleToggleBgAzaan(!bgAzaan)}
+              style={{
+                flex: 1,
+                minWidth: "45%",
+                backgroundColor: colors.surfaceSecondary,
+                padding: 12,
+                borderRadius: theme.radius.md,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="bell-ring-outline" size={20} color={colors.brand} />
+                <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Adhan Alert</Text>
+              </View>
+              <Switch
+                value={bgAzaan}
+                onValueChange={(v) => handleToggleBgAzaan(v)}
+                trackColor={{ true: colors.brand }}
+              />
+            </Pressable>
+
+            {/* 3. Show Translation */}
+            <Pressable
+              onPress={() => handleToggleTranslation(!translationEnabled)}
+              style={{
+                flex: 1,
+                minWidth: "45%",
+                backgroundColor: colors.surfaceSecondary,
+                padding: 12,
+                borderRadius: theme.radius.md,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="translate" size={20} color={colors.brand} />
+                <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Translation</Text>
+              </View>
+              <Switch
+                value={translationEnabled}
+                onValueChange={(v) => handleToggleTranslation(v)}
+                trackColor={{ true: colors.brand }}
+              />
+            </Pressable>
+
+            {/* 4. Show Transliteration */}
+            <Pressable
+              onPress={() => handleToggleTransliteration(!transliterationEnabled)}
+              style={{
+                flex: 1,
+                minWidth: "45%",
+                backgroundColor: colors.surfaceSecondary,
+                padding: 12,
+                borderRadius: theme.radius.md,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="card-text-outline" size={20} color={colors.brand} />
+                <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Translit</Text>
+              </View>
+              <Switch
+                value={transliterationEnabled}
+                onValueChange={(v) => handleToggleTransliteration(v)}
+                trackColor={{ true: colors.brand }}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        <Text style={{ fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, color: colors.brand, marginBottom: 4 }}>
+          Detailed Settings
+        </Text>
+
         {ITEMS.map((item) => (
           <Pressable
             key={item.id}

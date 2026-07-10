@@ -6,10 +6,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { ISLAMIC_EVENTS, HIJRI_MONTHS, IslamicEvent } from "@/src/data/islamicEvents";
+import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
+import { getActiveGoalIds } from "@/src/storage";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -120,6 +123,35 @@ export default function HijriCalendarScreen() {
   const [selectedDay, setSelectedDay] = useState<HijriDay | null>(null);
   const [todayHijri, setTodayHijri] = useState<{ day: number; month: number; year: number } | null>(null);
 
+  // goalsByDate: maps "YYYY-M-D" → completed goal ids for that day
+  const [goalsByDate, setGoalsByDate] = useState<Record<string, string[]>>({});
+  const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
+
+  // Load active goal config once
+  useEffect(() => {
+    getActiveGoalIds().then(setActiveGoalIds);
+  }, []);
+
+  // Load completed goals for all days in the current month whenever the grid changes
+  useEffect(() => {
+    if (days.length === 0) return;
+    (async () => {
+      const GOALS_KEY = 'hikmah:goals-completed:v1';
+      const entries: Record<string, string[]> = {};
+      await Promise.all(
+        days.map(async (day) => {
+          const d = day.gregorianDate;
+          const key = `${GOALS_KEY}:${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+          const raw = await AsyncStorage.getItem(key);
+          if (raw) {
+            entries[`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`] = JSON.parse(raw);
+          }
+        })
+      );
+      setGoalsByDate(entries);
+    })();
+  }, [days]);
+
   // Fetch today's Hijri date on mount to initialize the calendar at the correct month
   useEffect(() => {
     fetchHijriDate(new Date()).then((h) => {
@@ -189,9 +221,17 @@ export default function HijriCalendarScreen() {
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
         <Text style={[styles.title, { color: colors.onSurface }]}>{t("hijriCalendar")}</Text>
-        <Pressable onPress={goToToday} hitSlop={10}>
-          <Text style={[styles.todayBtn, { color: colors.brand }]}>Today</Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+          <Pressable onPress={goToToday} hitSlop={10}>
+            <Text style={[styles.todayBtn, { color: colors.brand }]}>Today</Text>
+          </Pressable>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -243,6 +283,10 @@ export default function HijriCalendarScreen() {
               const hasEvent = day.events.length > 0;
               const isFriday = day.gregorianDate.getDay() === 5;
               const eventColor = hasEvent ? day.events[0].color : undefined;
+              const d = day.gregorianDate;
+              const dateKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+              const dayCompletedGoals = goalsByDate[dateKey] ?? [];
+              const hasGoals = dayCompletedGoals.length > 0;
 
               return (
                 <Pressable
@@ -280,10 +324,15 @@ export default function HijriCalendarScreen() {
                   >
                     {day.gregorianDate.getDate()}
                   </Text>
-                  {/* Event dot */}
-                  {hasEvent && (
-                    <View style={[styles.eventDot, { backgroundColor: eventColor ?? colors.brandSecondary }]} />
-                  )}
+                  {/* Dots row: Islamic event dot + Goal dot */}
+                  <View style={{ flexDirection: "row", gap: 2, marginTop: 1, alignItems: "center" }}>
+                    {hasEvent && (
+                      <View style={[styles.eventDot, { backgroundColor: eventColor ?? colors.brandSecondary }]} />
+                    )}
+                    {hasGoals && (
+                      <View style={[styles.eventDot, { backgroundColor: "#16a34a" }]} />
+                    )}
+                  </View>
                 </Pressable>
               );
             })}
@@ -355,6 +404,59 @@ export default function HijriCalendarScreen() {
                     </View>
                   ))
                 )}
+
+                {/* ── Daily Goals Section ── */}
+                {(() => {
+                  const d = selectedDay.gregorianDate;
+                  const dateKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+                  const completedIds = goalsByDate[dateKey] ?? [];
+                  const activeGoals = DEFAULT_GOALS.filter(g => activeGoalIds.includes(g.id));
+                  if (activeGoals.length === 0) return null;
+                  const totalDone = activeGoals.filter(g => completedIds.includes(g.id)).length;
+                  return (
+                    <View style={styles.goalsSection}>
+                      <View style={styles.goalsSectionHeader}>
+                        <MaterialCommunityIcons name="check-circle-outline" size={16} color="#16a34a" />
+                        <Text style={[styles.goalsSectionTitle, { color: colors.onSurface }]}>
+                          Daily Goals
+                        </Text>
+                        <View style={[styles.goalsBadge, { backgroundColor: "#16a34a22" }]}>
+                          <Text style={[styles.goalsBadgeText, { color: "#16a34a" }]}>
+                            {totalDone}/{activeGoals.length}
+                          </Text>
+                        </View>
+                      </View>
+                      {activeGoals.map(goal => {
+                        const done = completedIds.includes(goal.id);
+                        const catColor = CATEGORY_COLORS[goal.category] ?? colors.brand;
+                        return (
+                          <View key={goal.id} style={styles.goalRow}>
+                            <MaterialCommunityIcons
+                              name={done ? "check-circle" : "circle-outline"}
+                              size={18}
+                              color={done ? "#16a34a" : colors.onSurfaceMuted}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={[
+                                styles.goalTitle,
+                                { color: done ? colors.onSurface : colors.onSurfaceMuted,
+                                  textDecorationLine: done ? "none" : "none" }
+                              ]}>
+                                {goal.title}
+                              </Text>
+                            </View>
+                            <View style={[styles.catDot, { backgroundColor: catColor + "33" }]}>
+                              <Text style={[styles.catLabel, { color: catColor }]}>
+                                {goal.category}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })()}
+
                 <Pressable onPress={() => setSelectedDay(null)} style={[styles.closeBtn, { backgroundColor: colors.brand }]}>
                   <Text style={[styles.closeBtnTxt, { color: colors.onBrandPrimary }]}>{t("close")}</Text>
                 </Pressable>
@@ -424,4 +526,50 @@ const styles = StyleSheet.create({
   modalEventDesc: { fontSize: 13, lineHeight: 19 },
   closeBtn: { borderRadius: theme.radius.md, padding: 14, alignItems: "center", marginTop: 8 },
   closeBtnTxt: { fontWeight: "700", fontSize: 15 },
+  // Goals in modal
+  goalsSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(128,128,128,0.2)",
+    paddingTop: 12,
+    gap: 8,
+  },
+  goalsSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  goalsSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+  },
+  goalsBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  goalsBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  goalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  goalTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  catDot: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  catLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "capitalize",
+  },
 });
