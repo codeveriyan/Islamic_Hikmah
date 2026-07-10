@@ -104,6 +104,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setLanguage = (lang: LangCode) => {
     setLanguageState(lang);
     AsyncStorage.setItem("islamic_hikmah:language_preference", lang);
+    AsyncStorage.setItem("islamic_hikmah:quran_translation_lang", lang);
   };
 
   const setFontSize = (size: FontSize) => {

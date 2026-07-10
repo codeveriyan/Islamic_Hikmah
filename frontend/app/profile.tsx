@@ -194,16 +194,6 @@ export default function ProfileScreen() {
             <MaterialCommunityIcons name="logout" size={20} color="#D32F2F" />
             <Text style={[styles.btnTxt, { color: "#D32F2F" }]}>Sign Out</Text>
           </Pressable>
-
-          <Pressable
-            onPress={handleDeleteAccount}
-            style={({ pressed }) => [
-              styles.btnTextLink,
-              pressed && { opacity: 0.7 }
-            ]}
-          >
-            <Text style={styles.deleteTxt}>Delete Account Permanently</Text>
-          </Pressable>
         </View>
       </ScrollView>
 

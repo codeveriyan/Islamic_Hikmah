@@ -1064,7 +1064,7 @@ export default function SurahDetail() {
               <Text style={{ color: colors.brand, fontSize: 11, fontWeight: "700" }}>Juz {currentJuz}</Text>
             </Pressable>
           )}
-          <Pressable onPress={() => router.push("/")} hitSlop={10} testID="quran-home">
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="quran-home">
             <MaterialCommunityIcons name="home-outline" size={24} color={rc.arabic} />
           </Pressable>
           <Pressable onPress={() => router.push("/quran/bookmarks" as any)} hitSlop={10} testID="quran-bookmarks">
@@ -1074,6 +1074,9 @@ export default function SurahDetail() {
             <MaterialCommunityIcons name="account-music" size={26} color={colors.brand} />
           </Pressable>
           <Pressable onPress={() => router.push("/quran/personalise")} hitSlop={10} style={{ padding: 2 }}>
+            <MaterialCommunityIcons name="tune-variant" size={24} color={rc.arabic} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
             <MaterialCommunityIcons name="cog-outline" size={24} color={rc.arabic} />
           </Pressable>
         </View>

@@ -84,9 +84,17 @@ export default function GoalsSettingsScreen() {
         </Pressable>
         <Text style={[styles.title, { color: colors.onSurface }]}>{t("goalSettings")}</Text>
         {/* Bell icon navigates to notification time settings */}
-        <Pressable onPress={() => router.push("/goal-notif-settings")} hitSlop={10}>
-          <MaterialCommunityIcons name="bell-cog-outline" size={24} color={colors.brand} />
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+          <Pressable onPress={() => router.push("/goal-notif-settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="bell-cog-outline" size={24} color={colors.brand} />
+          </Pressable>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>

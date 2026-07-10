@@ -1277,12 +1277,20 @@ export default function QuranReadScreen() {
             {pageScrollPct}% read
           </Text>
         </View>
-        <Pressable onPress={() => {
-          setJumpPageInput(String(currentPage));
-          setJumpModalVisible(true);
-        }} hitSlop={10}>
-          <MaterialCommunityIcons name="magnify" size={24} color={rc.icon} />
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+          <Pressable onPress={() => {
+            setJumpPageInput(String(currentPage));
+            setJumpModalVisible(true);
+          }} hitSlop={10}>
+            <MaterialCommunityIcons name="magnify" size={24} color={rc.icon} />
+          </Pressable>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+            <MaterialCommunityIcons name="home-outline" size={24} color={rc.icon} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={rc.icon} />
+          </Pressable>
+        </View>
       </View>
  
       {/* Page swiper / Tafsir view switcher */}

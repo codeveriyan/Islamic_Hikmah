@@ -10,7 +10,7 @@ const PRAY_LOC = 'ruhani:prayer-location:v1';
 
 export type Favourite = {
   id: string;
-  type: 'dua' | 'ayah';
+  type: 'dua' | 'ayah' | 'hadith' | 'seerah';
   title: string;
   subtitle?: string;
   arabic?: string;
@@ -145,7 +145,22 @@ const GOALS_CONFIG_KEY = 'hikmah:goals-config:v1';
 
 function todayKey() {
   const d = new Date();
+  // ⏰ Day window: goals belong to the previous calendar day until 4:00 AM.
+  // This gives users overnight time to check off yesterday's goals.
+  if (d.getHours() < 4) {
+    d.setDate(d.getDate() - 1);
+  }
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+// Returns the effective "today" date respecting the 4 AM cutoff.
+// Export this so the home screen can show the correct day label.
+export function getEffectiveDate(): Date {
+  const d = new Date();
+  if (d.getHours() < 4) {
+    d.setDate(d.getDate() - 1);
+  }
+  return d;
 }
 
 export async function getCompletedGoals(): Promise<string[]> {
@@ -551,11 +566,52 @@ export async function scheduleGoalNotifications(
     'surah-kahaf':   { dayOfWeek: 5, timeKey: 'surah-kahaf' },
   };
 
+  // Load settings to respect switches
+  const logReminderVal = await AsyncStorage.getItem("hikmah:settings:log-reminder");
+  const isLogReminderEnabled = logReminderVal === null ? true : logReminderVal === "true";
+
+  const quranReminderVal = await AsyncStorage.getItem("hikmah:settings:quran-reminder");
+  const isQuranReminderEnabled = quranReminderVal === null ? true : quranReminderVal === "true";
+
+  const dhikrReminderVal = await AsyncStorage.getItem("hikmah:settings:dhikr-reminder");
+  const isDhikrReminderEnabled = dhikrReminderVal === null ? true : dhikrReminderVal === "true";
+
+  const scheduleReminderVal = await AsyncStorage.getItem("hikmah:settings:schedule-reminder") || "08:00 PM";
+  let quranHour = 20;
+  let quranMinute = 0;
+  const [timeStrPart, ampm] = scheduleReminderVal.split(" ");
+  if (timeStrPart) {
+    const [h, m] = timeStrPart.split(":").map(Number);
+    if (!isNaN(h) && !isNaN(m)) {
+      quranHour = ampm === "PM" && h < 12 ? h + 12 : ampm === "AM" && h === 12 ? 0 : h;
+      quranMinute = m;
+    }
+  }
+
+  const selectedAdhkarRaw = await AsyncStorage.getItem("hikmah:settings:selected-adhkar");
+  const selectedAdhkarLimit = selectedAdhkarRaw ? parseInt(selectedAdhkarRaw, 10) : 3;
+  const dhikrIdsOrder = ['morning-adhkar', 'evening-adhkar', 'sleep-adhkar', 'dhikr-after-salah', 'istighfar-100'];
+
   const newIds: string[] = [];
 
   for (const goalId of activeGoalIds) {
     const content = GOAL_NOTIF_CONTENT[goalId];
     if (!content) continue;
+
+    // Check filters
+    if (PRAYER_MAP[goalId]) {
+      if (!isLogReminderEnabled) continue;
+    }
+
+    if (goalId === 'quran-5min' || goalId === 'surah-mulk' || goalId === 'surah-kahaf') {
+      if (!isQuranReminderEnabled) continue;
+    }
+
+    if (dhikrIdsOrder.includes(goalId)) {
+      if (!isDhikrReminderEnabled) continue;
+      const idx = dhikrIdsOrder.indexOf(goalId);
+      if (idx >= selectedAdhkarLimit) continue;
+    }
 
     try {
       // ── Prayer goals: use actual prayer timing ───────────────────────────
@@ -572,6 +628,21 @@ export async function scheduleGoalNotifications(
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: h,
             minute: m,
+            channelId: 'goal-reminders',
+          },
+        });
+        newIds.push(id);
+        continue;
+      }
+
+      // Custom Quran Recitation schedule
+      if (goalId === 'quran-5min') {
+        const id = await Notifications.scheduleNotificationAsync({
+          content: { ...content, sound: undefined },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: quranHour,
+            minute: quranMinute,
             channelId: 'goal-reminders',
           },
         });
@@ -634,6 +705,51 @@ export async function scheduleGoalNotifications(
   }
 
   await AsyncStorage.setItem(GOAL_NOTIF_KEY, JSON.stringify(newIds));
+
+  // ── Day-transition notifications ────────────────────────────────────────
+  // 3:45 AM — gentle nudge to finish yesterday's goals before cutoff
+  try {
+    const nudgeId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⏰ Last chance for yesterday\'s goals!',
+        body: 'It\'s 3:45 AM — you have 15 minutes to update yesterday\'s goals before the new day starts.',
+        sound: undefined,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 3,
+        minute: 45,
+        channelId: 'goal-reminders',
+      },
+    });
+    newIds.push(nudgeId);
+  } catch (e) {
+    console.warn('Failed to schedule 3:45 AM nudge notification:', e);
+  }
+
+  // 4:00 AM — new day starts, goals reset
+  try {
+    const newDayId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🌅 New day has begun!',
+        body: 'Bismillah! Yesterday\'s goals have been saved. Start your new day with intention. 🤲',
+        sound: undefined,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: 4,
+        minute: 0,
+        channelId: 'goal-reminders',
+      },
+    });
+    newIds.push(newDayId);
+  } catch (e) {
+    console.warn('Failed to schedule 4:00 AM new-day notification:', e);
+  }
+
+  // Save updated ids (including the two new transition notifications)
+  await AsyncStorage.setItem(GOAL_NOTIF_KEY, JSON.stringify(newIds));
+
   return { success: true };
 }
 
@@ -773,5 +889,115 @@ export async function getPrayerCompletions(): Promise<Record<string, boolean>> {
 
 export async function savePrayerCompletions(completions: Record<string, boolean>): Promise<void> {
   await AsyncStorage.setItem(`${PRAYER_COMPLETIONS_KEY}:${todayKey()}`, JSON.stringify(completions));
+}
+
+// Hadith & Seerah Bookmarks
+const HADITH_BOOKMARKS_KEY = 'hikmah:hadith-bookmarks:v1';
+const SEERAH_BOOKMARKS_KEY = 'hikmah:seerah-bookmarks:v1';
+
+export type HadithBookmark = {
+  id: string; // "hadith-bukhari-1"
+  bookId: string;
+  hadithnumber: number;
+  text: string;
+  arabicText?: string;
+  addedAt: number;
+};
+
+export type SeerahBookmark = {
+  id: string; // "seerah-arabian-peninsula"
+  chapterId: string;
+  title: string;
+  arabicTitle?: string;
+  content: string;
+  addedAt: number;
+};
+
+export async function getHadithBookmarks(): Promise<HadithBookmark[]> {
+  try {
+    const raw = await AsyncStorage.getItem(HADITH_BOOKMARKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export async function toggleHadithBookmark(bm: HadithBookmark): Promise<boolean> {
+  const list = await getHadithBookmarks();
+  const idx = list.findIndex((b) => b.id === bm.id);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    await AsyncStorage.setItem(HADITH_BOOKMARKS_KEY, JSON.stringify(list));
+    return false;
+  }
+  list.unshift({ ...bm, addedAt: Date.now() });
+  await AsyncStorage.setItem(HADITH_BOOKMARKS_KEY, JSON.stringify(list));
+  return true;
+}
+
+export async function isHadithBookmarked(id: string): Promise<boolean> {
+  const list = await getHadithBookmarks();
+  return list.some((b) => b.id === id);
+}
+
+export async function getSeerahBookmarks(): Promise<SeerahBookmark[]> {
+  try {
+    const raw = await AsyncStorage.getItem(SEERAH_BOOKMARKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export async function toggleSeerahBookmark(bm: SeerahBookmark): Promise<boolean> {
+  const list = await getSeerahBookmarks();
+  const idx = list.findIndex((b) => b.id === bm.id);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    await AsyncStorage.setItem(SEERAH_BOOKMARKS_KEY, JSON.stringify(list));
+    return false;
+  }
+  list.unshift({ ...bm, addedAt: Date.now() });
+  await AsyncStorage.setItem(SEERAH_BOOKMARKS_KEY, JSON.stringify(list));
+  return true;
+}
+
+export async function isSeerahBookmarked(id: string): Promise<boolean> {
+  const list = await getSeerahBookmarks();
+  return list.some((b) => b.id === id);
+}
+
+// Dhikr Bookmarks
+const DHIKR_BOOKMARKS_KEY = 'hikmah:dhikr-bookmarks:v1';
+
+export type DhikrBookmark = {
+  id: string; // e.g. "dhikr-duaId"
+  duaId: string;
+  title: string;
+  subtitle?: string;
+  arabic?: string;
+  translation?: string;
+  addedAt: number;
+};
+
+export async function getDhikrBookmarks(): Promise<DhikrBookmark[]> {
+  try {
+    const raw = await AsyncStorage.getItem(DHIKR_BOOKMARKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export async function toggleDhikrBookmark(bm: DhikrBookmark): Promise<boolean> {
+  const list = await getDhikrBookmarks();
+  const idx = list.findIndex((b) => b.id === bm.id);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    await AsyncStorage.setItem(DHIKR_BOOKMARKS_KEY, JSON.stringify(list));
+    return false;
+  }
+  list.unshift({ ...bm, addedAt: Date.now() });
+  await AsyncStorage.setItem(DHIKR_BOOKMARKS_KEY, JSON.stringify(list));
+  return true;
+}
+
+export async function isDhikrBookmarked(id: string): Promise<boolean> {
+  const list = await getDhikrBookmarks();
+  return list.some((b) => b.id === id);
 }
 

@@ -84,6 +84,7 @@ function timeAgo(ts: number): string {
 }
 
 import LearnQuranView from "./learn";
+import MutashabihatView from "./mutashabihat";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function QuranIndex() {
@@ -99,7 +100,7 @@ export default function QuranIndex() {
   const [modeSelected, setModeSelected] = useState<boolean>(false);
 
   // Top tabs
-  const [activeTab, setActiveTab] = useState<"read" | "listen" | "learn">("read");
+  const [activeTab, setActiveTab] = useState<"read" | "listen" | "learn" | "mutashabihat">("read");
 
   const handleBack = () => {
     if (modeSelected) {
@@ -134,6 +135,14 @@ export default function QuranIndex() {
         icon: "school",
         color: "#0284C7",
         description: "Interactive tools to understand Quranic words and meanings."
+      },
+      {
+        id: "mutashabihat",
+        title: "Mutashabihat",
+        subtitle: "Quranic verses with similar wording",
+        icon: "book-multiple",
+        color: "#F59E0B",
+        description: "Explore similar, repeating phrases and structures across surahs."
       }
     ];
 
@@ -184,6 +193,7 @@ export default function QuranIndex() {
 
   // Surah Info Modal state
   const [selectedSurahForInfo, setSelectedSurahForInfo] = useState<Surah | null>(null);
+  const [infoLang, setInfoLang] = useState<string | null>(null);
 
   // Read sub-tabs
   const [readSubTab, setReadSubTab] = useState<"surah" | "juz" | "bookmark">("surah");
@@ -209,6 +219,11 @@ export default function QuranIndex() {
   const [noteModalVisible, setNoteModalVisible] = useState(false);
   const [editingBookmark, setEditingBookmark] = useState<QuranBookmark | null>(null);
   const [noteInput, setNoteInput] = useState("");
+
+  const closeSurahInfoModal = useCallback(() => {
+    setSelectedSurahForInfo(null);
+    setInfoLang(null);
+  }, []);
 
   const editAyahNote = useCallback((b: QuranBookmark) => {
     setEditingBookmark(b);
@@ -584,7 +599,14 @@ export default function QuranIndex() {
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
         <Text style={[styles.title, { color: colors.onSurface }]}>{t("nobleQuran")}</Text>
-        <View style={{ width: 28 }} />
+        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       {!modeSelected ? (
@@ -597,27 +619,40 @@ export default function QuranIndex() {
           onPress={() => setActiveTab("read")}
           style={[styles.segmentBtn, activeTab === "read" && [styles.segmentBtnActive, { backgroundColor: colors.brand }]]}
         >
-          <MaterialCommunityIcons name="book-open-variant" size={16} color={activeTab === "read" ? colors.onBrandPrimary : colors.onSurfaceMuted} />
-          <Text style={[styles.segmentTxt, { color: activeTab === "read" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>{t("read")}</Text>
+          <MaterialCommunityIcons name="book-open-variant" size={14} color={activeTab === "read" ? colors.onBrandPrimary : colors.onSurfaceMuted} />
+          <Text style={[styles.segmentTxt, { fontSize: 11, color: activeTab === "read" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>{t("read")}</Text>
         </Pressable>
         <Pressable
-          onPress={() => setActiveTab("listen")}
+          onPress={() => {
+            if (profile?.tier !== "premium") {
+              router.push("/premium");
+            } else {
+              setActiveTab("listen");
+            }
+          }}
           style={[styles.segmentBtn, activeTab === "listen" && [styles.segmentBtnActive, { backgroundColor: colors.brand }]]}
         >
-          <MaterialCommunityIcons name="volume-high" size={16} color={activeTab === "listen" ? colors.onBrandPrimary : colors.onSurfaceMuted} />
-          <Text style={[styles.segmentTxt, { color: activeTab === "listen" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>{t("listen")}</Text>
+          <MaterialCommunityIcons name="volume-high" size={14} color={activeTab === "listen" ? colors.onBrandPrimary : colors.onSurfaceMuted} />
+          <Text style={[styles.segmentTxt, { fontSize: 11, color: activeTab === "listen" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>{t("listen")}</Text>
         </Pressable>
         <Pressable
           onPress={() => setActiveTab("learn")}
           style={[styles.segmentBtn, activeTab === "learn" && [styles.segmentBtnActive, { backgroundColor: colors.brand }]]}
         >
-          <MaterialCommunityIcons name="brain" size={16} color={activeTab === "learn" ? colors.onBrandPrimary : colors.onSurfaceMuted} />
-          <Text style={[styles.segmentTxt, { color: activeTab === "learn" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>{t("learn")}</Text>
+          <MaterialCommunityIcons name="brain" size={14} color={activeTab === "learn" ? colors.onBrandPrimary : colors.onSurfaceMuted} />
+          <Text style={[styles.segmentTxt, { fontSize: 11, color: activeTab === "learn" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>{t("learn")}</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setActiveTab("mutashabihat")}
+          style={[styles.segmentBtn, activeTab === "mutashabihat" && [styles.segmentBtnActive, { backgroundColor: colors.brand }]]}
+        >
+          <MaterialCommunityIcons name="book-multiple" size={14} color={activeTab === "mutashabihat" ? colors.onBrandPrimary : colors.onSurfaceMuted} />
+          <Text style={[styles.segmentTxt, { fontSize: 11, color: activeTab === "mutashabihat" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>Similar</Text>
         </Pressable>
       </View>
 
       {/* Search */}
-      {activeTab !== "learn" && (
+      {activeTab !== "learn" && activeTab !== "mutashabihat" && (
         <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
           <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.onSurfaceMuted} />
           <TextInput
@@ -639,6 +674,8 @@ export default function QuranIndex() {
         <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 40 }} />
       ) : activeTab === "learn" ? (
         <LearnQuranView />
+      ) : activeTab === "mutashabihat" ? (
+        <MutashabihatView />
       ) : activeTab === "listen" ? (
         // ══════════════════════════════════════════════════════════════════════
         // LISTEN MODE
@@ -859,12 +896,11 @@ export default function QuranIndex() {
         </View>
       </Modal>
 
-      {/* Surah Information Modal (Tier-1 Enhancement) */}
       <Modal
         visible={selectedSurahForInfo !== null}
         transparent
         animationType="slide"
-        onRequestClose={() => setSelectedSurahForInfo(null)}
+        onRequestClose={closeSurahInfoModal}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.infoModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -877,7 +913,7 @@ export default function QuranIndex() {
                   {selectedSurahForInfo?.englishNameTranslation}
                 </Text>
               </View>
-              <Pressable onPress={() => setSelectedSurahForInfo(null)} hitSlop={10}>
+              <Pressable onPress={closeSurahInfoModal} hitSlop={10}>
                 <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
               </Pressable>
             </View>
@@ -943,20 +979,87 @@ export default function QuranIndex() {
 
                   {(() => {
                     const detailedLangs = ["en", "id", "it", "ml", "ta", "ur"];
-                    let activeDetailedLang = detailedLangs.includes(language) ? language : "en";
-                    if (activeDetailedLang === "ta" && selectedSurahForInfo?.number !== 3) {
-                      activeDetailedLang = "en";
-                    }
-                    const detailedText = selectedSurahForInfo
-                      ? (surahInfoDetailed as any)[String(selectedSurahForInfo.number)]?.[activeDetailedLang] || ""
+                    const isAppLangSupported = detailedLangs.includes(language);
+                    const currentLang = isAppLangSupported ? language : (infoLang || "en");
+                    
+                    let targetLang = currentLang;
+                    let detailedText = selectedSurahForInfo
+                      ? (surahInfoDetailed as any)[String(selectedSurahForInfo.number)]?.[targetLang] || ""
                       : "";
+                      
+                    if (!detailedText && targetLang !== "en") {
+                      targetLang = "en";
+                      detailedText = selectedSurahForInfo
+                        ? (surahInfoDetailed as any)[String(selectedSurahForInfo.number)]?.[targetLang] || ""
+                        : "";
+                    }
 
-                    if (!detailedText) return null;
+                    const langNames: Record<string, string> = {
+                      en: "English",
+                      id: "Indonesian",
+                      it: "Italian",
+                      ml: "Malayalam",
+                      ta: "Tamil",
+                      ur: "Urdu"
+                    };
+
                     return (
                       <>
                         <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 20 }} />
-                        <Text style={[styles.sectionTitle, { color: colors.brand }]}>Surah History & Context</Text>
-                        {parseHtmlToElements(detailedText, colors)}
+                        
+                        {/* Translate to controls - only shown if user's app language is NOT supported by surah info */}
+                        {!isAppLangSupported && (
+                          <View style={{ marginBottom: 16 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                              <MaterialCommunityIcons name="translate" size={20} color={colors.brand} />
+                              <Text style={{ fontSize: 14, fontWeight: "700", color: colors.onSurface }}>
+                                Translate to:
+                              </Text>
+                            </View>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                              {detailedLangs.map((langCode) => {
+                                const isSelected = currentLang === langCode;
+                                return (
+                                  <Pressable
+                                    key={langCode}
+                                    onPress={() => {
+                                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                                      setInfoLang(langCode);
+                                    }}
+                                    style={[
+                                      {
+                                        paddingHorizontal: 12,
+                                        paddingVertical: 6,
+                                        borderRadius: 20,
+                                        borderWidth: 1,
+                                        borderColor: colors.border,
+                                      },
+                                      isSelected && {
+                                        backgroundColor: colors.brand + "18",
+                                        borderColor: colors.brand,
+                                      }
+                                    ]}
+                                  >
+                                    <Text style={{ fontSize: 12, fontWeight: "600", color: isSelected ? colors.brand : colors.onSurfaceMuted }}>
+                                      {langNames[langCode]}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+                        )}
+
+                        {detailedText ? (
+                          <>
+                            <Text style={[styles.sectionTitle, { color: colors.brand }]}>Surah History & Context</Text>
+                            {parseHtmlToElements(detailedText, colors)}
+                          </>
+                        ) : (
+                          <Text style={{ fontStyle: "italic", color: colors.onSurfaceMuted, marginTop: 12 }}>
+                            No Surah information available.
+                          </Text>
+                        )}
                       </>
                     );
                   })()}
@@ -965,7 +1068,7 @@ export default function QuranIndex() {
             })()}
 
             <Pressable
-              onPress={() => setSelectedSurahForInfo(null)}
+              onPress={closeSurahInfoModal}
               style={[styles.infoBtnClose, { backgroundColor: colors.brand }]}
             >
               <Text style={{ color: colors.onBrandPrimary, fontWeight: "700" }}>Dismiss</Text>
@@ -1257,6 +1360,7 @@ function parseHtmlToElements(html: string, colors: any) {
       return;
     }
     if (tag === "</p>") {
+      currentBlockType = "p";
       return;
     }
     if (tag === "<h2>") {
@@ -1264,6 +1368,7 @@ function parseHtmlToElements(html: string, colors: any) {
       return;
     }
     if (tag === "</h2>") {
+      currentBlockType = "p";
       return;
     }
     if (tag === "<br>" || tag === "<br/>" || tag === "<br />") {

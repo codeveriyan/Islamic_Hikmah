@@ -44,8 +44,12 @@ export default function ReminderScreen() {
     for (const r of list) {
       if (!r.enabled) continue;
       await Notifications.scheduleNotificationAsync({
-        content: { title: "Islamic Hikmah Reminder", body: r.title, sound: true },
-        trigger: { hour: r.hour, minute: r.minute, repeats: true } as any,
+        content: { title: "Islamic Hikmah Reminder", body: r.title, sound: Platform.OS === 'ios' ? true : undefined },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: r.hour,
+          minute: r.minute,
+        } as any,
       });
     }
   };

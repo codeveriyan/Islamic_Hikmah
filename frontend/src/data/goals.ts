@@ -20,11 +20,14 @@ export const DEFAULT_GOALS: Goal[] = [
   { id: 'morning-adhkar', title: 'Morning Adhkar', arabic: 'أذكار الصباح', category: 'dhikr', repeat: 'daily' },
   { id: 'evening-adhkar', title: 'Evening Adhkar', arabic: 'أذكار المساء', category: 'dhikr', repeat: 'daily' },
   { id: 'sleep-adhkar', title: 'Sleep Adhkar', arabic: 'أذكار النوم', category: 'dhikr', repeat: 'daily' },
+  { id: 'dhikr-after-salah', title: 'Dhikr After Salah', arabic: 'الأذكار بعد الصلاة', category: 'dhikr', repeat: 'daily' },
+  { id: 'istighfar-100', title: 'Istighfar (100 times)', arabic: 'استغفار ١٠٠ مرة', category: 'dhikr', repeat: 'daily' },
   { id: 'fast-monday', title: 'Fast on Monday', subtitle: 'Repeats weekly', category: 'other', repeat: 'weekly', weekDay: 1 },
   { id: 'fast-thursday', title: 'Fast on Thursday', subtitle: 'Repeats weekly', category: 'other', repeat: 'weekly', weekDay: 4 },
   { id: 'surah-kahaf', title: 'Recite Surah Kahaf', subtitle: 'Every Friday', category: 'quran', repeat: 'weekly', weekDay: 5 },
   { id: 'tahajjud', title: 'Offer Tahajjud', subtitle: 'Night prayer', category: 'prayer', repeat: 'daily' },
   { id: 'nafl', title: 'Offer Nafl Prayer', category: 'prayer', repeat: 'daily' },
+  { id: 'give-sadqa', title: 'Give Sadqa / Charity', subtitle: 'Sadhaka', category: 'other', repeat: 'daily' },
 ];
 
 export const CATEGORY_COLORS: Record<string, string> = {

@@ -24,6 +24,7 @@ import {
   ERA_COLORS,
   ERA_ICONS,
 } from "@/src/data/seerahData";
+import { translateText } from "@/src/services/translationService";
 
 const STORAGE_KEY = "islamic_hikmah:seerah_read_chapters";
 
@@ -39,31 +40,31 @@ const LOCAL_ERA_META: Record<SeerahEra, { label: string; sub: string; icon: stri
   "pre-islamic": { 
     label: "Pre-Islamic Era", 
     sub: "Arabia before revelation", 
-    icon: "camel", 
+    icon: "earth", 
     color: "#D97706" 
   },
   "early-life": { 
     label: "Early Life", 
     sub: "Birth, childhood & youth", 
-    icon: "hands-pray", 
+    icon: "baby-face-outline", 
     color: "#059669" 
   },
   "meccan": { 
     label: "Meccan Period", 
     sub: "First revelation & trials", 
-    icon: "mosque", 
+    icon: "star-crescent", 
     color: "#3B82F6" 
   },
   "medinan": { 
     label: "Medinan Period", 
     sub: "Statehood & community", 
-    icon: "mosque", 
+    icon: "city-variant-outline", 
     color: "#10B981" 
   },
   "final-years": { 
     label: "Final Years & Legacy", 
     sub: "Completion & farewell", 
-    icon: "scroll", 
+    icon: "weather-sunset", 
     color: "#8B5CF6" 
   },
 };
@@ -76,6 +77,10 @@ export default function SeerahIndexScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [readChapters, setReadChapters] = useState<Set<string>>(new Set());
 
+  // Translated local era metadata and chapters
+  const [translatedEraMeta, setTranslatedEraMeta] = useState(LOCAL_ERA_META);
+  const [translatedChapters, setTranslatedChapters] = useState(SEERAH_CHAPTERS);
+
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((val) => {
       if (val) {
@@ -86,8 +91,46 @@ export default function SeerahIndexScreen() {
     });
   }, []);
 
+  // Translate eras & chapter titles/descriptions when language changes
+  useEffect(() => {
+    if (language === "en") {
+      setTranslatedEraMeta(LOCAL_ERA_META);
+      setTranslatedChapters(SEERAH_CHAPTERS);
+      return;
+    }
+
+    (async () => {
+      try {
+        const nextMeta = { ...LOCAL_ERA_META };
+        await Promise.all(
+          ERA_ORDER.map(async (era) => {
+            const label = await translateText(LOCAL_ERA_META[era].label, language);
+            const sub = await translateText(LOCAL_ERA_META[era].sub, language);
+            nextMeta[era] = { ...LOCAL_ERA_META[era], label, sub };
+          })
+        );
+        setTranslatedEraMeta(nextMeta);
+      } catch (err) {
+        console.warn("Error translating Seerah Era meta:", err);
+      }
+
+      try {
+        const nextChapters = await Promise.all(
+          SEERAH_CHAPTERS.map(async (ch) => {
+            const title = await translateText(ch.title, language);
+            const description = await translateText(ch.description, language);
+            return { ...ch, title, description };
+          })
+        );
+        setTranslatedChapters(nextChapters);
+      } catch (err) {
+        console.warn("Error translating Seerah chapters:", err);
+      }
+    })();
+  }, [language]);
+
   const filtered = useMemo(() => {
-    let list = SEERAH_CHAPTERS;
+    let list = translatedChapters;
     if (selectedEra !== "all") {
       list = list.filter((c) => c.era === selectedEra);
     }
@@ -100,10 +143,10 @@ export default function SeerahIndexScreen() {
       );
     }
     return list;
-  }, [selectedEra, searchQuery]);
+  }, [selectedEra, searchQuery, translatedChapters]);
 
   const totalRead = readChapters.size;
-  const total = SEERAH_CHAPTERS.length;
+  const total = translatedChapters.length;
   const progressPct = total > 0 ? totalRead / total : 0;
 
   const renderEraDashboard = () => {
@@ -112,7 +155,7 @@ export default function SeerahIndexScreen() {
         <Text style={[styles.dashboardTitle, { color: colors.onSurface }]}>Select Era</Text>
         <View style={styles.gridContainer}>
           {ERA_ORDER.map((era, index) => {
-            const meta = LOCAL_ERA_META[era];
+            const meta = translatedEraMeta[era];
             const isFullWidth = index === ERA_ORDER.length - 1;
             return (
               <Pressable
@@ -146,8 +189,8 @@ export default function SeerahIndexScreen() {
 
   const renderFilterBanner = () => {
     if (selectedEra === "all") return null;
-    const meta = LOCAL_ERA_META[selectedEra];
-    const count = SEERAH_CHAPTERS.filter((c) => c.era === selectedEra).length;
+    const meta = translatedEraMeta[selectedEra];
+    const count = translatedChapters.filter((c) => c.era === selectedEra).length;
     
     return (
       <View style={[styles.filterBanner, { backgroundColor: meta.color + "12", borderColor: meta.color + "30" }]}>
@@ -178,7 +221,6 @@ export default function SeerahIndexScreen() {
     >
       <StatusBar barStyle={mode === "dark" ? "light-content" : "dark-content"} />
 
-      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <MaterialCommunityIcons
@@ -195,7 +237,14 @@ export default function SeerahIndexScreen() {
             السيرة النبوية
           </Text>
         </View>
-        <View style={{ width: 28 }} />
+        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
+            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       {/* Hero Banner */}
@@ -298,8 +347,9 @@ export default function SeerahIndexScreen() {
               </Text>
             </Pressable>
             {ERA_ORDER.map((era) => {
-              const count = SEERAH_CHAPTERS.filter((c) => c.era === era).length;
+              const count = translatedChapters.filter((c) => c.era === era).length;
               const active = selectedEra === era;
+              const meta = translatedEraMeta[era];
               return (
                 <Pressable
                   key={era}
@@ -317,7 +367,7 @@ export default function SeerahIndexScreen() {
                   ]}
                 >
                   <MaterialCommunityIcons
-                    name={ERA_ICONS[era] as any}
+                    name={meta.icon as any}
                     size={14}
                     color={active ? "#fff" : colors.onSurfaceMuted}
                     style={{ marginRight: 4 }}
@@ -328,7 +378,7 @@ export default function SeerahIndexScreen() {
                       { color: active ? "#fff" : colors.onSurfaceMuted },
                     ]}
                   >
-                    {t(era.replace("-", "")) || ERA_LABELS[era]} ({count})
+                    {meta.label} ({count})
                   </Text>
                 </Pressable>
               );
@@ -345,54 +395,56 @@ export default function SeerahIndexScreen() {
         {selectedEra === "all" && searchQuery === "" && renderEraDashboard()}
         {selectedEra !== "all" && renderFilterBanner()}
 
-        {filtered.length === 0 ? (
-          <View style={styles.empty}>
-            <MaterialCommunityIcons
-              name="magnify-remove-outline"
-              size={48}
-              color={colors.onSurfaceMuted}
-            />
-            <Text style={[styles.emptyTxt, { color: colors.onSurfaceMuted }]}>
-              No chapters found
-            </Text>
-          </View>
-        ) : (
-          filtered.map((chapter) => {
-            const isRead = readChapters.has(chapter.id);
-            return (
-              <Pressable
-                key={chapter.id}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  router.push(`/seerah/${chapter.id}` as any);
-                }}
-                style={({ pressed }) => [
-                  styles.chapterCard,
-                  { backgroundColor: colors.surfaceSecondary },
-                  pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-                ]}
-              >
-                {/* Era badge dot */}
-                <View
-                  style={[
-                    styles.eraDot,
-                    { backgroundColor: ERA_COLORS[chapter.era] },
-                  ]}
-                />
-
-                {/* Icon */}
-                <View
-                  style={[
-                    styles.chapterIcon,
-                    { backgroundColor: ERA_COLORS[chapter.era] + "18" },
+        {selectedEra === "all" && searchQuery === "" ? null : (
+          filtered.length === 0 ? (
+            <View style={styles.empty}>
+              <MaterialCommunityIcons
+                name="magnify-remove-outline"
+                size={48}
+                color={colors.onSurfaceMuted}
+              />
+              <Text style={[styles.emptyTxt, { color: colors.onSurfaceMuted }]}>
+                No chapters found
+              </Text>
+            </View>
+          ) : (
+            filtered.map((chapter) => {
+              const isRead = readChapters.has(chapter.id);
+              const meta = translatedEraMeta[chapter.era];
+              return (
+                <Pressable
+                  key={chapter.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    router.push(`/seerah/${chapter.id}` as any);
+                  }}
+                  style={({ pressed }) => [
+                    styles.chapterCard,
+                    { backgroundColor: colors.surfaceSecondary },
+                    pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
                   ]}
                 >
-                  <MaterialCommunityIcons
-                    name={chapter.icon as any}
-                    size={22}
-                    color={ERA_COLORS[chapter.era]}
+                  {/* Era badge dot */}
+                  <View
+                    style={[
+                      styles.eraDot,
+                      { backgroundColor: ERA_COLORS[chapter.era] },
+                    ]}
                   />
-                </View>
+
+                  {/* Icon */}
+                  <View
+                    style={[
+                      styles.chapterIcon,
+                      { backgroundColor: ERA_COLORS[chapter.era] + "18" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={meta.icon as any}
+                      size={22}
+                      color={ERA_COLORS[chapter.era]}
+                    />
+                  </View>
 
                 {/* Text */}
                 <View style={{ flex: 1 }}>
@@ -432,7 +484,7 @@ export default function SeerahIndexScreen() {
                     <View
                       style={[
                         styles.eraBadge,
-                        { backgroundColor: ERA_COLORS[chapter.era] + "18" },
+                        { backgroundColor: ERA_COLORS[chapter.era] + "15" },
                       ]}
                     >
                       <Text
@@ -441,7 +493,7 @@ export default function SeerahIndexScreen() {
                           { color: ERA_COLORS[chapter.era] },
                         ]}
                       >
-                        {ERA_LABELS[chapter.era]}
+                        {meta.label}
                       </Text>
                     </View>
                     <Text
@@ -459,7 +511,8 @@ export default function SeerahIndexScreen() {
                 />
               </Pressable>
             );
-          })
+            })
+          )
         )}
         <View style={{ height: 40 }} />
       </ScrollView>

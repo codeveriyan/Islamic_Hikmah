@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Platform, Modal, Switch, Alert,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Platform, Modal, Switch, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useTranslation } from "@/src/localization";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import Svg, { Circle } from "react-native-svg";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
@@ -23,6 +24,7 @@ import {
   getGoogleCalendarDismissed, setGoogleCalendarDismissed,
   getDailyDhikrCounts, saveDailyDhikrCounts,
   getPrayerCompletions, savePrayerCompletions,
+  saveActiveGoalIds, getGoalNotifTimes, scheduleGoalNotifications,
 } from "@/src/storage";
 
 const { width } = Dimensions.get("window");
@@ -76,6 +78,7 @@ const QUICK_ACTIONS = [
   { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar", color: "#F43F5E" },
   { id: "mosqueFinder", icon: "map-marker-radius", route: "/finder?type=mosque", color: "#4F46E5" },
   { id: "halalFoodFinder", icon: "food-fork-drink", route: "/finder?type=halal", color: "#16A34A" },
+  { id: "pillarsOfIslam", icon: "pillar", route: "/pillars-of-islam", color: "#0F766E" },
 ] as const;
 
 function getGreeting() {
@@ -284,6 +287,10 @@ export default function HomeScreen() {
   });
   // Prayers Modal
   const [prayersModalVisible, setPrayersModalVisible] = useState(false);
+  
+  // Custom Daily Adhkars selection modal states
+  const [dhikrModalVisible, setDhikrModalVisible] = useState(false);
+  const [selectedAdhkarCount, setSelectedAdhkarCount] = useState(3);
 
   // Load prayer times
   useEffect(() => {
@@ -334,49 +341,68 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [times]);
 
-  // Load goals and new settings
-  useEffect(() => {
-    (async () => {
-      const [comp, ids, menstrual, calConnected, calDismissed, dCounts, pCompletions] = await Promise.all([
-        getCompletedGoals(),
-        getActiveGoalIds(),
-        getMenstrualModeActive(),
-        getGoogleCalendarConnected(),
-        getGoogleCalendarDismissed(),
-        getDailyDhikrCounts(),
-        getPrayerCompletions(),
-      ]);
-      setCompleted(comp);
-      setActiveIds(ids);
-      setMenstrualMode(menstrual);
-      setCalendarConnected(calConnected);
-      setCalendarDismissed(calDismissed);
-      setDhikrCounts(dCounts || {});
-      setPrayerCompletions(pCompletions || { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false });
-    })();
-  }, []);
+  // Load goals and new settings on focus
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const [comp, ids, menstrual, calConnected, calDismissed, dCounts, pCompletions, sa] = await Promise.all([
+          getCompletedGoals(),
+          getActiveGoalIds(),
+          getMenstrualModeActive(),
+          getGoogleCalendarConnected(),
+          getGoogleCalendarDismissed(),
+          getDailyDhikrCounts(),
+          getPrayerCompletions(),
+          AsyncStorage.getItem("hikmah:settings:selected-adhkar"),
+        ]);
+        setCompleted(comp);
+        setActiveIds(ids);
+        setMenstrualMode(menstrual);
+        setCalendarConnected(calConnected);
+        setCalendarDismissed(calDismissed);
+        setDhikrCounts(dCounts || {});
+        setPrayerCompletions(pCompletions || { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false });
+        if (sa !== null) setSelectedAdhkarCount(parseInt(sa, 10));
+      })();
+    }, [])
+  );
 
   const activeGoals = useMemo(() => {
     const today = new Date().getDay();
+    const dhikrIdsOrder = ['morning-adhkar', 'evening-adhkar', 'sleep-adhkar', 'dhikr-after-salah', 'istighfar-100'];
     return DEFAULT_GOALS.filter(g => {
       if (!activeIds.includes(g.id)) return false;
       // Skip obligatory prayers if menstrual mode is active
       if (menstrualMode && ["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(g.id)) return false;
       if (g.repeat === 'weekly') return g.weekDay === today;
+      
+      // Filter adhkars by selectedAdhkarCount limit
+      if (dhikrIdsOrder.includes(g.id)) {
+        const idx = dhikrIdsOrder.indexOf(g.id);
+        if (idx >= selectedAdhkarCount) return false;
+      }
       return true;
     });
-  }, [activeIds, menstrualMode]);
+  }, [activeIds, menstrualMode, selectedAdhkarCount]);
 
   const upcomingGoals = useMemo(() => {
+    const dhikrIdsOrder = ['morning-adhkar', 'evening-adhkar', 'sleep-adhkar', 'dhikr-after-salah', 'istighfar-100'];
     return DEFAULT_GOALS.filter(g => {
       if (!activeIds.includes(g.id)) return false;
+      
+      // Filter adhkars by selectedAdhkarCount limit
+      if (dhikrIdsOrder.includes(g.id)) {
+        const idx = dhikrIdsOrder.indexOf(g.id);
+        if (idx >= selectedAdhkarCount) return false;
+      }
+
       if (g.repeat === 'weekly') {
         const today = new Date().getDay();
         return g.weekDay !== today;
       }
       return false;
     });
-  }, [activeIds]);
+  }, [activeIds, selectedAdhkarCount]);
 
   const prayerPeriods = useMemo(() => times ? getPrayerPeriods(times) : null, [times]);
 
@@ -486,24 +512,119 @@ export default function HomeScreen() {
       router.push("/premium");
       return;
     }
+
+    if (calendarConnected) {
+      Haptics.selectionAsync().catch(() => {});
+      Alert.alert(
+        "Disconnect Google Calendar 🗓️",
+        "Are you sure you want to disconnect Google Calendar from syncing with your Hijri Calendar?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Disconnect",
+            style: "destructive",
+            onPress: async () => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+              setCalendarConnected(false);
+              await setGoogleCalendarConnected(false);
+            }
+          }
+        ]
+      );
+      return;
+    }
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    const nextConnected = !calendarConnected;
-    setCalendarConnected(nextConnected);
-    await setGoogleCalendarConnected(nextConnected);
+    setCalendarConnected(true);
+    await setGoogleCalendarConnected(true);
+
+    // Build calendar event description from today's active goals
+    try {
+      const activeIds = await getActiveGoalIds();
+      const completedIds = await getCompletedGoals();
+      const activeGoals = DEFAULT_GOALS.filter(g => activeIds.includes(g.id));
+      const hijriDate = getHijriDate();
+      const today = new Date();
+      const dateLabel = today.toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+      const goalLines = activeGoals.map(g => {
+        const done = completedIds.includes(g.id);
+        return `${done ? "✅" : "⬜"} ${g.title}`;
+      }).join("\n");
+
+      const eventTitle = encodeURIComponent(`Islamic Hikmah: Daily Goals — ${hijriDate}`);
+      const eventDetails = encodeURIComponent(
+        `📅 ${dateLabel}\n🕌 Hijri: ${hijriDate}\n\n🎯 Today's Goals:\n${goalLines}\n\nSynced from Islamic Hikmah App`
+      );
+      const startDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const endDate = startDate;
+      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
+
+      const { Linking } = require("react-native");
+      await Linking.openURL(calUrl);
+    } catch (e) {
+      console.warn("Calendar sync error:", e);
+    }
+
     Alert.alert(
-      nextConnected ? "Sync Successful" : "Disconnected",
-      nextConnected
-        ? "Your Google Calendar has been connected. Prayer times will now sync automatically."
-        : "Google Calendar sync disabled."
+      "Sync Successful 🌙",
+      `Your daily goals have been synced to Google Calendar with today's Hijri date. Goals are now saved in both your Hijri calendar and Google Calendar!`
     );
+  };
+
+  const addDhikrToGoals = async (id: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const currentActive = await getActiveGoalIds();
+    if (!currentActive.includes(id)) {
+      const nextActive = [...currentActive, id];
+      await saveActiveGoalIds(nextActive);
+      setActiveIds(nextActive);
+      
+      // Auto-reschedule notifications
+      try {
+        const timingsRaw = await AsyncStorage.getItem("last_fetched_timings");
+        const prayerTimings = timingsRaw ? JSON.parse(timingsRaw) : {};
+        const goalTimes = await getGoalNotifTimes();
+        await scheduleGoalNotifications(nextActive, prayerTimings, goalTimes);
+      } catch (e) {
+        console.error("Reschedule failed:", e);
+      }
+      Alert.alert("Goal Added 🌟", "This Dhikr has been added to your everyday goals!");
+    } else {
+      Alert.alert("Already Added", "This Dhikr is already in your everyday goals.");
+    }
+  };
+
+  const addSadqaToGoals = async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const id = "give-sadqa";
+    const currentActive = await getActiveGoalIds();
+    if (!currentActive.includes(id)) {
+      const nextActive = [...currentActive, id];
+      await saveActiveGoalIds(nextActive);
+      setActiveIds(nextActive);
+      
+      // Auto-reschedule notifications
+      try {
+        const timingsRaw = await AsyncStorage.getItem("last_fetched_timings");
+        const prayerTimings = timingsRaw ? JSON.parse(timingsRaw) : {};
+        const goalTimes = await getGoalNotifTimes();
+        await scheduleGoalNotifications(nextActive, prayerTimings, goalTimes);
+      } catch (e) {
+        console.error("Reschedule failed:", e);
+      }
+      Alert.alert("Goal Added 🌟", "Give Sadqa / Charity has been added to your everyday goals!");
+    } else {
+      Alert.alert("Already Added", "This goal is already in your everyday goals.");
+    }
   };
 
   const handleSuggestedGoal = (action: string) => {
     Haptics.selectionAsync().catch(() => {});
     if (action === "dhikr") {
-      router.push("/goal-settings" as any);
+      setDhikrModalVisible(true);
     } else {
-      Alert.alert("Sadqa Logged", "May Allah accept your charity today! ❤️");
+      addSadqaToGoals();
     }
   };
 
@@ -669,8 +790,11 @@ export default function HomeScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.push("/menu")} hitSlop={10}>
-          <MaterialCommunityIcons name="menu" size={26} color={colors.onSurface} />
+        <Pressable onPress={() => router.push("/menu")} hitSlop={10} style={{ flexDirection: "row", alignItems: "center" }}>
+          <Image 
+            source={require("@/assets/images/icon.png")} 
+            style={{ width: 34, height: 34, borderRadius: 8 }} 
+          />
         </Pressable>
         <View style={{ alignItems: "center" }}>
           <Text style={[styles.headerTitle, { color: colors.brand }]}>الحكمة الإسلامية</Text>
@@ -684,8 +808,12 @@ export default function HomeScreen() {
           <Pressable onPress={() => router.push("/search" as any)} hitSlop={10} testID="home-search">
             <MaterialCommunityIcons name="magnify" size={26} color={colors.onSurface} />
           </Pressable>
-          <Pressable onPress={() => router.push("/profile" as any)} hitSlop={10}>
-            <MaterialCommunityIcons name="account-circle-outline" size={26} color={colors.onSurface} />
+          <Pressable onPress={() => router.push("/profile" as any)} hitSlop={10} style={{ width: 26, height: 26, borderRadius: 13, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
+            {profile?.photoURL ? (
+              <Image source={{ uri: profile.photoURL }} style={{ width: 26, height: 26, borderRadius: 13 }} />
+            ) : (
+              <MaterialCommunityIcons name="account-circle-outline" size={26} color={colors.onSurface} />
+            )}
           </Pressable>
           <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
             <MaterialCommunityIcons name="cog-outline" size={26} color={colors.onSurface} />
@@ -747,29 +875,7 @@ export default function HomeScreen() {
 
         {/* Connection & Daily Goals Section */}
         
-        {/* Google Calendar Card */}
-        {!calendarDismissed && (
-          <View style={[styles.calendarCard, { backgroundColor: colors.surfaceSecondary }]}>
-            <View style={styles.calendarHeader}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={[styles.calendarTitle, { color: colors.onSurface }]}>
-                  Connect your Google calendar with Athan to sync Prayer times.
-                </Text>
-              </View>
-              <Pressable onPress={handleCalendarDismiss} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={20} color={colors.onSurfaceMuted} />
-              </Pressable>
-            </View>
-            <Pressable 
-              onPress={handleCalendarSync}
-              style={[styles.calendarBtn, { backgroundColor: calendarConnected ? colors.onSurfaceMuted : colors.brand }]}
-            >
-              <Text style={styles.calendarBtnTxt}>
-                {calendarConnected ? "Disconnect" : "Start syncing"}
-              </Text>
-            </Pressable>
-          </View>
-        )}
+
 
         {/* Daily Goals Summary */}
         <View style={[styles.goalsCard, { backgroundColor: colors.surfaceSecondary }]}>
@@ -920,6 +1026,55 @@ export default function HomeScreen() {
                   thumbColor={Platform.OS === 'ios' ? undefined : colors.surfaceSecondary}
                 />
               </View>
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Add New Dhikr Modal */}
+      <Modal
+        visible={dhikrModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDhikrModalVisible(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setDhikrModalVisible(false)}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Add New Dhikr</Text>
+              <Pressable onPress={() => setDhikrModalVisible(false)} hitSlop={10}>
+                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+            
+            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
+              {[
+                { id: 'morning-adhkar', title: 'Morning Adhkar', subtitle: 'Recited after Fajr' },
+                { id: 'evening-adhkar', title: 'Evening Adhkar', subtitle: 'Recited after Asr' },
+                { id: 'sleep-adhkar', title: 'Sleep Adhkar', subtitle: 'Recited before sleeping' },
+                { id: 'dhikr-after-salah', title: 'Dhikr After Salah', subtitle: 'Recited after prayers' },
+                { id: 'istighfar-100', title: 'Istighfar (100 times)', subtitle: 'For forgiveness' },
+              ].map((item) => {
+                const isAdded = activeIds.includes(item.id);
+                return (
+                  <Pressable 
+                    key={item.id} 
+                    onPress={() => {
+                      addDhikrToGoals(item.id);
+                      setDhikrModalVisible(false);
+                    }}
+                    style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{item.title}</Text>
+                      <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>{item.subtitle}</Text>
+                    </View>
+                    <View style={[styles.goalCircleCheck, { borderColor: isAdded ? CATEGORY_COLORS.dhikr : colors.onSurfaceMuted, backgroundColor: isAdded ? CATEGORY_COLORS.dhikr : "transparent" }]}>
+                      {isAdded && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
+                    </View>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </View>
         </Pressable>

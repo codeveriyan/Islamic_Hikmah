@@ -8,8 +8,15 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
+import * as Haptics from "expo-haptics";
 import { CATEGORIES, getCategory } from "@/src/data/duas";
-import { toggleFavourite, getFavourites, Favourite } from "@/src/storage";
+import { 
+  toggleFavourite, 
+  getFavourites, 
+  Favourite,
+  getDhikrBookmarks,
+  toggleDhikrBookmark
+} from "@/src/storage";
 import { transliterateToTamil } from "@/src/transliterator";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 
@@ -23,6 +30,7 @@ export default function DuaCategoryScreen() {
   const arabicFontFamily = useArabicFont();
   const cat = getCategory(String(category));
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [translatedTexts, setTranslatedTexts] = useState<Record<string, { translation: string; transliteration?: string }>>({});
   
   // View Modes: 'list' (master) or 'reader' (detail carousel)
@@ -118,6 +126,7 @@ export default function DuaCategoryScreen() {
 
   useEffect(() => {
     getFavourites().then((fs) => setFavIds(new Set(fs.map((f) => f.id))));
+    getDhikrBookmarks().then((bms) => setBookmarkedIds(new Set(bms.map((b) => b.id))));
   }, []);
 
   // Sync finished audio triggers
@@ -408,6 +417,23 @@ export default function DuaCategoryScreen() {
     setFavIds(new Set(fs.map((f) => f.id)));
   };
 
+  const onBookmark = async (i: number) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    const d = cat.duas[i];
+    const bm = {
+      id: `dhikr-${d.id}`,
+      duaId: d.id,
+      title: d.title,
+      subtitle: cat.title,
+      arabic: d.arabic,
+      translation: d.translation,
+      addedAt: Date.now(),
+    };
+    await toggleDhikrBookmark(bm);
+    const bms = await getDhikrBookmarks();
+    setBookmarkedIds(new Set(bms.map((b) => b.id)));
+  };
+
   const playAll = () => {
     setIsPlayingAll(true);
     setActiveDuaIndex(0);
@@ -537,6 +563,7 @@ export default function DuaCategoryScreen() {
   if (viewMode === 'reader') {
     const activeItem = cat.duas[activeDuaIndex];
     const isFav = favIds.has(activeItem.id);
+    const isBookmarked = bookmarkedIds.has(`dhikr-${activeItem.id}`);
 
     const readerPct = Math.round(((activeDuaIndex + 1) / cat.duas.length) * 100);
 
@@ -560,8 +587,11 @@ export default function DuaCategoryScreen() {
                   {activeDuaIndex + 1}/{cat.duas.length} · {readerPct}% {t("readPercent")}
                 </Text>
               </View>
-              <Pressable onPress={() => router.push("/")} hitSlop={10} testID="dua-reader-home">
+              <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="dua-reader-home">
                 <MaterialCommunityIcons name="home-outline" size={22} color={colors.onSurface} />
+              </Pressable>
+              <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+                <MaterialCommunityIcons name="cog-outline" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
           </View>
@@ -603,6 +633,10 @@ export default function DuaCategoryScreen() {
             <Pressable onPress={() => onFav(activeDuaIndex)} style={styles.actionIconBtn}>
               <MaterialCommunityIcons name={isFav ? "heart" : "heart-outline"} size={22} color={isFav ? theme.colors.error : colors.brand} />
               <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isFav ? t("liked") : t("like")}</Text>
+            </Pressable>
+            <Pressable onPress={() => onBookmark(activeDuaIndex)} style={styles.actionIconBtn}>
+              <MaterialCommunityIcons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color={isBookmarked ? colors.brand : colors.onSurfaceMuted} />
+              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isBookmarked ? "Bookmarked" : "Bookmark"}</Text>
             </Pressable>
           </View>
 
@@ -749,9 +783,14 @@ export default function DuaCategoryScreen() {
                 <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
               </Pressable>
               <Text style={styles.heroTitle}>{t(cat.id)}</Text>
-              <Pressable onPress={() => router.push("/")} hitSlop={10} testID="dua-home">
-                <MaterialCommunityIcons name="home-outline" size={24} color="#fff" />
-              </Pressable>
+              <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="dua-home">
+                  <MaterialCommunityIcons name="home-outline" size={24} color="#fff" />
+                </Pressable>
+                <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+                  <MaterialCommunityIcons name="cog-outline" size={24} color="#fff" />
+                </Pressable>
+              </View>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginRight: 16 }}>
               <Text style={styles.heroSub}>{cat.duas.length} {t("duas")}</Text>

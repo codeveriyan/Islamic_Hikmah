@@ -33,7 +33,7 @@ export default function WelcomeScreen() {
         {/* Tagline */}
         <View style={styles.taglineSection}>
           <Text style={[styles.taglineText, { color: colors.onSurfaceSecondary }]}>
-            Study the Noble Quran, daily goals, Hadith books, Mosque finder, and track your prayers seamlessly.
+            Study the Noble Quran, daily goals, Hadith books, Masjid finder, and track your prayers seamlessly.
           </Text>
         </View>
 

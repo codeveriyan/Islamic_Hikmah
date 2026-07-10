@@ -418,17 +418,33 @@ export default function QiblaScreen() {
           <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 2 }}>📍 {locationName}</Text>
         </View>
         
-        {/* Toggle Mode Button */}
-        <Pressable 
-          onPress={() => setMode(mode === 'compass' ? 'map' : 'compass')} 
-          style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
-        >
-          <MaterialCommunityIcons 
-            name={mode === 'compass' ? "map-legend" : "compass-outline"} 
-            size={22} 
-            color={colors.brand} 
-          />
-        </Pressable>
+        {/* Toggle Mode Button & Nav Buttons */}
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <Pressable 
+            onPress={() => setMode(mode === 'compass' ? 'map' : 'compass')} 
+            style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MaterialCommunityIcons 
+              name={mode === 'compass' ? "map-legend" : "compass-outline"} 
+              size={22} 
+              color={colors.brand} 
+            />
+          </Pressable>
+          <Pressable 
+            onPress={() => router.replace("/(tabs)")} 
+            hitSlop={10} 
+            style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MaterialCommunityIcons name="home-outline" size={20} color={colors.onSurface} />
+          </Pressable>
+          <Pressable 
+            onPress={() => router.push("/settings")} 
+            hitSlop={10} 
+            style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MaterialCommunityIcons name="cog-outline" size={20} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </View>
 
       {mode === 'map' ? (
