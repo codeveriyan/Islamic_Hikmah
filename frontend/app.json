@@ -13,6 +13,8 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Show accurate prayer times and Qibla direction",
         "NSMotionUsageDescription": "Detect compass heading for Qibla direction",
+        "NSCameraUsageDescription": "Scan barcodes and capture food ingredient labels for halal checking",
+        "NSPhotoLibraryUsageDescription": "Choose ingredient label photos for halal OCR checking",
         "UIBackgroundModes": [
           "audio"
         ]
@@ -29,6 +31,8 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
         "VIBRATE"
       ]
     },

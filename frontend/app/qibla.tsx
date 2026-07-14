@@ -37,10 +37,10 @@ const KAABA_COORDS: LocationCoords = {
 };
 
 const DIAL_SKINS = [
-  { id: 'gold', name: 'Imperial Gold', ringColor: '#d4af37', bg: '#171512', accent: '#f1c40f', needleColorLight: '#ffe066', needleColorDark: '#d4af37', caseGradient: ['#ffe066', '#d4af37', '#aa8000', '#554000'] },
-  { id: 'teal', name: 'Vintage Emerald', ringColor: '#1abc9c', bg: '#0d3436', accent: '#00d4aa', needleColorLight: '#2ecc71', needleColorDark: '#27ae60', caseGradient: ['#00d4aa', '#1abc9c', '#148f77', '#0e5a4c'] },
-  { id: 'metal', name: 'Silver Tech', ringColor: '#bdc3c7', bg: '#2c3e50', accent: '#ecf0f1', needleColorLight: '#e74c3c', needleColorDark: '#c0392b', caseGradient: ['#ffffff', '#bdc3c7', '#7f8c8d', '#34495e'] },
-  { id: 'obsidian', name: 'Obsidian Cyber', ringColor: '#3498db', bg: '#101114', accent: '#5dade2', needleColorLight: '#3498db', needleColorDark: '#2980b9', caseGradient: ['#5dade2', '#3498db', '#1f618d', '#154360'] },
+  { id: 'hikmah', name: 'Brass Classic', ringColor: '#b87333', bg: '#efe4a8', accent: '#3a2418', needleColorLight: '#3b2430', needleColorDark: '#1d1118', caseGradient: ['#fff0b8', '#c9822e', '#8a4a1f', '#3b1f12'] },
+  { id: 'emerald', name: 'Emerald Noor', ringColor: '#00c896', bg: '#062520', accent: '#9fffe0', needleColorLight: '#2ecc71', needleColorDark: '#008f70', caseGradient: ['#8fffe0', '#00c896', '#007a62', '#031713'] },
+  { id: 'moon', name: 'Moon Silver', ringColor: '#bdc3c7', bg: '#17242b', accent: '#ecf0f1', needleColorLight: '#f1d36b', needleColorDark: '#d4af37', caseGradient: ['#ffffff', '#bdc3c7', '#6b7b82', '#17242b'] },
+  { id: 'obsidian', name: 'Obsidian', ringColor: '#3498db', bg: '#101114', accent: '#5dade2', needleColorLight: '#00c896', needleColorDark: '#008f70', caseGradient: ['#5dade2', '#3498db', '#1f618d', '#061713'] },
 ];
 
 export default function QiblaScreen() {
@@ -302,6 +302,9 @@ export default function QiblaScreen() {
 
   const isAligned = relativeAngle < 5 || relativeAngle > 355;
   const isFlat = Math.abs(tilt.x) < 0.15 && Math.abs(tilt.y) < 0.15;
+  const isLightDial = activeSkin.id === 'hikmah' || activeSkin.id === 'moon';
+  const dialInk = isLightDial ? '#3a2418' : 'rgba(255,255,255,0.74)';
+  const dialMuted = isLightDial ? 'rgba(58,36,24,0.55)' : 'rgba(255,255,255,0.32)';
 
   useEffect(() => {
     if (isAligned && isFlat) {
@@ -407,7 +410,12 @@ export default function QiblaScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: '#061713' }]} edges={['top']}>
+      <LinearGradient
+        colors={['#061713', '#0b2a23', colors.surface]}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={styles.backgroundHalo} />
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
@@ -538,13 +546,22 @@ export default function QiblaScreen() {
                     <View style={styles.concentricCircle} />
                     <View style={[styles.concentricCircle, { width: 140, height: 140 }]} />
                     <View style={[styles.concentricCircle, { width: 80, height: 80 }]} />
+                    <LinearGradient
+                      colors={isLightDial ? ['rgba(255,255,255,0.48)', 'rgba(185,116,40,0.08)', 'rgba(58,36,24,0.08)'] : ['rgba(255,255,255,0.14)', 'transparent']}
+                      style={styles.dialPatina}
+                    />
+                    {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
+                      <View key={`rose-${deg}`} style={[styles.roseArm, { transform: [{ rotate: `${deg}deg` }] }]}>
+                        <View style={[styles.roseArmFill, { borderBottomColor: deg % 90 === 0 ? dialInk : dialMuted }]} />
+                      </View>
+                    ))}
 
                     {/* Rotating Cardinal Directions */}
                     <View style={styles.rotatingCardinals}>
-                      <Text style={[styles.cardinal, { position: 'absolute', top: 10, color: isAligned && isFlat ? '#2ecc71' : activeSkin.accent, fontSize: 16 }]}>N</Text>
-                      <Text style={[styles.cardinal, { position: 'absolute', right: 10, color: 'rgba(255,255,255,0.4)' }]}>E</Text>
-                      <Text style={[styles.cardinal, { position: 'absolute', bottom: 10, color: 'rgba(255,255,255,0.4)' }]}>S</Text>
-                      <Text style={[styles.cardinal, { position: 'absolute', left: 10, color: 'rgba(255,255,255,0.4)' }]}>W</Text>
+                      <Text style={[styles.cardinal, { position: 'absolute', top: 10, color: isAligned && isFlat ? '#2ecc71' : activeSkin.accent, fontSize: 19 }]}>N</Text>
+                      <Text style={[styles.cardinal, { position: 'absolute', right: 10, color: dialInk }]}>E</Text>
+                      <Text style={[styles.cardinal, { position: 'absolute', bottom: 10, color: dialInk }]}>S</Text>
+                      <Text style={[styles.cardinal, { position: 'absolute', left: 10, color: dialInk }]}>W</Text>
                     </View>
 
                     {/* 3D Kaaba target icon on the dial ring at Mecca angle */}
@@ -554,7 +571,7 @@ export default function QiblaScreen() {
                         {
                           transform: [
                             { rotate: `${qiblaDirection}deg` },
-                            { translateY: -82 } 
+                            { translateY: -98 } 
                           ]
                         }
                       ]}
@@ -563,8 +580,9 @@ export default function QiblaScreen() {
                     </View>
 
                     {/* Compass Ticks */}
-                    {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map(deg => {
+                    {Array.from({ length: 72 }, (_, i) => i * 5).map(deg => {
                       const isCardinal = deg % 90 === 0;
+                      const isMajor = deg % 30 === 0;
                       return (
                         <View
                           key={deg}
@@ -579,8 +597,8 @@ export default function QiblaScreen() {
                             style={[
                               styles.markerLine,
                               { 
-                                backgroundColor: isCardinal ? activeSkin.accent : 'rgba(255,255,255,0.25)',
-                                height: isCardinal ? 10 : 6,
+                                backgroundColor: isCardinal ? activeSkin.accent : isMajor ? dialInk : dialMuted,
+                                height: isCardinal ? 15 : isMajor ? 11 : 6,
                               }
                             ]}
                           />
@@ -590,7 +608,7 @@ export default function QiblaScreen() {
 
                     {/* Degree text readouts */}
                     {[0, 90, 180, 270].map(deg => {
-                      const r = 68;
+                      const r = 82;
                       const x = r * Math.sin((deg * Math.PI) / 180);
                       const y = -r * Math.cos((deg * Math.PI) / 180);
                       return (
@@ -600,8 +618,8 @@ export default function QiblaScreen() {
                             styles.degreeText,
                             {
                               position: 'absolute',
-                              left: 95 + x,
-                              top: 95 + y,
+                              left: 111 + x,
+                              top: 111 + y,
                               transform: [{ translateX: -10 }, { translateY: -6 }],
                               color: 'rgba(255,255,255,0.3)',
                             },
@@ -731,6 +749,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  backgroundHalo: {
+    position: 'absolute',
+    width: width * 0.9,
+    height: width * 0.9,
+    borderRadius: width * 0.45,
+    top: 80,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(212,175,55,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(212,175,55,0.12)',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -793,30 +822,30 @@ const styles = StyleSheet.create({
   compassContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 16,
-    minHeight: 270,
+    marginVertical: 18,
+    minHeight: 300,
   },
   
   // Realistic 3D Casing & Layers
   caseOuterBorder: {
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    padding: 8,
+    width: Math.min(width - 54, 304),
+    height: Math.min(width - 54, 304),
+    borderRadius: 152,
+    padding: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
+    elevation: 20,
   },
   caseInnerChamber: {
     flex: 1,
-    borderRadius: 117,
+    borderRadius: 142,
     position: 'relative',
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: 'rgba(0,0,0,0.8)',
   },
   topPointer: {
@@ -825,17 +854,17 @@ const styles = StyleSheet.create({
     zIndex: 40,
   },
   tiltedChamber: {
-    width: 200,
-    height: 200,
+    width: 232,
+    height: 232,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   rotatingDialDisk: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 3.5,
+    width: 232,
+    height: 232,
+    borderRadius: 116,
+    borderWidth: 4,
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
@@ -843,14 +872,38 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
+    overflow: 'hidden',
+  },
+  dialPatina: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: 116,
+  },
+  roseArm: {
+    position: 'absolute',
+    width: 32,
+    height: 166,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  roseArmFill: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderBottomWidth: 70,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    opacity: 0.72,
   },
   concentricCircle: {
     position: 'absolute',
-    width: 170,
-    height: 170,
-    borderRadius: 85,
+    width: 198,
+    height: 198,
+    borderRadius: 99,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(58,36,24,0.18)',
   },
   rotatingCardinals: {
     position: 'absolute',
@@ -861,6 +914,7 @@ const styles = StyleSheet.create({
   },
   cardinal: {
     fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   rotatingKaabaMarker: {
     position: 'absolute',
@@ -873,7 +927,7 @@ const styles = StyleSheet.create({
   degreeMarker: {
     position: 'absolute',
     width: 2,
-    height: 184,
+    height: 214,
     alignItems: 'center',
   },
   markerLine: {
@@ -888,7 +942,7 @@ const styles = StyleSheet.create({
   needleWrapper: {
     position: 'absolute',
     width: 30,
-    height: 200,
+    height: 232,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,

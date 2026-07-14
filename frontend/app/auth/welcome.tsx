@@ -1,15 +1,17 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, Image, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, Image, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import * as Haptics from "expo-haptics";
+import { useAuth } from "@/src/AuthContext";
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { loginAsGuest, loginWithGoogle, loading } = useAuth();
 
   const handlePress = (route: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -42,10 +44,12 @@ export default function WelcomeScreen() {
           {/* Email Login */}
           <Pressable
             onPress={() => handlePress("/auth/login")}
+            disabled={loading}
             style={({ pressed }) => [
               styles.primaryBtn,
               { backgroundColor: colors.brand },
-              pressed && { opacity: 0.9 }
+              pressed && { opacity: 0.9 },
+              loading && { opacity: 0.6 }
             ]}
           >
             <MaterialCommunityIcons name="email-outline" size={20} color={colors.onBrandPrimary} />
@@ -55,10 +59,12 @@ export default function WelcomeScreen() {
           {/* Create Account */}
           <Pressable
             onPress={() => handlePress("/auth/register")}
+            disabled={loading}
             style={({ pressed }) => [
               styles.secondaryBtn,
               { borderColor: colors.border },
-              pressed && { backgroundColor: colors.surfaceSecondary }
+              pressed && { backgroundColor: colors.surfaceSecondary },
+              loading && { opacity: 0.6 }
             ]}
           >
             <Text style={[styles.secondaryBtnTxt, { color: colors.onSurface }]}>Create Account</Text>
@@ -75,25 +81,37 @@ export default function WelcomeScreen() {
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-              // Implement Google Login wrapper
-              alert("Google Sign-In integration ready!");
+              loginWithGoogle();
             }}
+            disabled={loading}
             style={({ pressed }) => [
               styles.socialBtn,
               { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-              pressed && { opacity: 0.85 }
+              pressed && { opacity: 0.85 },
+              loading && { opacity: 0.6 }
             ]}
           >
-            <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
-            <Text style={[styles.socialBtnTxt, { color: colors.onSurface }]}>Continue with Google</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color={colors.onSurface} />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
+                <Text style={[styles.socialBtnTxt, { color: colors.onSurface }]}>Continue with Google</Text>
+              </>
+            )}
           </Pressable>
 
           {/* Guest login */}
           <Pressable
-            onPress={() => handlePress("/(tabs)")}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              loginAsGuest();
+            }}
+            disabled={loading}
             style={({ pressed }) => [
               styles.guestBtn,
-              pressed && { opacity: 0.7 }
+              pressed && { opacity: 0.7 },
+              loading && { opacity: 0.6 }
             ]}
           >
             <Text style={[styles.guestBtnTxt, { color: colors.brand }]}>Continue as Guest</Text>

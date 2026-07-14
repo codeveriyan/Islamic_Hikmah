@@ -392,6 +392,37 @@ export default function SeerahIndexScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       >
+        {selectedEra === "all" && searchQuery === "" && (
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              router.push("/seerah/prophets");
+            }}
+            style={({ pressed }) => [
+              styles.chapterCard,
+              { backgroundColor: colors.surfaceSecondary, marginBottom: theme.spacing.sm },
+              pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+            ]}
+          >
+            <View style={[styles.eraDot, { backgroundColor: "#D97706" }]} />
+            <View style={[styles.chapterIcon, { backgroundColor: "#D9770618" }]}>
+              <MaterialCommunityIcons name="book-open-page-variant" size={22} color="#D97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.chapterTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                Stories of the Prophets
+              </Text>
+              <Text style={[styles.chapterArabic, { color: colors.brand }]}>
+                قصص الأنبياء
+              </Text>
+              <Text style={[styles.chapterDesc, { color: colors.onSurfaceMuted }]} numberOfLines={2}>
+                Read the inspiring stories of the Prophets of Islam, from Adam to Muhammad (SAW).
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
+          </Pressable>
+        )}
+
         {selectedEra === "all" && searchQuery === "" && renderEraDashboard()}
         {selectedEra !== "all" && renderFilterBanner()}
 

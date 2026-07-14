@@ -68,17 +68,18 @@ const RADIUS = (RING - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
 const QUICK_ACTIONS = [
-  { id: "nobleQuran", icon: "book-open-variant", route: "/quran", color: "#10B981" },
-  { id: "hadithCollections", icon: "book-open", route: "/hadith", color: "#F59E0B" },
-  { id: "seerah", icon: "account-star", route: "/seerah", color: "#EC4899" },
-  { id: "tasbihCounter", icon: "circle-double", route: "/dhikr", color: "#C5A880" },
-  { id: "namesOfAllah", icon: "mosque", route: "/names", color: "#14B8A6" },
-  { id: "qiblaFinder", icon: "compass-outline", route: "/qibla", color: "#8B5CF6" },
-  { id: "duas", icon: "hands-pray", route: "/dua-hub", color: "#06B6D4" },
-  { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar", color: "#F43F5E" },
-  { id: "mosqueFinder", icon: "map-marker-radius", route: "/finder?type=mosque", color: "#4F46E5" },
-  { id: "halalFoodFinder", icon: "food-fork-drink", route: "/finder?type=halal", color: "#16A34A" },
-  { id: "pillarsOfIslam", icon: "pillar", route: "/pillars-of-islam", color: "#0F766E" },
+  { id: "nobleQuran", icon: "book-open-variant", route: "/quran", color: "#10B981", gradient: ["#0F766E", "#10B981", "#D4AF37"] },
+  { id: "hadithCollections", icon: "book-open", route: "/hadith", color: "#F59E0B", gradient: ["#7C2D12", "#F59E0B", "#FDE68A"] },
+  { id: "seerah", icon: "account-star", route: "/seerah", color: "#EC4899", gradient: ["#831843", "#EC4899", "#F9A8D4"] },
+  { id: "tasbihCounter", icon: "circle-double", route: "/dhikr", color: "#C5A880", gradient: ["#111827", "#8B7355", "#F7D774"] },
+  { id: "namesOfAllah", icon: "mosque", route: "/names", color: "#14B8A6", gradient: ["#064E3B", "#14B8A6", "#99F6E4"] },
+  { id: "qiblaFinder", icon: "compass-outline", route: "/qibla", color: "#8B5CF6", gradient: ["#312E81", "#8B5CF6", "#DDD6FE"] },
+  { id: "duas", icon: "hands-pray", route: "/dua-hub", color: "#06B6D4", gradient: ["#164E63", "#06B6D4", "#A5F3FC"] },
+  { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar", color: "#F43F5E", gradient: ["#881337", "#F43F5E", "#FDA4AF"] },
+  { id: "mosqueFinder", icon: "map-marker-radius", route: "/finder?type=mosque", color: "#4F46E5", gradient: ["#1E1B4B", "#4F46E5", "#A5B4FC"] },
+  { id: "halalFoodFinder", icon: "food-fork-drink", route: "/finder?type=halal", color: "#16A34A", gradient: ["#14532D", "#16A34A", "#BBF7D0"] },
+  { id: "halalFoodScanner", icon: "barcode-scan", route: "/halal-scanner", color: "#059669", gradient: ["#064E3B", "#059669", "#6EE7B7"] },
+  { id: "pillarsOfIslam", icon: "pillar", route: "/pillars-of-islam", color: "#0F766E", gradient: ["#134E4A", "#0F766E", "#D4AF37"] },
 ] as const;
 
 function getGreeting() {
@@ -788,6 +789,11 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
+      <LinearGradient
+        colors={colors.mode === "dark" ? ["#061713", "#0B241E", colors.surface] : ["#F8F4E8", "#EEF8F1", colors.surface]}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={styles.goldHalo} />
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.push("/menu")} hitSlop={10} style={{ flexDirection: "row", alignItems: "center" }}>
@@ -832,7 +838,12 @@ export default function HomeScreen() {
 
         {/* Prayer Countdown Card */}
         {prayerPeriods && (
-          <Pressable onPress={() => router.push("/prayer-times")} style={[styles.prayerCard, { backgroundColor: colors.surfaceSecondary }]}>
+          <Pressable onPress={() => router.push("/prayer-times")} style={styles.prayerCard}>
+            <LinearGradient
+              colors={colors.mode === "dark" ? ["#0B2D25", "#10251F", "#1E3528"] : ["#FFFFFF", "#F3FAF2", "#FFF7E0"]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={styles.prayerCardGlow} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.prayerLabel, { color: colors.onSurfaceMuted }]}>{t("currentPrayer")}</Text>
               <Text style={[styles.prayerName, { color: colors.onSurface }]}>{t(prayerPeriods.current.name.toLowerCase())}</Text>
@@ -865,8 +876,16 @@ export default function HomeScreen() {
           {QUICK_ACTIONS.map((a) => (
             <Pressable key={a.id} onPress={() => handleQuickAction(a.route)}
               style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7 }]}>
-              <View style={[styles.quickIconWrap, { backgroundColor: a.color + "22" }]}>
-                <MaterialCommunityIcons name={a.icon as any} size={22} color={a.color} />
+              <View style={styles.quickTileShadow}>
+                <LinearGradient
+                  colors={a.gradient as [string, string, string]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.quickIconWrap}
+                >
+                  <View style={styles.quickIconHighlight} />
+                  <MaterialCommunityIcons name={a.icon as any} size={25} color="#fff" />
+                </LinearGradient>
               </View>
               <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{t(a.id)}</Text>
             </Pressable>
@@ -878,7 +897,11 @@ export default function HomeScreen() {
 
 
         {/* Daily Goals Summary */}
-        <View style={[styles.goalsCard, { backgroundColor: colors.surfaceSecondary }]}>
+        <View style={styles.goalsCard}>
+          <LinearGradient
+            colors={colors.mode === "dark" ? ["#10231F", "#0E1B18"] : ["#FFFFFF", "#F8FBF7"]}
+            style={StyleSheet.absoluteFillObject}
+          />
           <View style={styles.goalsHeader}>
             <Text style={[styles.goalsTitle, { color: colors.onSurface }]}>
               Complete {totalGoals} goals today
@@ -1085,6 +1108,15 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  goldHalo: {
+    position: "absolute",
+    top: 70,
+    right: -90,
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    backgroundColor: "rgba(212,175,55,0.12)",
+  },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
   headerTitle: { fontFamily: "AmiriBold", fontSize: 24, letterSpacing: 0.5 },
   hijriDate: { fontSize: 11, marginTop: 2 },
@@ -1106,7 +1138,31 @@ const styles = StyleSheet.create({
   },
 
   // Prayer countdown card
-  prayerCard: { marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.lg, padding: theme.spacing.lg, flexDirection: "row", alignItems: "center", marginBottom: theme.spacing.lg },
+  prayerCard: {
+    marginHorizontal: theme.spacing.lg,
+    borderRadius: 24,
+    padding: theme.spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: theme.spacing.lg,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(212,175,55,0.22)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    elevation: 10,
+  },
+  prayerCardGlow: {
+    position: "absolute",
+    right: -42,
+    top: -58,
+    width: 154,
+    height: 154,
+    borderRadius: 77,
+    backgroundColor: "rgba(212,175,55,0.16)",
+  },
   prayerLabel: { fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
   prayerName: { fontSize: 28, fontWeight: "800", marginTop: 2 },
   prayerTime: { fontSize: 20, fontWeight: "700" },
@@ -1118,12 +1174,53 @@ const styles = StyleSheet.create({
 
   // Quick actions
   quickRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
-  quickBtn: { alignItems: "center", width: "30%", marginBottom: 12 },
-  quickIconWrap: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 6 },
-  quickLabel: { fontSize: 11, fontWeight: "600" },
+  quickBtn: { alignItems: "center", width: "30%", marginBottom: 16 },
+  quickTileShadow: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    marginBottom: 7,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 13,
+    elevation: 9,
+  },
+  quickIconWrap: {
+    flex: 1,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+  },
+  quickIconHighlight: {
+    position: "absolute",
+    top: 6,
+    left: 8,
+    right: 8,
+    height: 20,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  quickLabel: { fontSize: 11, fontWeight: "800", textAlign: "center", lineHeight: 15 },
 
   // Goals card
-  goalsCard: { marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.lg, padding: theme.spacing.lg, marginBottom: theme.spacing.lg },
+  goalsCard: {
+    marginHorizontal: theme.spacing.lg,
+    borderRadius: 24,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(212,175,55,0.16)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 7,
+  },
   goalsHeader: { marginBottom: theme.spacing.sm },
   goalsTitle: { fontSize: 16, fontWeight: "700" },
   progressBg: { height: 6, borderRadius: 3, marginBottom: theme.spacing.sm },

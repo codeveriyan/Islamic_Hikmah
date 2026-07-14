@@ -321,6 +321,7 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
   
     "mosqueFinder": "Masjid Finder",
     "halalFoodFinder": "Halal Food Finder",
+    "halalFoodScanner": "Halal Food Scanner",
     "pillarsOfIslam": "Pillars of Islam",
     "zakatCalculator": "Zakat Calculator",
     "hajjUmrahGuide": "Hajj & Umrah",

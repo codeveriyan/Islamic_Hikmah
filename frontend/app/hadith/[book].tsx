@@ -10,6 +10,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { HADITH_BOOKS } from "./index";
 import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
+import hadithFallback from "@/src/data/quran/hadithFallback.json";
 import { 
   toggleFavourite, 
   getFavourites, 
@@ -137,43 +138,81 @@ export default function HadithDetailScreen() {
     if (!book) return;
     setLoading(true);
     
-    Promise.all([
-      fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`).then((r) => r.json()),
-      fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).then((r) => r.json()).catch(() => ({ hadiths: [] })),
-    ])
-      .then(([engData, araData]) => {
-        const engList = engData?.hadiths || [];
-        const araList = araData?.hadiths || [];
-        
-        const zippedList: (Hadith & { arabicText?: string })[] = [];
-        
-        // Map Arabic by hadith number for instant lookups
-        const araMap: Record<number, string> = {};
-        araList.forEach((h: any) => {
-          if (h.hadithnumber) araMap[h.hadithnumber] = h.text;
-        });
-
-        engList.forEach((eng: any) => {
-          const araText = araMap[eng.hadithnumber] || "";
+    const bookMeta = HADITH_BOOKS.find((b) => b.id === book);
+    
+    if (bookMeta?.source === "fawazahmed") {
+      Promise.all([
+        fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`).then((r) => r.json()),
+        fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).then((r) => r.json()).catch(() => ({ hadiths: [] })),
+      ])
+        .then(([engData, araData]) => {
+          const engList = engData?.hadiths || [];
+          const araList = araData?.hadiths || [];
           
-          // Skip if both texts are completely empty (fixes Sahih Muslim Hadith 1 to 92 blank cards bug!)
-          if (eng.text.trim() === "" && araText.trim() === "") {
-            return;
-          }
-
-          zippedList.push({
-            hadithnumber: eng.hadithnumber,
-            text: eng.text,
-            arabicText: araText,
+          const zippedList: (Hadith & { arabicText?: string })[] = [];
+          
+          const araMap: Record<number, string> = {};
+          araList.forEach((h: any) => {
+            if (h.hadithnumber) araMap[h.hadithnumber] = h.text;
           });
-        });
 
-        setHadiths(zippedList);
-      })
-      .catch((e) => {
-        console.error("Failed to fetch Hadiths:", e);
-      })
-      .finally(() => setLoading(false));
+          engList.forEach((eng: any) => {
+            const araText = araMap[eng.hadithnumber] || "";
+            if (eng.text.trim() === "" && araText.trim() === "") return;
+
+            zippedList.push({
+              hadithnumber: eng.hadithnumber,
+              text: eng.text,
+              arabicText: araText,
+            });
+          });
+
+          setHadiths(zippedList);
+        })
+        .catch((e) => {
+          console.error("Failed to fetch Hadiths (Fawaz Ahmed):", e);
+        })
+        .finally(() => setLoading(false));
+    } 
+    else if (bookMeta?.source?.startsWith("ahmedbaset_")) {
+      let folder = "";
+      let file = book;
+      if (book === "ahmad") file = "ahmed";
+      
+      if (bookMeta.source === "ahmedbaset_nine") {
+        folder = "the_9_books";
+      } else if (bookMeta.source === "ahmedbaset_other") {
+        folder = "other_books";
+      } else if (bookMeta.source === "ahmedbaset_forties") {
+        folder = "forties";
+      }
+      
+      fetch(`https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/${folder}/${file}.json`)
+        .then((r) => r.json())
+        .then((data) => {
+          const parsedList: Hadith[] = (data.hadiths || []).map((h: any) => ({
+            hadithnumber: h.idInBook || h.id,
+            text: (h.english?.narrator ? `${h.english.narrator} ` : "") + (h.english?.text || ""),
+            arabicText: h.arabic || ""
+          }));
+          setHadiths(parsedList);
+        })
+        .catch((e) => {
+          console.error("Failed to fetch Hadiths (Ahmed Baset):", e);
+        })
+        .finally(() => setLoading(false));
+    }
+    else {
+      // Local fallback collections
+      const fallbackList = (hadithFallback as any)[book] || [];
+      const parsedList: Hadith[] = fallbackList.map((h: any) => ({
+        hadithnumber: h.hadithnumber,
+        text: h.text,
+        arabicText: h.arabicText || ""
+      }));
+      setHadiths(parsedList);
+      setLoading(false);
+    }
   }, [book]);
 
   const handleShare = async (item: Hadith) => {
