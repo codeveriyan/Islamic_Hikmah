@@ -32,7 +32,7 @@ export default function ProphetsIndexScreen() {
         <View style={styles.heroLeft}>
           <Text style={[styles.heroTitle, { color: colors.onSurface }]}>The Best of Stories</Text>
           <Text style={[styles.heroSub, { color: colors.onSurfaceMuted }]}>
-            "We relate to you, [O Muhammad], the best of stories in what We have revealed to you of this Qur'an..."
+            {"\"We relate to you, [O Muhammad], the best of stories in what We have revealed to you of this Qur'an...\""}
           </Text>
         </View>
         <View style={[styles.heroIconWrap, { backgroundColor: colors.brand + "18" }]}>

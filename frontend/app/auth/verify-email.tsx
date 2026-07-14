@@ -172,7 +172,7 @@ export default function VerifyEmailScreen() {
             ) : (
               <>
                 <MaterialCommunityIcons name="refresh" size={20} color={colors.onBrandPrimary} />
-                <Text style={[styles.primaryBtnTxt, { color: colors.onBrandPrimary }]}>I've Verified My Email</Text>
+                <Text style={[styles.primaryBtnTxt, { color: colors.onBrandPrimary }]}>{"I've Verified My Email"}</Text>
               </>
             )}
           </Pressable>

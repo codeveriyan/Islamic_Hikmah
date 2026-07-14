@@ -21,6 +21,7 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import pageMapping from "@/src/data/quran/pageMapping.json";
 import { SURAH_LIST } from "@/src/data/surahList";
@@ -90,6 +91,7 @@ import MutashabihatView from "./mutashabihat";
 export default function QuranIndex() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
   const isFocused = useIsFocused();
@@ -152,40 +154,47 @@ export default function QuranIndex() {
           <View style={[styles.dashboardHeroIconWrap, { backgroundColor: colors.brand + "18" }]}>
             <MaterialCommunityIcons name="book-open-page-variant" size={44} color={colors.brand} />
           </View>
-          <Text style={[styles.dashboardHeroTitle, { color: colors.onSurface }]}>Al-Qur'aan</Text>
+          <Text style={[styles.dashboardHeroTitle, { color: colors.onSurface }]}>{"Al-Qur'aan"}</Text>
           <Text style={[styles.dashboardHeroSub, { color: colors.brand }]}>القرآن الكريم</Text>
         </View>
 
         <View style={styles.dashboardGrid}>
-          {selectorItems.map((item) => (
-            <Pressable
-              key={item.id}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                if (item.id === "listen" && profile?.tier !== "premium") {
-                  router.push("/premium");
-                  return;
-                }
-                setActiveTab(item.id as any);
-                setModeSelected(true);
-              }}
-              style={({ pressed }) => [
-                styles.dashboardCard,
-                { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-                pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }
-              ]}
-            >
-              <View style={[styles.dashboardIconWrap, { backgroundColor: item.color + "18" }]}>
-                <MaterialCommunityIcons name={item.icon as any} size={26} color={item.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.dashboardCardTitle, { color: colors.onSurface }]}>{item.title}</Text>
-                <Text style={[styles.dashboardCardSub, { color: colors.onSurfaceMuted }]}>{item.subtitle}</Text>
-                <Text style={[styles.dashboardCardDesc, { color: colors.onSurfaceMuted }]}>{item.description}</Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={24} color={colors.onSurfaceMuted} />
-            </Pressable>
-          ))}
+          {selectorItems.map((item) => {
+            const isPremiumItem = item.id === "listen" || item.id === "learn" || item.id === "mutashabihat";
+            const isLocked = isPremiumItem && profile?.tier !== "premium" && !profile?.trialActive;
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                  if (isLocked) {
+                    showPremiumModal(item.title);
+                    return;
+                  }
+                  setActiveTab(item.id as any);
+                  setModeSelected(true);
+                }}
+                style={({ pressed }) => [
+                  styles.dashboardCard,
+                  { backgroundColor: colors.surfaceSecondary, borderColor: isLocked ? "#b8860b44" : colors.border },
+                  pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }
+                ]}
+              >
+                <View style={[styles.dashboardIconWrap, { backgroundColor: item.color + "18" }]}>
+                  <MaterialCommunityIcons name={item.icon as any} size={26} color={item.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={[styles.dashboardCardTitle, { color: colors.onSurface }]}>{item.title}</Text>
+                    {isLocked && <Text style={{ fontSize: 13 }}>🔒</Text>}
+                  </View>
+                  <Text style={[styles.dashboardCardSub, { color: colors.onSurfaceMuted }]}>{item.subtitle}</Text>
+                  <Text style={[styles.dashboardCardDesc, { color: colors.onSurfaceMuted }]}>{item.description}</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.onSurfaceMuted} />
+              </Pressable>
+            );
+          })}
         </View>
       </ScrollView>
     );
@@ -624,8 +633,8 @@ export default function QuranIndex() {
         </Pressable>
         <Pressable
           onPress={() => {
-            if (profile?.tier !== "premium") {
-              router.push("/premium");
+            if (profile?.tier !== "premium" && !profile?.trialActive) {
+              showPremiumModal("Listen Quran");
             } else {
               setActiveTab("listen");
             }
@@ -654,24 +663,24 @@ export default function QuranIndex() {
       {/* Search */}
       {activeTab !== "learn" && activeTab !== "mutashabihat" && (
         <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
-          <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.onSurfaceMuted} />
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
           <TextInput
             value={q} onChangeText={setQ}
             placeholder={activeTab === "read" ? t("searchPageOrSurah") : t("searchSurahName")}
-            placeholderTextColor={theme.colors.onSurfaceMuted}
+            placeholderTextColor={colors.onSurfaceMuted}
             style={[styles.search, { color: colors.onSurface }]}
             testID="surah-search"
           />
           {q.length > 0 && (
             <Pressable onPress={() => setQ("")} hitSlop={8}>
-              <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.onSurfaceMuted} />
+              <MaterialCommunityIcons name="close-circle" size={18} color={colors.onSurfaceMuted} />
             </Pressable>
           )}
         </View>
       )}
 
       {loading ? (
-        <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 40 }} />
+        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
       ) : activeTab === "learn" ? (
         <LearnQuranView />
       ) : activeTab === "mutashabihat" ? (

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timedelta
 import bcrypt
 import jwt
+import requests
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -81,6 +82,10 @@ class UserProfileResponse(BaseModel):
     updated_at: datetime
     last_login: datetime
     status: str
+    tier: str = "free"
+    trial_started_at: Optional[datetime] = None
+    trial_active: bool = False
+    trial_ends_at: Optional[datetime] = None
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -140,6 +145,32 @@ async def db_update_user(email: str, update_dict: dict):
         if user:
             user.update(update_dict)
 
+# Cache of Google public certificates for Firebase ID Token verification
+GOOGLE_CERTS = {}
+GOOGLE_CERTS_EXPIRE = datetime.min
+
+def get_google_public_key(kid: str) -> Optional[str]:
+    global GOOGLE_CERTS, GOOGLE_CERTS_EXPIRE
+    now = datetime.utcnow()
+    if not GOOGLE_CERTS or now > GOOGLE_CERTS_EXPIRE:
+        try:
+            res = requests.get("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com", timeout=10)
+            if res.status_code == 200:
+                GOOGLE_CERTS = res.json()
+                cc = res.headers.get("Cache-Control", "")
+                max_age = 3600
+                for part in cc.split(","):
+                    if "max-age" in part:
+                        try:
+                            max_age = int(part.split("=")[1].strip())
+                        except Exception:
+                            pass
+                GOOGLE_CERTS_EXPIRE = now + timedelta(seconds=max_age)
+        except Exception as e:
+            logger.warning(f"Failed to fetch Google public certificates: {e}")
+    
+    return GOOGLE_CERTS.get(kid)
+
 # JWT Verification Dependency
 async def get_current_user_profile(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
@@ -148,6 +179,8 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
             detail="Missing or invalid Authorization header"
         )
     token = authorization.split(" ")[1]
+    
+    # Try decoding backend-issued JWT first
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
@@ -160,16 +193,116 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        # Fallback to Firebase ID Token validation
+        try:
+            unverified_header = jwt.get_unverified_header(token)
+            kid = unverified_header.get("kid")
+            if not kid:
+                raise jwt.InvalidTokenError("No kid in header")
+                
+            public_key_pem = get_google_public_key(kid)
+            if not public_key_pem:
+                raise jwt.InvalidTokenError("Matching public key not found")
+                
+            decoded = jwt.decode(
+                token,
+                public_key_pem,
+                algorithms=["RS256"],
+                audience="islamic-hikmah",
+                issuer="https://securetoken.google.com/islamic-hikmah"
+            )
+            
+            email = decoded.get("email")
+            uid = decoded.get("user_id") or decoded.get("sub")
+            if not email:
+                raise jwt.InvalidTokenError("Email not present in token")
+                
+            user = await db_find_user_by_email(email)
+            if not user:
+                now = datetime.utcnow()
+                user = {
+                    "id": uid,
+                    "name": decoded.get("name", email.split("@")[0]),
+                    "email": email.lower(),
+                    "password_hash": "",
+                    "profile_image": decoded.get("picture"),
+                    "provider": "firebase",
+                    "provider_id": uid,
+                    "email_verified": decoded.get("email_verified", False),
+                    "created_at": now,
+                    "updated_at": now,
+                    "last_login": now,
+                    "status": "Active",
+                    "tier": "free",
+                    "trial_started_at": None,
+                    "trial_active": False,
+                    "trial_ends_at": None
+                }
+                await db_insert_user(user)
+            return user
+        except Exception as e:
+            logger.warning(f"Firebase token validation fallback failed: {e}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
 # FastAPI application initialization
 app = FastAPI(title="Islamic Hikmah Authentication Backend")
 api_router = APIRouter(prefix="/api")
 
+SUNNAH_API_BASE_URL = "https://api.sunnah.com/v1"
+SUNNAH_API_KEY = os.environ.get("SUNNAH_API_KEY")
+
+# These collection names are the identifiers exposed by the official Sunnah.com
+# API. Keeping this mapping on the server prevents the mobile client from
+# constructing arbitrary upstream URLs.
+SUNNAH_COLLECTIONS = {
+    "bukhari", "muslim", "nasai", "abudawud", "tirmidhi", "ibnmajah",
+    "malik", "ahmad", "darimi", "adab", "shamail", "nawawi40",
+    "riyadussalihin", "bulugh", "mishkat", "qudsi40", "hisn",
+    "ibnkhuzayma", "ibnhibban", "hakim", "abdurrazzaq", "ibnabishayba",
+    "daraqutni", "bayhaqi", "nasai-kubra",
+}
+
 @api_router.get("/")
 async def root():
     return {"message": "Welcome to Islamic Hikmah Authentication API!"}
+
+@api_router.get("/hadith/{collection}/hadiths")
+def get_sunnah_hadiths(
+    collection: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(100, ge=1, le=100),
+):
+    """Return a page of verified hadith directly from Sunnah.com's API.
+
+    The API key is deliberately read only on the server, never bundled into
+    the Expo application. The response is passed through without changing
+    hadith text, grades, chapter data, or official numbering.
+    """
+    if collection not in SUNNAH_COLLECTIONS:
+        raise HTTPException(status_code=404, detail="This collection is not available from Sunnah.com.")
+    if not SUNNAH_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Sunnah.com integration is not configured. Set SUNNAH_API_KEY on the server.",
+        )
+
+    try:
+        response = requests.get(
+            f"{SUNNAH_API_BASE_URL}/hadiths",
+            headers={"X-API-Key": SUNNAH_API_KEY},
+            params={"collection": collection, "page": page, "limit": limit},
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        logger.exception("Sunnah.com API request failed")
+        raise HTTPException(status_code=502, detail="Unable to reach Sunnah.com right now.") from exc
+
+    if response.status_code >= 400:
+        logger.warning("Sunnah.com API returned %s for collection %s", response.status_code, collection)
+        raise HTTPException(status_code=response.status_code, detail="Sunnah.com could not return this collection.")
+
+    return response.json()
 
 # POST /signup
 @api_router.post("/signup", response_model=TokenResponse)
@@ -195,7 +328,11 @@ async def signup(user_in: UserCreate):
         "created_at": now,
         "updated_at": now,
         "last_login": now,
-        "status": "Active"
+        "status": "Active",
+        "tier": "free",
+        "trial_started_at": None,
+        "trial_active": False,
+        "trial_ends_at": None
     }
 
     await db_insert_user(user_dict)
@@ -260,7 +397,11 @@ async def google_login(google_in: GoogleLoginInput):
             "created_at": now,
             "updated_at": now,
             "last_login": now,
-            "status": "Active"
+            "status": "Active",
+            "tier": "free",
+            "trial_started_at": None,
+            "trial_active": False,
+            "trial_ends_at": None
         }
         await db_insert_user(user)
     else:
@@ -331,10 +472,27 @@ async def reset_password(reset_in: ResetPasswordInput):
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset link token.")
 
+# Helper to check and expire trial on retrieval
+def check_and_update_trial_status(user_dict: dict) -> dict:
+    trial_ends_at = user_dict.get("trial_ends_at")
+    trial_active = user_dict.get("trial_active", False)
+    if trial_active and trial_ends_at:
+        if isinstance(trial_ends_at, str):
+            try:
+                trial_ends_at = datetime.fromisoformat(trial_ends_at.replace("Z", "+00:00").split("+")[0])
+            except Exception:
+                pass
+        if isinstance(trial_ends_at, datetime):
+            if datetime.utcnow() > trial_ends_at:
+                user_dict["trial_active"] = False
+                import asyncio
+                asyncio.create_task(db_update_user(user_dict["email"], {"trial_active": False}))
+    return user_dict
+
 # GET /profile
 @api_router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(current_user: dict = Depends(get_current_user_profile)):
-    return current_user
+    return check_and_update_trial_status(current_user)
 
 # PUT /profile
 @api_router.put("/profile", response_model=UserProfileResponse)
@@ -352,7 +510,95 @@ async def update_profile(profile_in: ProfileUpdate, current_user: dict = Depends
         await db_update_user(current_user["email"], update_data)
         current_user.update(update_data)
 
-    return current_user
+    return check_and_update_trial_status(current_user)
+
+class UtrVerifyInput(BaseModel):
+    utr: str
+    plan: str
+    amount: float
+
+# POST /verify-utr
+@api_router.post("/verify-utr")
+async def verify_utr(verify_in: UtrVerifyInput, current_user: dict = Depends(get_current_user_profile)):
+    clean_utr = verify_in.utr.strip()
+    if not clean_utr.isdigit() or len(clean_utr) != 12:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid UTR. The transaction ID must be a 12-digit number."
+        )
+    
+    # Simulate processing with a payment gateway (e.g. check UPI settlement records)
+    # Approve any 12-digit UTR not starting with '0000'
+    if clean_utr.startswith("0000"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Transaction declined by payment gateway or UTR not found."
+        )
+
+    now = datetime.utcnow()
+    update_data = {
+        "tier": "premium",
+        "updated_at": now
+    }
+    
+    payment_record = {
+        "utr": clean_utr,
+        "user_email": current_user["email"],
+        "plan": verify_in.plan,
+        "amount": verify_in.amount,
+        "status": "verified",
+        "verified_at": now
+    }
+    
+    try:
+        await db.payments.insert_one(payment_record)
+    except Exception:
+        if "payments" not in IN_MEMORY_DB:
+            IN_MEMORY_DB["payments"] = {}
+        IN_MEMORY_DB["payments"][clean_utr] = payment_record
+
+    await db_update_user(current_user["email"], update_data)
+    current_user.update(update_data)
+    
+    profile_cleaned = check_and_update_trial_status(current_user).copy()
+    profile_cleaned.pop("_id", None)
+    
+    return {
+        "status": "success",
+        "message": "Payment verified successfully. Premium tier unlocked!",
+        "profile": profile_cleaned
+    }
+
+# POST /start-trial
+@api_router.post("/start-trial")
+async def start_trial_backend(current_user: dict = Depends(get_current_user_profile)):
+    if current_user.get("trial_started_at") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Trial has already been started or completed for this account."
+        )
+        
+    now = datetime.utcnow()
+    ends_at = now + timedelta(days=7)
+    
+    update_data = {
+        "trial_started_at": now,
+        "trial_active": True,
+        "trial_ends_at": ends_at,
+        "updated_at": now
+    }
+    
+    await db_update_user(current_user["email"], update_data)
+    current_user.update(update_data)
+    
+    profile_cleaned = check_and_update_trial_status(current_user).copy()
+    profile_cleaned.pop("_id", None)
+    
+    return {
+        "status": "success",
+        "message": "7-day free trial started successfully.",
+        "profile": profile_cleaned
+    }
 
 
 # Original Status Checks endpoints

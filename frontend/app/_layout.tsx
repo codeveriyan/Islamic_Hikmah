@@ -8,21 +8,45 @@ import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ThemeProvider, useTheme } from "@/src/ThemeContext";
 import { AuthProvider } from "@/src/AuthContext";
+import { PremiumModalProvider } from "@/src/PremiumModalContext";
+import PremiumModal from "@/src/components/PremiumModal";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    // Check if the notification triggered in the past (e.g. expired or delayed)
+    const date = notification.date; // Unix timestamp
+    const diffMs = Math.abs(Date.now() - date);
+    const hasExpired = diffMs > 60000; // if it triggered more than 60 seconds ago, it is expired
+
+    const title = notification.request.content.title || "";
+    const isPrayerTime = title.includes("Prayer Time");
+
+    // If it is a prayer time notification and it has expired, do not show alert or play sound
+    if (isPrayerTime && hasExpired) {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 LogBox.ignoreAllLogs(true);
@@ -101,10 +125,19 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    const subscription = Notifications.addNotificationReceivedListener((notification) => {
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       try {
         const title = notification.request.content.title || "";
         if (title.includes("Prayer Time")) {
+          // Respect background azaan preference in foreground too
+          const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
+          const bgAzaanEnabled = bgAzaanRaw !== "false";
+          if (!bgAzaanEnabled) return;
+
+          // Do not play if notification is expired/delayed
+          const diffMs = Math.abs(Date.now() - notification.date);
+          if (diffMs > 60000) return;
+
           player.play();
         }
       } catch (err) {
@@ -187,7 +220,10 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
+            <PremiumModalProvider>
+              <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
+              <PremiumModal />
+            </PremiumModalProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

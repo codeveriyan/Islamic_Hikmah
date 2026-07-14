@@ -8,12 +8,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
+import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
 
 const { width } = Dimensions.get("window");
 
 export default function PillarsOfIslamScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
 
   // Active modal state
   const [activePillar, setActivePillar] = useState<"shahadah" | "sawm" | null>(null);
@@ -22,9 +26,9 @@ export default function PillarsOfIslamScreen() {
   const [fastingLog, setFastingLog] = useState<Record<string, { kept: boolean; energy: string }>>({});
   const [selectedDay, setSelectedDay] = useState(new Date().getDate());
 
-  // Expo Audio player for Shahadah Recitation
-  const SHAHADAH_AUDIO_URL = "https://www.thesufi.com/Islamic-Collection/Islamic_Audio_Section/6-Kalimas-in-Islam/2nd-Qalma-Shahada.MP3";
-  const player = useAudioPlayer({ uri: SHAHADAH_AUDIO_URL });
+  // Complete Shahadah recitation, bundled for reliable offline playback.
+  // Source: iSurrender / Wikimedia Commons, CC BY-SA 3.0.
+  const player = useAudioPlayer(require("../assets/audio/shahadah.mp3"));
   const status = useAudioPlayerStatus(player);
 
   useEffect(() => {
@@ -126,7 +130,7 @@ export default function PillarsOfIslamScreen() {
           <MaterialCommunityIcons name="mosque" size={32} color={colors.brand} />
           <Text style={[styles.introTitle, { color: colors.onSurface }]}>The Five Pillars of Islam</Text>
           <Text style={[styles.introText, { color: colors.onSurfaceSecondary }]}>
-            These are the five core practices that form the foundation of a Muslim's life, representing the framework of worship and commitment to Allah.
+            {"These are the five core practices that form the foundation of a Muslim's life, representing the framework of worship and commitment to Allah."}
           </Text>
         </View>
 
@@ -172,8 +176,12 @@ export default function PillarsOfIslamScreen() {
 
         {/* 3. Zakat Card */}
         <Pressable
-          onPress={() => {
+        onPress={() => {
             Haptics.selectionAsync().catch(() => {});
+            if (profile?.tier !== "premium" && !profile?.trialActive) {
+              showPremiumModal("Zakat Calculator");
+              return;
+            }
             router.push("/zakat-calculator");
           }}
           style={[styles.pillarCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
@@ -253,7 +261,7 @@ export default function PillarsOfIslamScreen() {
                 {/* Calligraphy Screenshot Image as requested */}
                 <View style={[styles.calligraphyBox, { borderColor: colors.border }]}>
                   <Image
-                    source={require("../assets/images/shahadah_screenshot.png")}
+                    source={require("../assets/images/shahadah_calligraphy.png")}
                     style={styles.calligraphyImg}
                   />
                 </View>
@@ -305,6 +313,25 @@ export default function PillarsOfIslamScreen() {
                       color="#fff" 
                     />
                   </Pressable>
+                  <Text style={[styles.audioCredit, { color: colors.onSurfaceMuted }]}>
+                    Audio: iSurrender / Wikimedia Commons · CC BY-SA 3.0
+                  </Text>
+                </View>
+
+                <View style={styles.shahadaArticle}>
+                  <Text style={[styles.articleHeading, { color: colors.onSurface }]}>Shahada</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>The Shahada means the testimony or Kalimah according to Islam and is the first pillar of Islam. The belief that Allah is our only Lord and Muhammad (SAW) is our prophet is referred to as Shahada. This belief is the first pillar of Islam and turns a person into a Muslim. The declaration that a Muslim reads in Arabic and believes is “La ilaha illallah, Muhammadun rasulullah”. This means that there is no deity worthy of worship except Allah and Muhammad is the Messenger of Allah. Kalimah Shahada is among the best declarations of praise of Allah.</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>The Shahada has two parts. The first part is “La ilaha illallah”, which testifies that there is no deity worthy of worship except Allah. He is One and has no partner. The second part is “Muhammadun rasulullah”; by reciting it, we affirm that Muhammad (SAW) is Allah’s Messenger. The declaration of Allah’s oneness is repeatedly emphasized in the Quran, showing the importance of this belief.</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>Whereas the first part indicates a universal truth, the second part affirms belief in the prophethood of Muhammad (SAW). Belief in Allah’s oneness and His Messenger is essential to Islamic faith. Allah says: “Muhammad is not the father of any one of your men, but is the Messenger of Allah and the seal of the prophets. And Allah has perfect knowledge of all things.” [Quran 33:40]</Text>
+
+                  <Text style={[styles.articleSubheading, { color: colors.onSurface }]}>Importance of Shahada</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>Muslim children begin learning their faith through the recitation of Shahada. It draws them to the path of Allah and encourages them toward obligatory worship. Recitation of and belief in Shahada is both a declaration and an act of worship. When a person wishes to embrace Islam, sincerely reciting the Shahada is the first formal step. Allah says: “Obey Allah and obey the Messenger.” [Quran 5:92]</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>Shahada appears throughout Muslim worship: in the call to prayer, before and during prayer, in Tashahhud, and in remembrance of Allah. Muslims also repeat this declaration after prayer and during morning and evening remembrance. The Messenger of Allah (SAW) taught that among the best supplications proclaimed by him and the prophets before him is: “There is no deity worthy of worship except Allah alone, without partner. To Him belongs all dominion and all praise.” [Jami‘ at-Tirmidhi]</Text>
+
+                  <Text style={[styles.articleSubheading, { color: colors.onSurface }]}>Recitation of Shahada</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>Reciting Shahada sincerely has great reward. It renews faith, reminds Muslims of Allah’s oneness, and helps protect the heart from misguidance. A believer should understand its meaning and live according to what it requires, not merely repeat its words.</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>Shahada is recited on many religious occasions as the clearest declaration of Allah’s oneness and greatness. The Prophet (SAW) said: “The best remembrance is: La ilaha illallah.” [Jami‘ at-Tirmidhi]</Text>
+                  <Text style={[styles.articleParagraph, { color: colors.onSurfaceSecondary }]}>It is a form of worship that can be practiced in every situation. It requires no special preparation; it should be pronounced sincerely, understood, and reflected in a Muslim’s beliefs and actions.</Text>
                 </View>
               </ScrollView>
             </View>
@@ -355,7 +382,7 @@ export default function PillarsOfIslamScreen() {
                       اللَّهُمَّ إِنِّي لَكَ صُمْتُ وَبِكَ آمَنْتُ وَعَلَى رِزْقِكَ أَفْطَرْتُ
                     </Text>
                     <Text style={[styles.duaTranslit, { color: colors.onSurface }]}>
-                      Allahumma inni laka sumtu wa bika amantu wa 'ala rizqika aftartu.
+                      {"Allahumma inni laka sumtu wa bika amantu wa 'ala rizqika aftartu."}
                     </Text>
                     <Text style={[styles.duaTrans, { color: colors.onSurfaceSecondary }]}>
                       O Allah, I fasted for You, believed in You, and broke my fast with Your sustenance.
@@ -557,6 +584,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 12,
   },
+  audioCredit: {
+    fontSize: 10,
+    textAlign: "center",
+    marginTop: 12,
+  },
   progressBarBg: {
     height: 6,
     width: "100%",
@@ -579,6 +611,26 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
+  },
+  shahadaArticle: {
+    paddingHorizontal: 2,
+    paddingBottom: 28,
+  },
+  articleHeading: {
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 10,
+  },
+  articleSubheading: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  articleParagraph: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 12,
   },
   // Sawm styles
   subSection: {

@@ -24,6 +24,46 @@ type Hadith = {
   arabicText?: string;
 };
 
+const HADITH_API_BASE_URL = process.env.EXPO_PUBLIC_HADITH_API_BASE_URL?.replace(/\/$/, "");
+
+// App ids differ slightly from the official Sunnah.com collection ids.
+const SUNNAH_COLLECTION_IDS: Record<string, string> = {
+  bukhari: "bukhari",
+  muslim: "muslim",
+  nasai: "nasai",
+  abudawud: "abudawud",
+  tirmidhi: "tirmidhi",
+  ibnmajah: "ibnmajah",
+  malik: "malik",
+  ahmad: "ahmad",
+  darimi: "darimi",
+  khuzayma: "ibnkhuzayma",
+  hibban: "ibnhibban",
+  hakim: "hakim",
+  razzaq: "abdurrazzaq",
+  ibnabishayba: "ibnabishayba",
+  daraqutni: "daraqutni",
+  bayhaqi: "bayhaqi",
+  nasai_kubra: "nasai-kubra",
+  aladab_almufrad: "adab",
+  shamail_muhammadiyah: "shamail",
+  nawawi40: "nawawi40",
+  riyad_assalihin: "riyadussalihin",
+  bulugh_almaram: "bulugh",
+  mishkat_almasabih: "mishkat",
+  hisn: "hisn",
+  qudsi40: "qudsi40",
+};
+
+const toPlainText = (value: unknown) => String(value || "")
+  .replace(/<[^>]*>/g, " ")
+  .replace(/&nbsp;/g, " ")
+  .replace(/&quot;/g, '"')
+  .replace(/&#39;/g, "'")
+  .replace(/&amp;/g, "&")
+  .replace(/\s+/g, " ")
+  .trim();
+
 export default function HadithDetailScreen() {
   const { book, chapter } = useLocalSearchParams<{ book: string; chapter?: string }>();
   const router = useRouter();
@@ -140,7 +180,48 @@ export default function HadithDetailScreen() {
     
     const bookMeta = HADITH_BOOKS.find((b) => b.id === book);
     
-    if (bookMeta?.source === "fawazahmed") {
+    const sunnahCollection = SUNNAH_COLLECTION_IDS[book];
+
+    // The API key remains on our backend. When configured, this is the
+    // authoritative source and supersedes the old partial third-party feeds.
+    if (HADITH_API_BASE_URL && sunnahCollection) {
+      const loadFullCollection = async () => {
+        const allItems: any[] = [];
+        let page = 1;
+        let nextPage: number | null = 1;
+
+        while (nextPage) {
+          const response = await fetch(
+            `${HADITH_API_BASE_URL}/api/hadith/${sunnahCollection}/hadiths?limit=100&page=${page}`,
+          );
+          if (!response.ok) throw new Error(`Hadith API returned ${response.status}`);
+          const data = await response.json();
+          allItems.push(...(data.data || []));
+          nextPage = data.next || null;
+          page = nextPage || page + 1;
+        }
+
+        return allItems.map((item: any) => {
+            const translations = item.hadith || [];
+            const english = translations.find((entry: any) => entry.lang === "en") || translations[0] || {};
+            const arabic = translations.find((entry: any) => entry.lang === "ar") || {};
+            return {
+              hadithnumber: Number(item.hadithNumber),
+              text: toPlainText(english.body),
+              arabicText: toPlainText(arabic.body),
+            };
+          }).filter((item: Hadith) => Number.isFinite(item.hadithnumber) && (item.text || item.arabicText));
+      };
+
+      loadFullCollection()
+        .then(setHadiths)
+        .catch((e) => {
+          // Keep the existing offline/community source as a graceful fallback
+          // when the server has not been configured or is temporarily offline.
+          console.warn("Failed to fetch Hadiths from Sunnah.com:", e);
+        })
+        .finally(() => setLoading(false));
+    } else if (bookMeta?.source === "fawazahmed") {
       Promise.all([
         fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`).then((r) => r.json()),
         fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).then((r) => r.json()).catch(() => ({ hadiths: [] })),
@@ -429,7 +510,7 @@ export default function HadithDetailScreen() {
 
       {/* Search Input Bar */}
       <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
-        <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.onSurfaceMuted} />
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
         <TextInput
           value={q}
           onChangeText={(txt) => {
@@ -437,12 +518,12 @@ export default function HadithDetailScreen() {
             setLimit(15); // reset page limit on search
           }}
           placeholder={t("searchPlaceholder")}
-          placeholderTextColor={theme.colors.onSurfaceMuted}
+          placeholderTextColor={colors.onSurfaceMuted}
           style={[styles.search, { color: colors.onSurface }]}
         />
         {q.length > 0 && (
           <Pressable onPress={() => setQ("")} hitSlop={8}>
-            <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.onSurfaceMuted} />
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.onSurfaceMuted} />
           </Pressable>
         )}
       </View>

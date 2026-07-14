@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  ActivityIndicator, Modal,
+  ActivityIndicator, Modal, Alert, Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -12,7 +12,8 @@ import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { ISLAMIC_EVENTS, HIJRI_MONTHS, IslamicEvent } from "@/src/data/islamicEvents";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
-import { getActiveGoalIds } from "@/src/storage";
+import { getActiveGoalIds, getCompletedGoals, getGoogleCalendarConnected, setGoogleCalendarConnected } from "@/src/storage";
+import { useAuth } from "@/src/AuthContext";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ export default function HijriCalendarScreen() {
   const router = useRouter();
   const { colors, mode , language } = useTheme();
   const { t } = useTranslation(language);
+  const { user, isGuest, profile } = useAuth();
 
   const [currentHijriYear, setCurrentHijriYear] = useState(1446);
   const [currentHijriMonth, setCurrentHijriMonth] = useState(1);
@@ -126,11 +128,14 @@ export default function HijriCalendarScreen() {
   // goalsByDate: maps "YYYY-M-D" → completed goal ids for that day
   const [goalsByDate, setGoalsByDate] = useState<Record<string, string[]>>({});
   const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
+  const [calendarConnected, setCalendarConnected] = useState(false);
 
   // Load active goal config once
   useEffect(() => {
     getActiveGoalIds().then(setActiveGoalIds);
-  }, []);
+    getGoogleCalendarConnected().then(value => setCalendarConnected(!!user && !isGuest && value));
+  }, [user, isGuest]);
+
 
   // Load completed goals for all days in the current month whenever the grid changes
   useEffect(() => {
@@ -253,6 +258,19 @@ export default function HijriCalendarScreen() {
             <MaterialCommunityIcons name="chevron-right" size={26} color={colors.brand} />
           </Pressable>
         </View>
+
+        <Pressable onPress={() => router.push("/calendar-sync")}
+          style={[styles.settingRowFull, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, marginHorizontal: theme.spacing.lg, marginBottom: 16 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+            <View style={{ width: 22, height: 22, marginRight: 12, borderRadius: 4, overflow: 'hidden', borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: 14, height: 14, backgroundColor: '#4285F4', borderRadius: 2, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 8, fontWeight: 'bold', lineHeight: 9 }}>31</Text>
+              </View>
+            </View>
+            <Text style={[styles.settingLabel, { color: colors.onSurface, fontWeight: "700" }]}>Sync with Calendar</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
+        </Pressable>
 
         {/* Day-of-week labels */}
         <View style={styles.dayLabels}>
@@ -502,6 +520,18 @@ const styles = StyleSheet.create({
   cellDay: { fontSize: 15, lineHeight: 18 },
   cellGreg: { fontSize: 9, lineHeight: 11 },
   eventDot: { width: 5, height: 5, borderRadius: 3, marginTop: 1 },
+  settingRowFull: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+  },
+  settingLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
   sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: theme.spacing.md },
   eventCard: {
     borderLeftWidth: 3, borderRadius: theme.radius.md,

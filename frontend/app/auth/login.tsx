@@ -20,7 +20,7 @@ import * as Haptics from "expo-haptics";
 export default function LoginScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -167,7 +167,7 @@ export default function LoginScreen() {
             <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                alert("Google Sign-In integration ready!");
+                loginWithGoogle();
               }}
               style={({ pressed }) => [
                 styles.socialBtn,
@@ -183,7 +183,7 @@ export default function LoginScreen() {
           {/* Footer */}
           <View style={styles.footer}>
             <Text style={[styles.footerTxt, { color: colors.onSurfaceMuted }]}>
-              Don't have an account?{" "}
+              {"Don't have an account? "}
             </Text>
             <Pressable onPress={() => router.push("/auth/register")}>
               <Text style={[styles.footerLink, { color: colors.brand }]}>Sign Up</Text>
