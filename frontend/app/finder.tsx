@@ -264,24 +264,37 @@ export default function FinderScreen() {
 
       {/* Halal Sub-segment selector */}
       {type === "halal" && !isMapView && (
-        <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
+        <>
           <Pressable
-            onPress={() => setHalalSubTab("food")}
-            style={[styles.tabItem, halalSubTab === "food" && { borderBottomColor: colors.brand }]}
+            onPress={() => router.push("/halal-scanner" as any)}
+            style={[styles.scannerCta, { backgroundColor: colors.brand + "18", borderColor: colors.brand + "55" }]}
           >
-            <Text style={[styles.tabText, { color: halalSubTab === "food" ? colors.brand : colors.onSurfaceMuted }]}>
-              Halal Restaurants
-            </Text>
+            <MaterialCommunityIcons name="barcode-scan" size={22} color={colors.brand} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.scannerTitle, { color: colors.onSurface }]}>Halal Food Scanner</Text>
+              <Text style={[styles.scannerSub, { color: colors.onSurfaceMuted }]}>Check packaged food ingredients before you eat.</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.brand} />
           </Pressable>
-          <Pressable
-            onPress={() => setHalalSubTab("butcher")}
-            style={[styles.tabItem, halalSubTab === "butcher" && { borderBottomColor: colors.brand }]}
-          >
-            <Text style={[styles.tabText, { color: halalSubTab === "butcher" ? colors.brand : colors.onSurfaceMuted }]}>
-              Halal Meat Shops
-            </Text>
-          </Pressable>
-        </View>
+          <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
+            <Pressable
+              onPress={() => setHalalSubTab("food")}
+              style={[styles.tabItem, halalSubTab === "food" && { borderBottomColor: colors.brand }]}
+            >
+              <Text style={[styles.tabText, { color: halalSubTab === "food" ? colors.brand : colors.onSurfaceMuted }]}>
+                Halal Restaurants
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setHalalSubTab("butcher")}
+              style={[styles.tabItem, halalSubTab === "butcher" && { borderBottomColor: colors.brand }]}
+            >
+              <Text style={[styles.tabText, { color: halalSubTab === "butcher" ? colors.brand : colors.onSurfaceMuted }]}>
+                Halal Meat Shops
+              </Text>
+            </Pressable>
+          </View>
+        </>
       )}
 
       {loading ? (
@@ -369,5 +382,24 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 13,
     fontWeight: "700",
+  },
+  scannerCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    margin: theme.spacing.lg,
+    marginBottom: 0,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: theme.spacing.lg,
+  },
+  scannerTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  scannerSub: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
   },
 });

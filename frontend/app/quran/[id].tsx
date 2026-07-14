@@ -406,7 +406,7 @@ export default function SurahDetail() {
   }, [id]);
 
   // Scroll ref for auto-scrolling to highlighted ayah
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList>(null);
   const ayahYPositions = useRef<Record<number, number>>({});
 
 
@@ -857,8 +857,12 @@ export default function SurahDetail() {
 
   // Handle auto-scroll to the active verse
   useEffect(() => {
-    if (playingIdx !== null && ayahYPositions.current[playingIdx] !== undefined) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, ayahYPositions.current[playingIdx] - 100), animated: true });
+    if (playingIdx !== null) {
+      try {
+        scrollRef.current?.scrollToIndex({ index: playingIdx, viewPosition: 0.1, animated: true });
+      } catch (e) {
+        // Fallback if item is not rendered yet
+      }
     }
   }, [playingIdx]);
 
@@ -1220,8 +1224,14 @@ export default function SurahDetail() {
       {loading ? (
         <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 40 }} />
       ) : (
-        <ScrollView
+        <FlatList
           ref={scrollRef}
+          data={arabic}
+          keyExtractor={(item) => item.number.toString()}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
           style={{ backgroundColor: rc.bg }}
           scrollEventThrottle={16}
@@ -1232,8 +1242,13 @@ export default function SurahDetail() {
               setScrollProgress(Math.min(1, contentOffset.y / scrollable));
             }
           }}
-        >
-          {arabic.map((a, i) => {
+          onScrollToIndexFailed={(info) => {
+            const wait = new Promise(resolve => setTimeout(resolve, 100));
+            wait.then(() => {
+              scrollRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.1 });
+            });
+          }}
+          renderItem={({ item: a, index: i }) => {
             const isPlaying = playingIdx === i && status?.playing;
             const isHighlighted = playingIdx === i; // highlight even when paused mid-ayah
             const favId = `ayah-${id}-${a.numberInSurah}`;
@@ -1319,7 +1334,7 @@ export default function SurahDetail() {
                 >
                   {(() => {
                     const words = a.text.trim().split(/\s+/);
-                    return words.map((word, wordIndex) => {
+                    return words.map((word: string, wordIndex: number) => {
                       const isWordHighlighted = isHighlighted && activeWordIdx === (wordIndex + 1);
                       return (
                         <Text
@@ -1347,8 +1362,8 @@ export default function SurahDetail() {
                 )}
               </View>
             );
-          })}
-        </ScrollView>
+          }}
+        />
       )}
 
       {/* ── Juz Navigator Modal ─────────────────────────────────────── */}

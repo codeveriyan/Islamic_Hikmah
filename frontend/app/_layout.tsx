@@ -1,7 +1,7 @@
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { AppState, LogBox, Pressable, Text, View, Image, StyleSheet } from "react-native";
+import { AppState, LogBox, Pressable, Text, View, Image, StyleSheet, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -14,6 +14,16 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ThemeProvider, useTheme } from "@/src/ThemeContext";
 import { AuthProvider } from "@/src/AuthContext";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 LogBox.ignoreAllLogs(true);
 
@@ -74,6 +84,21 @@ export default function RootLayout() {
   const player = useAudioPlayer(require("../assets/audio/azaan.mp3"));
   const playerStatus = useAudioPlayerStatus(player);
   const router = useRouter();
+  useEffect(() => {
+    // Request notification permissions on app startup
+    const requestPermissions = async () => {
+      if (Platform.OS === 'web') return;
+      try {
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+          await Notifications.requestPermissionsAsync();
+        }
+      } catch (e) {
+        console.warn("Failed to request notifications permissions on launch:", e);
+      }
+    };
+    requestPermissions();
+  }, []);
 
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener((notification) => {
