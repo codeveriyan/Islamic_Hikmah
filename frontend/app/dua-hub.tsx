@@ -89,6 +89,27 @@ export default function DuaHubScreen() {
           </View>
         </View>
 
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            router.push("/fortress" as any);
+          }}
+          style={({ pressed }) => [
+            styles.fortressCard,
+            { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+            pressed && { opacity: 0.9, transform: [{ scale: 0.985 }] },
+          ]}
+        >
+          <LinearGradient colors={["#064E3B", "#0F766E"]} style={styles.fortressIcon}>
+            <MaterialCommunityIcons name="shield-outline" size={34} color="#FFFFFF" />
+          </LinearGradient>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.fortressTitle, { color: colors.onSurface }]}>Fortress of the Muslim</Text>
+            <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>132 chapters · 267 authentic du&apos;as</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={26} color={colors.onSurfaceMuted} />
+        </Pressable>
+
         {/* Tab Switcher */}
         <View style={[styles.segment, { backgroundColor: colors.surfaceSecondary }]}>
           {(["main", "other"] as const).map((g) => {
@@ -185,6 +206,25 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 16,
   },
+  fortressCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
+    padding: 14,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+  },
+  fortressIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fortressTitle: { fontSize: 17, fontWeight: "800" },
+  fortressSub: { fontSize: 12, marginTop: 4 },
   segment: {
     flexDirection: "row",
     marginHorizontal: theme.spacing.lg,

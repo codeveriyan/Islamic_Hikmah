@@ -7,6 +7,10 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { resolveUserLocation } from "@/src/storage";
+import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
+
+
 
 let WebView: any;
 if (Platform.OS !== 'web') {
@@ -76,6 +80,17 @@ export default function FinderScreen() {
   const { type } = useLocalSearchParams<{ type: "mosque" | "halal" }>();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
+
+  // Gate Halal Food Finder behind premium
+  useEffect(() => {
+    if (type === "halal" && profile?.tier !== "premium" && !profile?.trialActive) {
+      // Go back immediately and show modal (the modal is global)
+      router.back();
+      showPremiumModal("Halal Food Finder");
+    }
+  }, [type, profile?.tier, profile?.trialActive]);
 
   const [loading, setLoading] = useState(true);
   const [city, setCity] = useState("");

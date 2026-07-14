@@ -12,6 +12,7 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS } from "@/src/data/goals";
 import { 
   resolveUserLocation, 
@@ -72,7 +73,8 @@ export default function PrayerTimesScreen() {
   const router = useRouter();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
-  const { profile } = useAuth();
+  const { profile, user, isGuest } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
   
   const [times, setTimes] = useState<Record<string, string> | null>(null);
   const [city, setCity] = useState("");
@@ -159,9 +161,16 @@ export default function PrayerTimesScreen() {
   }, []);
 
   const handleCalendarSync = async () => {
-    if (profile?.tier !== "premium") {
+    if (profile?.tier !== "premium" && !profile?.trialActive) {
+      showPremiumModal("Prayer Times — Google Calendar Sync");
+      return;
+    }
+    if (!user || isGuest) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-      router.push("/premium");
+      Alert.alert("Login required", "Sign in with your account credentials before connecting Google Calendar.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Login", onPress: () => router.push("/auth/login") },
+      ]);
       return;
     }
 
@@ -169,7 +178,7 @@ export default function PrayerTimesScreen() {
       Haptics.selectionAsync().catch(() => {});
       Alert.alert(
         "Disconnect Google Calendar 🗓️",
-        "Are you sure you want to disconnect Google Calendar from syncing with your Hijri Calendar?",
+        "Are you sure you want to disconnect Google Calendar from syncing with your Islamic Calendar?",
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -187,9 +196,6 @@ export default function PrayerTimesScreen() {
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    setCalendarConnected(true);
-    await setGoogleCalendarConnected(true);
-
     try {
       const activeIds = await getActiveGoalIds();
       const completedIds = await getCompletedGoals();
@@ -214,13 +220,17 @@ export default function PrayerTimesScreen() {
 
       const { Linking } = require("react-native");
       await Linking.openURL(calUrl);
+      setCalendarConnected(true);
+      await setGoogleCalendarConnected(true);
     } catch (e) {
       console.warn("Calendar sync error:", e);
+      Alert.alert("Unable to open Google Calendar", "Please check your connection and try again.");
+      return;
     }
 
     Alert.alert(
       "Sync Successful 🌙",
-      `Your daily goals have been synced to Google Calendar with today's Hijri date. Goals are now saved in both your Hijri calendar and Google Calendar!`
+      `Your daily goals have been synced to Google Calendar with today's Hijri date. Goals are now saved in both your Islamic Calendar and Google Calendar!`
     );
   };
 
@@ -264,6 +274,10 @@ export default function PrayerTimesScreen() {
   })();
 
   const toggleAdhan = useCallback(async (prayer: string, val: boolean) => {
+    if (val && profile?.tier !== "premium" && !profile?.trialActive) {
+      showPremiumModal("Adhan Notifications");
+      return;
+    }
     const newSettings = { ...settings, adhanEnabled: { ...settings.adhanEnabled, [prayer]: val } };
     setSettings(newSettings);
     await savePrayerSettings(newSettings);
@@ -277,7 +291,7 @@ export default function PrayerTimesScreen() {
         );
       }
     }
-  }, [settings, times]);
+  }, [settings, times, profile?.tier]);
 
   const selectMethod = async (id: number) => {
     const newSettings = { ...settings, method: id };
@@ -351,10 +365,8 @@ export default function PrayerTimesScreen() {
           </View>
           <View style={styles.heroContent}>
             <Text style={styles.heroDate}>{date}</Text>
-            {city ? <Text style={styles.heroCity}>📍 {city}</Text> : null}
             {nextPrayer ? (
               <View style={styles.nextBox}>
-                <Text style={styles.nextLabel}>{t("nextPrayer")}</Text>
                 <Text style={styles.nextName}>{t(nextPrayer.name.toLowerCase())}</Text>
                 <Text style={styles.nextTime}>{format12Hour(nextPrayer.time)}</Text>
               </View>
@@ -369,10 +381,10 @@ export default function PrayerTimesScreen() {
       </LinearGradient>
 
       {loading ? (
-        <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 32 }} />
+        <ActivityIndicator color={colors.brand} style={{ marginTop: 32 }} />
       ) : err ? (
         <View style={styles.errBox}>
-          <MaterialCommunityIcons name="wifi-off" size={48} color={theme.colors.onSurfaceMuted} />
+          <MaterialCommunityIcons name="wifi-off" size={48} color={colors.onSurfaceMuted} />
           <Text style={[styles.errTxt, { color: colors.onSurfaceMuted }]}>{err}</Text>
           <Pressable onPress={() => load()} style={[styles.retry, { backgroundColor: colors.brand }]}>
             <Text style={[styles.retryTxt, { color: colors.onBrandPrimary }]}>{t("retry")}</Text>
@@ -389,25 +401,32 @@ export default function PrayerTimesScreen() {
           removeClippedSubviews
           ListFooterComponent={
             <View style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}>
-              {/* Google Calendar Card */}
-              <View style={[styles.calendarCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1 }]}>
-                <View style={styles.calendarHeader}>
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={[styles.calendarTitle, { color: colors.onSurface }]}>
-                      Connect your Google Calendar with Hijri Calendar to sync complete goals.
-                    </Text>
-                  </View>
+              {/* Prayer Logs Row */}
+              <Pressable onPress={() => router.push("/previous-goals")}
+                style={[styles.settingRowFull, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                  <MaterialCommunityIcons name="format-list-bulleted" size={20} color={colors.onSurface} style={{ marginRight: 12 }} />
+                  <Text style={[styles.settingLabel, { color: colors.onSurface, fontWeight: "700" }]}>Your Prayer logs are moved here</Text>
                 </View>
-                <Pressable 
-                  onPress={handleCalendarSync}
-                  style={[
-                    styles.calendarBtn, 
-                    { backgroundColor: calendarConnected ? "#22c55e" : colors.brand }
-                  ]}
-                >
-                  <Text style={styles.calendarBtnTxt}>
-                    {calendarConnected ? "Connected" : "Start sync"}
-                  </Text>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
+              </Pressable>
+
+              {/* Monthly Timetable & Calendar Sync row */}
+              <View style={{ flexDirection: "row", gap: 12, marginBottom: 8 }}>
+                <Pressable onPress={() => router.push("/hijri-calendar")}
+                  style={[styles.halfCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                  <MaterialCommunityIcons name="calendar-month-outline" size={20} color={colors.onSurface} style={{ marginRight: 8 }} />
+                  <Text style={[styles.halfCardText, { color: colors.onSurface, fontWeight: "700" }]} numberOfLines={1}>Monthly Timetable</Text>
+                </Pressable>
+
+                <Pressable onPress={() => router.push("/calendar-sync")}
+                  style={[styles.halfCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                  <View style={{ width: 20, height: 20, marginRight: 8, borderRadius: 4, overflow: 'hidden', borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ width: 12, height: 12, backgroundColor: '#4285F4', borderRadius: 2, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontSize: 7, fontWeight: 'bold', lineHeight: 8 }}>31</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.halfCardText, { color: colors.onSurface, fontWeight: "700" }]} numberOfLines={1}>Sync with Calendar</Text>
                 </Pressable>
               </View>
 
@@ -558,15 +577,15 @@ export default function PrayerTimesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   hero: { paddingBottom: 28, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
-  title: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, position: "relative" },
+  title: { position: "absolute", left: 0, right: 0, textAlign: "center", color: "#fff", fontSize: 18, fontWeight: "700", zIndex: -1 },
   heroContent: { alignItems: "center", paddingVertical: 8 },
-  heroDate: { color: "rgba(255,255,255,0.9)", fontWeight: "700", fontSize: 16 },
-  heroCity: { color: "rgba(255,255,255,0.75)", marginTop: 2, fontSize: 13 },
+  heroDate: { color: "rgba(255,255,255,0.9)", fontWeight: "700", fontSize: 16, textAlign: "center" },
+  heroCity: { color: "rgba(255,255,255,0.75)", marginTop: 2, fontSize: 13, textAlign: "center" },
   nextBox: { alignItems: "center", marginTop: 8 },
-  nextLabel: { color: "rgba(255,255,255,0.8)", fontWeight: "600", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 },
-  nextName: { color: "#fff", fontSize: 28, fontWeight: "800", marginTop: 4 },
-  nextTime: { color: "#fff", fontSize: 38, fontWeight: "800" },
+  nextLabel: { color: "rgba(255,255,255,0.8)", fontWeight: "600", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" },
+  nextName: { color: "#fff", fontSize: 28, fontWeight: "800", marginTop: 4, textAlign: "center" },
+  nextTime: { color: "#fff", fontSize: 38, fontWeight: "800", textAlign: "center" },
   row: { flexDirection: "row", alignItems: "center", padding: theme.spacing.lg, borderRadius: theme.radius.lg, gap: theme.spacing.md, height: 72 },
   rowName: { flex: 1, fontSize: 16, fontWeight: "600" },
   rowTime: { fontSize: 17, fontWeight: "700" },
@@ -586,31 +605,24 @@ const styles = StyleSheet.create({
   pickerRow: { flexDirection: "row", alignItems: "center", padding: theme.spacing.lg, borderRadius: theme.radius.lg, marginBottom: 4 },
   pickerName: { fontSize: 15, fontWeight: "600" },
   pickerNote: { fontSize: 12, marginTop: 2 },
-  calendarCard: {
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-  },
-  calendarHeader: {
+  settingRowFull: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
   },
-  calendarTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 20,
+  halfCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    flex: 1,
   },
-  calendarBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-  },
-  calendarBtnTxt: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
+  halfCardText: {
+    fontSize: 12,
+    flex: 1,
   },
 });

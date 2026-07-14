@@ -1,83 +1,106 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, Image, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import Svg, { Path } from "react-native-svg";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/src/AuthContext";
+
+// Multicolor Google G logo in SVG
+const GoogleGIcon = () => (
+  <Svg width="20" height="20" viewBox="0 0 24 24" style={{ marginRight: 10 }}>
+    <Path
+      fill="#EA4335"
+      d="M12 5.04c1.67 0 3.18.58 4.36 1.71l3.26-3.26C17.65 1.58 14.99 1 12 1 7.37 1 3.4 3.65 1.48 7.51l3.86 3C6.31 7.6 8.94 5.04 12 5.04z"
+    />
+    <Path
+      fill="#4285F4"
+      d="M23.49 12.27c0-.81-.07-1.59-.2-2.27H12v4.51h6.44c-.28 1.48-1.12 2.73-2.38 3.58l3.7 2.87c2.16-2 3.43-4.94 3.43-8.69z"
+    />
+    <Path
+      fill="#FBBC05"
+      d="M5.34 14.51c-.24-.72-.38-1.49-.38-2.51s.14-1.79.38-2.51V6.51H1.48C.67 8.14.2 10 .2 12s.47 3.86 1.28 5.49l3.86-2.98z"
+    />
+    <Path
+      fill="#34A853"
+      d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.7-2.87c-1.03.69-2.35 1.11-3.96 1.11-3.06 0-5.69-2.56-6.66-5.47l-3.86 2.98C3.4 20.35 7.37 23 12 23z"
+    />
+  </Svg>
+);
+
+const HandsIllustration = () => {
+  return (
+    <View style={styles.illustrationWrapper}>
+      {/* Soft background clouds */}
+      <View style={[styles.cloud, { top: 15, left: 20, width: 80, height: 32 }]} />
+      <View style={[styles.cloud, { top: 35, right: 30, width: 100, height: 28 }]} />
+
+      {/* Left Hand holding blue mosque circle */}
+      <View style={styles.leftHandContainer}>
+        {/* Left Arm */}
+        <View style={styles.leftArm} />
+        {/* Left Palm */}
+        <View style={styles.leftPalm} />
+        {/* Blue Circle with Mosque inside */}
+        <View style={styles.mosqueCircle}>
+          <View style={styles.mosqueBase} />
+          <View style={styles.mosqueDome} />
+          <View style={styles.mosqueArch} />
+          <MaterialCommunityIcons name="moon-waning-crescent" size={18} color="#FFFFFF" style={styles.moon} />
+        </View>
+      </View>
+
+      {/* Right Hand holding Tasbih beads */}
+      <View style={styles.rightHandContainer}>
+        {/* Right Arm */}
+        <View style={styles.rightArm} />
+        {/* Right Palm */}
+        <View style={styles.rightPalm} />
+        {/* Beads/Tasbih loop */}
+        <View style={styles.tasbihContainer}>
+          <View style={styles.tasbihLoop} />
+          <View style={styles.tasbihTassel} />
+          <View style={styles.tasbihBeadEnd} />
+        </View>
+      </View>
+    </View>
+  );
+};
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { loginAsGuest, loginWithGoogle, loading } = useAuth();
 
-  const handlePress = (route: string) => {
+  const handleEmailPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    router.push(route as any);
+    router.push("/auth/login");
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Logo and App Name */}
-        <View style={styles.logoSection}>
-          <Image 
-            source={require("../../assets/images/icon.png")} 
-            style={styles.logo} 
-            resizeMode="contain" 
-          />
-          <Text style={[styles.appName, { color: colors.onSurface }]}>Islamic Hikmah</Text>
-          <Text style={[styles.appSubtitle, { color: colors.brand }]}>Your Spiritual Companion</Text>
-        </View>
+        
+        {/* Top Illustration */}
+        <HandsIllustration />
 
-        {/* Tagline */}
-        <View style={styles.taglineSection}>
-          <Text style={[styles.taglineText, { color: colors.onSurfaceSecondary }]}>
-            Study the Noble Quran, daily goals, Hadith books, Masjid finder, and track your prayers seamlessly.
+        {/* Messaging Text */}
+        <View style={styles.textSection}>
+          <Text style={[styles.heading, { color: colors.onSurface }]}>
+            Unlock the true potential of Athan App
+          </Text>
+          <Text style={[styles.subheading, { color: colors.onSurfaceMuted }]}>
+            Keep track of your prayers, view prayer performance, save your bookmarks and more.
           </Text>
         </View>
 
-        {/* Buttons Section */}
+        {/* Buttons List */}
         <View style={styles.btnSection}>
-          {/* Email Login */}
-          <Pressable
-            onPress={() => handlePress("/auth/login")}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.primaryBtn,
-              { backgroundColor: colors.brand },
-              pressed && { opacity: 0.9 },
-              loading && { opacity: 0.6 }
-            ]}
-          >
-            <MaterialCommunityIcons name="email-outline" size={20} color={colors.onBrandPrimary} />
-            <Text style={[styles.primaryBtnTxt, { color: colors.onBrandPrimary }]}>Sign In with Email</Text>
-          </Pressable>
-
-          {/* Create Account */}
-          <Pressable
-            onPress={() => handlePress("/auth/register")}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.secondaryBtn,
-              { borderColor: colors.border },
-              pressed && { backgroundColor: colors.surfaceSecondary },
-              loading && { opacity: 0.6 }
-            ]}
-          >
-            <Text style={[styles.secondaryBtnTxt, { color: colors.onSurface }]}>Create Account</Text>
-          </Pressable>
-
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerTxt, { color: colors.onSurfaceMuted }]}>OR</Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          </View>
-
-          {/* Social Sign-In */}
+          
+          {/* Continue with Google */}
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -85,23 +108,36 @@ export default function WelcomeScreen() {
             }}
             disabled={loading}
             style={({ pressed }) => [
-              styles.socialBtn,
-              { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-              pressed && { opacity: 0.85 },
-              loading && { opacity: 0.6 }
+              styles.googleBtn,
+              { borderColor: colors.border },
+              pressed && { backgroundColor: colors.surfaceSecondary }
             ]}
           >
             {loading ? (
               <ActivityIndicator size="small" color={colors.onSurface} />
             ) : (
               <>
-                <MaterialCommunityIcons name="google" size={20} color="#EA4335" />
-                <Text style={[styles.socialBtnTxt, { color: colors.onSurface }]}>Continue with Google</Text>
+                <GoogleGIcon />
+                <Text style={[styles.googleBtnText, { color: colors.onSurface }]}>Continue with Google</Text>
               </>
             )}
           </Pressable>
 
-          {/* Guest login */}
+          {/* Continue with Email */}
+          <Pressable
+            onPress={handleEmailPress}
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.emailBtn,
+              { backgroundColor: colors.brand },
+              pressed && { opacity: 0.9 }
+            ]}
+          >
+            <MaterialCommunityIcons name="email" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
+            <Text style={styles.emailBtnText}>Continue with Email</Text>
+          </Pressable>
+
+          {/* Will do it later */}
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -109,14 +145,13 @@ export default function WelcomeScreen() {
             }}
             disabled={loading}
             style={({ pressed }) => [
-              styles.guestBtn,
-              pressed && { opacity: 0.7 },
-              loading && { opacity: 0.6 }
+              styles.laterBtn,
+              pressed && { opacity: 0.7 }
             ]}
           >
-            <Text style={[styles.guestBtnTxt, { color: colors.brand }]}>Continue as Guest</Text>
-            <MaterialCommunityIcons name="arrow-right" size={14} color={colors.brand} />
+            <Text style={[styles.laterText, { color: colors.onSurface }]}>Will do it later</Text>
           </Pressable>
+
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -128,105 +163,203 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingVertical: 40,
+    paddingVertical: 20,
     justifyContent: "space-between",
   },
-  logoSection: {
+  illustrationWrapper: {
+    width: "100%",
+    height: 180,
     alignItems: "center",
-    marginTop: 40,
+    justifyContent: "center",
+    overflow: "hidden",
+    marginTop: 20,
+    position: "relative",
   },
-  logo: {
+  cloud: {
+    position: "absolute",
+    borderRadius: 15,
+    backgroundColor: "#F1F5F9",
+    opacity: 0.8,
+  },
+  leftHandContainer: {
+    position: "absolute",
+    left: -20,
+    top: 30,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  leftArm: {
     width: 100,
-    height: 100,
-    marginBottom: 16,
-    borderRadius: 22,
+    height: 50,
+    backgroundColor: "#FCA5A5",
+    borderTopRightRadius: 25,
+    borderBottomRightRadius: 25,
   },
-  appName: {
-    fontSize: 28,
-    fontWeight: "800",
-    letterSpacing: 0.5,
+  leftPalm: {
+    width: 40,
+    height: 40,
+    backgroundColor: "#FCA5A5",
+    borderRadius: 20,
+    marginLeft: -15,
+    zIndex: 2,
+    transform: [{ rotate: "15deg" }],
   },
-  appSubtitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 4,
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
+  mosqueCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "#3B82F6",
+    marginLeft: -40,
+    zIndex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 4,
+    borderColor: "#FFFFFF",
+    shadowColor: "#3B82F6",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  taglineSection: {
-    marginVertical: 32,
+  mosqueBase: {
+    width: 40,
+    height: 40,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    bottom: -8,
+    position: "absolute",
+  },
+  mosqueDome: {
+    width: 26,
+    height: 35,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 13,
+    borderTopRightRadius: 13,
+    bottom: -8,
+    position: "absolute",
+    zIndex: 2,
+  },
+  mosqueArch: {
+    width: 12,
+    height: 16,
+    backgroundColor: "#3B82F6",
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    bottom: -8,
+    position: "absolute",
+    zIndex: 3,
+  },
+  moon: {
+    position: "absolute",
+    top: 15,
+    right: 18,
+    transform: [{ rotate: "-35deg" }],
+  },
+  rightHandContainer: {
+    position: "absolute",
+    right: -25,
+    top: 40,
+    flexDirection: "row-reverse",
     alignItems: "center",
   },
-  taglineText: {
-    fontSize: 15,
+  rightArm: {
+    width: 100,
+    height: 50,
+    backgroundColor: "#FCA5A5",
+    borderTopLeftRadius: 25,
+    borderBottomLeftRadius: 25,
+  },
+  rightPalm: {
+    width: 40,
+    height: 40,
+    backgroundColor: "#FCA5A5",
+    borderRadius: 20,
+    marginRight: -15,
+    zIndex: 2,
+    transform: [{ rotate: "-15deg" }],
+  },
+  tasbihContainer: {
+    marginRight: -25,
+    zIndex: 1,
+    alignItems: "center",
+  },
+  tasbihLoop: {
+    width: 32,
+    height: 60,
+    borderRadius: 16,
+    borderWidth: 3,
+    borderColor: "#60A5FA",
+    borderStyle: "dashed",
+  },
+  tasbihTassel: {
+    width: 4,
+    height: 12,
+    backgroundColor: "#2563EB",
+    marginTop: -2,
+  },
+  tasbihBeadEnd: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#3B82F6",
+  },
+  textSection: {
+    alignItems: "center",
+    paddingHorizontal: 16,
+    marginVertical: 20,
+  },
+  heading: {
+    fontSize: 26,
+    fontWeight: "800",
+    textAlign: "center",
+    lineHeight: 34,
+    marginBottom: 12,
+  },
+  subheading: {
+    fontSize: 14,
     lineHeight: 22,
     textAlign: "center",
+    paddingHorizontal: 10,
   },
   btnSection: {
-    gap: 12,
-    marginBottom: 20,
+    gap: 14,
+    width: "100%",
+    paddingBottom: 10,
   },
-  primaryBtn: {
+  googleBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 14,
-    gap: 10,
-  },
-  primaryBtnTxt: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  secondaryBtn: {
+    paddingVertical: 15,
+    borderRadius: 12,
     borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
   },
-  secondaryBtnTxt: {
-    fontSize: 16,
+  googleBtnText: {
+    fontSize: 15,
     fontWeight: "700",
   },
-  dividerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 16,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerTxt: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  socialBtn: {
+  emailBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 10,
+    paddingVertical: 15,
+    borderRadius: 12,
   },
-  socialBtnTxt: {
-    fontSize: 16,
+  emailBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  laterBtn: {
+    alignItems: "center",
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  laterText: {
+    fontSize: 15,
     fontWeight: "600",
-  },
-  guestBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 16,
-    gap: 4,
-    alignSelf: "center",
-    padding: 8,
-  },
-  guestBtnTxt: {
-    fontSize: 14,
-    fontWeight: "700",
+    textDecorationLine: "underline",
   },
 });

@@ -6,7 +6,11 @@ import {
   Pressable, 
   ScrollView, 
   ActivityIndicator, 
-  Alert 
+  Alert,
+  Modal,
+  TextInput,
+  Platform,
+  Linking
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -15,36 +19,160 @@ import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
+import * as Clipboard from "expo-clipboard";
+import { doc, setDoc } from "firebase/firestore";
+import { db, auth } from "@/src/firebase";
+
+const HADITH_API_BASE_URL = process.env.EXPO_PUBLIC_HADITH_API_BASE_URL?.replace(/\/$/, "");
 
 export default function PremiumScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { profile, togglePremiumTier } = useAuth();
+  const { profile, togglePremiumTier, startTrial, isGuest } = useAuth();
   
   const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly" | "lifetime">("yearly");
   const [purchasing, setPurchasing] = useState(false);
+  const [upiModalVisible, setUpiModalVisible] = useState(false);
+  const [utr, setUtr] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
-  const handleSubscribe = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    setPurchasing(true);
+  const handleStartTrial = async () => {
+    if (isGuest) {
+      Alert.alert(
+        "Registration Required",
+        "To prevent abuse, starting the 7-day free trial requires a registered user account. Would you like to sign in or create an account now?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Log In", onPress: () => router.push("/auth/login") },
+        ]
+      );
+      return;
+    }
+
+    try {
+      await startTrial();
+      Alert.alert(
+        "Trial Started! 🎉",
+        "Your 7-day free trial has been activated successfully! You now have unrestricted access to all companion Pro features.",
+        [{ text: "Great!", onPress: () => router.back() }]
+      );
+    } catch (e) {
+      Alert.alert("Error", "Failed to start free trial. Please check your network connection.");
+    }
+  };
+
+  const getPlanPrice = () => {
+    switch (selectedPlan) {
+      case "monthly": return 99;
+      case "yearly": return 199;
+      case "lifetime": return 499;
+    }
+  };
+
+  const handleSubscribe = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setUpiModalVisible(true);
+  };
+
+  const handlePayViaUPI = async () => {
+    Haptics.selectionAsync().catch(() => {});
+    const price = getPlanPrice();
+    const upiUrl = `upi://pay?pa=islamichikmah@ybl&pn=Islamic%20Hikmah&am=${price}&cu=INR&tn=Islamic%20Hikmah%20${selectedPlan}`;
     
-    // Simulate payment sheet delay
-    setTimeout(async () => {
-      try {
-        if (profile?.tier !== "premium") {
-          await togglePremiumTier();
-        }
-        setPurchasing(false);
+    try {
+      const supported = await Linking.canOpenURL(upiUrl);
+      if (supported) {
+        await Linking.openURL(upiUrl);
+      } else {
         Alert.alert(
-          "Subscription Success!",
-          "Thank you for subscribing! Premium features have been unlocked on your account.",
-          [{ text: "Awesome", onPress: () => router.back() }]
+          "UPI App Not Found",
+          "We couldn't detect any active UPI apps (like Google Pay, PhonePe, or Paytm) on this device. Please scan the QR Code manually to complete the payment.",
+          [{ text: "Show QR Code", onPress: () => setShowQR(true) }]
         );
-      } catch (err) {
-        setPurchasing(false);
-        Alert.alert("Error", "Payment failed. Please try again.");
       }
-    }, 2000);
+    } catch (e) {
+      Alert.alert("Error", "Unable to launch UPI application. Please pay manually using the QR code.");
+    }
+  };
+
+  const handleCopyUPI = async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    try {
+      await Clipboard.setStringAsync("islamichikmah@ybl");
+      Alert.alert("Copied", "UPI ID copied to clipboard!");
+    } catch (err) {
+      console.warn("Failed to copy to clipboard:", err);
+      Alert.alert("Error", "Could not copy to clipboard. Please copy it manually.");
+    }
+  };
+
+  const handleVerifyUTR = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const cleanUTR = utr.trim();
+    
+    if (!/^\d{12}$/.test(cleanUTR)) {
+      Alert.alert("Invalid UTR", "The UPI Ref No. (UTR) must be exactly a 12-digit number. Please check your payment receipt.");
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      // Save payment transaction ledger to Firestore
+      const paymentRef = doc(db, "payments", cleanUTR);
+      await setDoc(paymentRef, {
+        uid: profile?.uid || "anonymous",
+        email: profile?.email || "anonymous@islamichikmah.app",
+        plan: selectedPlan,
+        amount: getPlanPrice(),
+        utr: cleanUTR,
+        timestamp: Date.now(),
+        status: "pending"
+      });
+
+      // Call backend UTR verify endpoint if base URL is set
+      if (HADITH_API_BASE_URL) {
+        const token = await auth.currentUser?.getIdToken();
+        if (token) {
+          const res = await fetch(`${HADITH_API_BASE_URL}/api/verify-utr`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              utr: cleanUTR,
+              plan: selectedPlan,
+              amount: getPlanPrice()
+            })
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || "Payment verification failed.");
+          }
+        }
+      }
+
+      // Instantly unlock premium tier locally for a premium experience
+      if (profile?.tier !== "premium") {
+        await togglePremiumTier();
+      }
+
+      setVerifying(false);
+      setUpiModalVisible(false);
+      setUtr("");
+      setShowQR(false);
+
+      Alert.alert(
+        "Verification Logged 🎉",
+        "JazakAllah! Your payment UTR has been logged for audit. All Premium features have been unlocked instantly on your device!",
+        [{ text: "Awesome", onPress: () => router.back() }]
+      );
+    } catch (err: any) {
+      setVerifying(false);
+      Alert.alert("Error", err.message || "Failed to submit verification. Please check your internet connection.");
+    }
   };
 
   const handleDevBypass = async () => {
@@ -92,7 +220,7 @@ export default function PremiumScreen() {
           </LinearGradient>
           <Text style={[styles.heroTitle, { color: colors.onSurface }]}>Unlock Premium Access</Text>
           <Text style={[styles.heroDesc, { color: colors.onSurfaceSecondary }]}>
-            Support the app's development and get access to these premium companion tools.
+            {"Support the app's development and get access to these premium companion tools."}
           </Text>
         </View>
 
@@ -215,6 +343,30 @@ export default function PremiumScreen() {
 
         {/* Action Buttons */}
         <View style={styles.actionsSection}>
+
+          {!profile?.trialStartedAt && profile?.tier !== "premium" && (
+            <Pressable
+              onPress={handleStartTrial}
+              style={({ pressed }) => [
+                styles.trialBtn,
+                { backgroundColor: "rgba(39,174,96,0.12)", borderColor: "#27ae60", borderWidth: 1.5 },
+                pressed && { opacity: 0.8 }
+              ]}
+            >
+              <MaterialCommunityIcons name="clock-outline" size={20} color="#27ae60" style={{ marginRight: 6 }} />
+              <Text style={[styles.trialBtnTxt, { color: "#27ae60" }]}>
+                Start 7-Day Free Trial
+              </Text>
+            </Pressable>
+          )}
+
+          {profile?.trialActive && (
+            <View style={[styles.trialActiveBanner, { backgroundColor: "rgba(39,174,96,0.06)", borderColor: "rgba(39,174,96,0.15)", borderWidth: 1, borderRadius: 12, paddingVertical: 12, width: "100%", alignItems: "center", marginBottom: 8 }]}>
+              <Text style={{ color: "#27ae60", fontWeight: "700" }}>
+                ⏳ Trial Active — {profile.trialDaysLeft} days remaining
+              </Text>
+            </View>
+          )}
           
           <Pressable
             onPress={handleSubscribe}
@@ -225,13 +377,9 @@ export default function PremiumScreen() {
               (pressed || purchasing) && { opacity: 0.9 }
             ]}
           >
-            {purchasing ? (
-              <ActivityIndicator color={colors.onBrandPrimary} />
-            ) : (
-              <Text style={[styles.subscribeBtnTxt, { color: colors.onBrandPrimary }]}>
-                {selectedPlan === "lifetime" ? "Unlock Lifetime Access" : "Subscribe Now"}
-              </Text>
-            )}
+            <Text style={[styles.subscribeBtnTxt, { color: colors.onBrandPrimary }]}>
+              {selectedPlan === "lifetime" ? "Unlock Lifetime Access" : "Subscribe Now"}
+            </Text>
           </Pressable>
 
           <View style={styles.linksRow}>
@@ -249,6 +397,146 @@ export default function PremiumScreen() {
         </View>
 
       </ScrollView>
+
+      {/* UPI Billing Sheet Modal */}
+      <Modal
+        visible={upiModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setUpiModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            
+            {/* Crown Icon Header */}
+            <View style={styles.modalHeader}>
+              <MaterialCommunityIcons name="crown" size={32} color="#FFD700" />
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>UPI Payment Checkout</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.onSurfaceMuted }]}>
+                No platform commissions. 100% of your support goes to the application's servers.
+              </Text>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalForm} contentContainerStyle={{ paddingBottom: 24 }}>
+              
+              {/* Plan Summary Card */}
+              <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.summaryPlanName, { color: colors.onSurface }]}>
+                  {selectedPlan === "lifetime" ? "Lifetime Pro" : selectedPlan === "yearly" ? "Yearly Pro" : "Monthly Pro"}
+                </Text>
+                <Text style={[styles.summaryPlanPrice, { color: colors.brand }]}>₹{getPlanPrice()}</Text>
+              </View>
+
+              {/* Pay Button for Mobile */}
+              {Platform.OS !== "web" && (
+                <Pressable
+                  onPress={handlePayViaUPI}
+                  style={({ pressed }) => [
+                    styles.upiPayButton,
+                    { backgroundColor: colors.brand },
+                    pressed && { opacity: 0.9 }
+                  ]}
+                >
+                  <MaterialCommunityIcons name="flash" size={20} color={colors.onBrandPrimary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.upiPayButtonText, { color: colors.onBrandPrimary }]}>Open UPI Payment Apps</Text>
+                </Pressable>
+              )}
+
+              {/* Manual UPI/QR Trigger */}
+              <Pressable 
+                onPress={() => setShowQR(!showQR)} 
+                style={[styles.qrTrigger, { borderColor: colors.border }]}
+              >
+                <MaterialCommunityIcons name="qrcode" size={18} color={colors.onSurface} style={{ marginRight: 6 }} />
+                <Text style={[styles.qrTriggerTxt, { color: colors.onSurface }]}>
+                  {showQR ? "Hide QR Code" : "Show static UPI QR Code"}
+                </Text>
+              </Pressable>
+
+              {/* Static QR Section */}
+              {showQR && (
+                <View style={styles.qrSection}>
+                  <View style={styles.qrBox}>
+                    {/* Mock styled QR code patterns */}
+                    <View style={styles.qrPatternRow}>
+                      <View style={styles.qrCornerMark} />
+                      <View style={{ flex: 1 }} />
+                      <View style={styles.qrCornerMark} />
+                    </View>
+                    <View style={styles.qrPatternMid}>
+                      <MaterialCommunityIcons name="crown" size={32} color={colors.brand} />
+                    </View>
+                    <View style={styles.qrPatternRow}>
+                      <View style={styles.qrCornerMark} />
+                      <View style={{ flex: 1 }} />
+                      <View style={styles.qrCornerMark} />
+                    </View>
+                  </View>
+                  
+                  <View style={styles.upiIdRow}>
+                    <Text style={[styles.upiIdTxt, { color: colors.onSurfaceMuted }]}>UPI ID: islamichikmah@ybl</Text>
+                    <Pressable onPress={handleCopyUPI} hitSlop={8} style={styles.copyBtn}>
+                      <MaterialCommunityIcons name="content-copy" size={16} color={colors.brand} />
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {/* Verification Section */}
+              <View style={styles.verificationWrap}>
+                <Text style={[styles.verificationLabel, { color: colors.onSurface }]}>
+                  Enter 12-digit UPI Ref No. (UTR)
+                </Text>
+                <Text style={[styles.verificationDesc, { color: colors.onSurfaceMuted }]}>
+                  After completing the transfer inside your UPI app, paste the UTR transaction number here to activate.
+                </Text>
+                <TextInput
+                  style={[styles.utrInput, { backgroundColor: colors.surface, color: colors.onSurface, borderColor: colors.border }]}
+                  placeholder="e.g. 620478193024"
+                  placeholderTextColor={colors.onSurfaceMuted}
+                  value={utr}
+                  onChangeText={setUtr}
+                  keyboardType="numeric"
+                  maxLength={12}
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <Pressable
+                  onPress={handleVerifyUTR}
+                  disabled={verifying}
+                  style={({ pressed }) => [
+                    styles.verifyBtn,
+                    { backgroundColor: colors.brand },
+                    (pressed || verifying) && { opacity: 0.9 }
+                  ]}
+                >
+                  {verifying ? (
+                    <ActivityIndicator color={colors.onBrandPrimary} />
+                  ) : (
+                    <Text style={[styles.verifyBtnTxt, { color: colors.onBrandPrimary }]}>Verify & Activate</Text>
+                  )}
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setUpiModalVisible(false);
+                    setUtr("");
+                    setShowQR(false);
+                  }}
+                  style={styles.cancelBtn}
+                >
+                  <Text style={[styles.cancelBtnTxt, { color: colors.onSurfaceMuted }]}>Cancel</Text>
+                </Pressable>
+              </View>
+
+            </ScrollView>
+
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -409,5 +697,185 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    paddingTop: 24,
+    maxHeight: "90%",
+  },
+  modalHeader: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
+    paddingHorizontal: 12,
+  },
+  modalForm: {
+    paddingHorizontal: 24,
+  },
+  summaryCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  summaryPlanName: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  summaryPlanPrice: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  upiPayButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 50,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  upiPayButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  qrTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    marginBottom: 16,
+  },
+  qrTriggerTxt: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  qrSection: {
+    alignItems: "center",
+    marginBottom: 18,
+    gap: 12,
+  },
+  qrBox: {
+    width: 140,
+    height: 140,
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    borderRadius: 12,
+    borderColor: "#E2E8F0",
+    borderWidth: 1,
+    justifyContent: "space-between",
+  },
+  qrPatternRow: {
+    flexDirection: "row",
+    height: 32,
+  },
+  qrCornerMark: {
+    width: 32,
+    height: 32,
+    borderWidth: 3,
+    borderColor: "#0F172A",
+    borderRadius: 4,
+  },
+  qrPatternMid: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  upiIdRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  upiIdTxt: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  copyBtn: {
+    padding: 4,
+  },
+  verificationWrap: {
+    gap: 8,
+    marginBottom: 24,
+  },
+  verificationLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  verificationDesc: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  utrInput: {
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    letterSpacing: 1.5,
+  },
+  modalActions: {
+    gap: 10,
+  },
+  verifyBtn: {
+    height: 52,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  verifyBtnTxt: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  cancelBtn: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  cancelBtnTxt: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  trialBtn: {
+    flexDirection: "row",
+    height: 54,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    marginBottom: 8,
+  },
+  trialBtnTxt: {
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  trialActiveBanner: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 8,
   },
 });

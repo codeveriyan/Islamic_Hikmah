@@ -24,14 +24,14 @@ export default function ArticlesScreen() {
         renderItem={({ item }) => (
           <Pressable
             onPress={() => router.push(`/article/${item.id}` as any)}
-            style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+            style={({ pressed }) => [styles.card, { backgroundColor: colors.surfaceSecondary }, pressed && { opacity: 0.85 }]}
             testID={`article-${item.id}`}
           >
             <Image source={{ uri: item.cover }} style={styles.cover} contentFit="cover" />
             <View style={styles.cardBody}>
-              <Text style={styles.cat}>{item.category} · {item.readingTime}</Text>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.excerpt} numberOfLines={2}>{item.excerpt}</Text>
+              <Text style={[styles.cat, { color: colors.brand }]}>{item.category} · {item.readingTime}</Text>
+              <Text style={[styles.cardTitle, { color: colors.onSurface }]}>{item.title}</Text>
+              <Text style={[styles.excerpt, { color: colors.onSurfaceMuted }]} numberOfLines={2}>{item.excerpt}</Text>
             </View>
           </Pressable>
         )}

@@ -9,6 +9,8 @@ import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
 import { ALLAH_NAMES, AllahName } from "@/src/data/names";
+import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md * 2) / 3;
@@ -24,6 +26,8 @@ export default function AllahNamesScreen() {
   const router = useRouter();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
   const [isGrid, setIsGrid] = useState(false);
   const [playingNumber, setPlayingNumber] = useState<number | null>(null);
   const [selectedName, setSelectedName] = useState<AllahName | null>(null);
@@ -61,24 +65,30 @@ export default function AllahNamesScreen() {
   // Play individual Name audio (raw CDN MP3 files)
   const playNameAudio = useCallback(async (item: AllahName) => {
     Haptics.selectionAsync().catch(() => {});
+    if (profile?.tier !== "premium" && !profile?.trialActive) {
+      showPremiumModal("Asma Al-Husna Audio");
+      return;
+    }
     if (isPlayingAll) {
-      // Stop full track if active
       setIsPlayingAll(false);
     }
     try {
       setPlayingNumber(item.number);
       const audioUrl = `https://raw.githubusercontent.com/soachishti/Asma-ul-Husna/master/audio/${item.number}.mp3`;
-      
       player.replace({ uri: audioUrl });
       player.play();
     } catch (err) {
       console.error("Failed to play name audio:", err);
     }
-  }, [player, isPlayingAll]);
+  }, [player, isPlayingAll, profile?.tier]);
 
   // Play full 99 names track (Alafasy)
   const startPlayAll = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    if (profile?.tier !== "premium" && !profile?.trialActive) {
+      showPremiumModal("Play All 99 Names");
+      return;
+    }
     setPlayingNumber(null);
     setIsPlayingAll(true);
     try {
@@ -87,42 +97,66 @@ export default function AllahNamesScreen() {
     } catch (err) {
       console.error("Failed to play full Asma ul Husna audio:", err);
     }
-  }, [player]);
+  }, [player, profile?.tier]);
 
   const pausePlayAll = useCallback(() => {
     Haptics.selectionAsync().catch(() => {});
-    player.pause();
+    try {
+      player.pause();
+    } catch (e) {
+      console.warn("Failed to pause player:", e);
+    }
   }, [player]);
 
   const resumePlayAll = useCallback(() => {
     Haptics.selectionAsync().catch(() => {});
-    player.play();
+    try {
+      player.play();
+    } catch (e) {
+      console.warn("Failed to play player:", e);
+    }
   }, [player]);
 
   const stopPlayAll = useCallback(() => {
     Haptics.selectionAsync().catch(() => {});
     setIsPlayingAll(false);
-    player.pause();
+    try {
+      player.pause();
+    } catch (e) {
+      console.warn("Failed to stop player:", e);
+    }
   }, [player]);
 
   const handleSeek = (e: any) => {
     if (progressBarWidth > 0 && duration) {
       const pct = Math.max(0, Math.min(1, e.nativeEvent.locationX / progressBarWidth));
       const targetSeconds = pct * duration;
-      player.seekTo(targetSeconds);
+      try {
+        player.seekTo(targetSeconds);
+      } catch (e) {
+        console.warn("Failed to seek player:", e);
+      }
     }
   };
 
   const skipForward = useCallback(() => {
     if (duration > 0) {
       const nextTime = Math.min(duration, currentTime + 10);
-      player.seekTo(nextTime);
+      try {
+        player.seekTo(nextTime);
+      } catch (e) {
+        console.warn("Failed to skip forward:", e);
+      }
     }
   }, [currentTime, duration, player]);
 
   const skipBackward = useCallback(() => {
     const prevTime = Math.max(0, currentTime - 10);
-    player.seekTo(prevTime);
+    try {
+      player.seekTo(prevTime);
+    } catch (e) {
+      console.warn("Failed to skip backward:", e);
+    }
   }, [currentTime, player]);
 
   const renderListItem = useCallback(({ item }: { item: AllahName }) => {

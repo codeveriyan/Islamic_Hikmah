@@ -631,7 +631,7 @@ export default function DuaCategoryScreen() {
               <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("share") || "Share"}</Text>
             </Pressable>
             <Pressable onPress={() => onFav(activeDuaIndex)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name={isFav ? "heart" : "heart-outline"} size={22} color={isFav ? theme.colors.error : colors.brand} />
+              <MaterialCommunityIcons name={isFav ? "heart" : "heart-outline"} size={22} color={isFav ? colors.error : colors.brand} />
               <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isFav ? t("liked") : t("like")}</Text>
             </Pressable>
             <Pressable onPress={() => onBookmark(activeDuaIndex)} style={styles.actionIconBtn}>

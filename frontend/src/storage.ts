@@ -188,6 +188,36 @@ export async function saveActiveGoalIds(ids: string[]) {
   await AsyncStorage.setItem(GOALS_CONFIG_KEY, JSON.stringify(ids));
 }
 
+function getDateKeyForOffset(daysOffset: number) {
+  const d = new Date();
+  if (d.getHours() < 4) {
+    d.setDate(d.getDate() - 1);
+  }
+  d.setDate(d.getDate() - daysOffset);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+export async function getRecentGoalHistory(days: number): Promise<{ date: Date; completedIds: string[] }[]> {
+  const history: { date: Date; completedIds: string[] }[] = [];
+  for (let i = 1; i <= days; i++) {
+    const key = getDateKeyForOffset(i);
+    const raw = await AsyncStorage.getItem(`${GOALS_KEY}:${key}`);
+    const completedIds = raw ? JSON.parse(raw) : [];
+    
+    const date = new Date();
+    if (date.getHours() < 4) {
+      date.setDate(date.getDate() - 1);
+    }
+    date.setDate(date.getDate() - i);
+    
+    history.push({
+      date,
+      completedIds,
+    });
+  }
+  return history;
+}
+
 // ── Prayer Settings Storage ────────────────────────────────
 const PRAYER_SETTINGS_KEY = 'hikmah:prayer-settings:v1';
 
@@ -239,87 +269,91 @@ export const cancelPrevPrayerNotifications = async () => {
 
 export const schedulePrayerNotifications = async (timings: Record<string, string>, adhanEnabled: Record<string, boolean>): Promise<{ success: boolean; error?: 'permission' | 'failed' }> => {
   if (Platform.OS === "web") return { success: true };
-  
-  await cancelPrevPrayerNotifications();
-  
-  const { status } = await Notifications.getPermissionsAsync();
-  if (status !== "granted") {
-    const res = await Notifications.requestPermissionsAsync();
-    if (res.status !== "granted") {
-      return { success: false, error: 'permission' };
-    }
-  }
-  
-  // Check if background Azaan is enabled (defaults to true)
-  const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
-  const bgAzaanEnabled = bgAzaanRaw !== "false";
-  
-  // Set up channel for high importance and custom Adhan sound on Android
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('prayer-times', {
-      name: 'Prayer Time Notifications',
-      importance: Notifications.AndroidImportance.HIGH,
-      sound: bgAzaanEnabled ? 'azaan' : undefined,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
-    });
-  }
-
-  const newIds: string[] = [];
-  const activePrayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
-  const settings = await getPrayerSettings();
-  const offsets = settings.offsets || {};
-  
-  for (const p of activePrayers) {
-    const isEnabled = adhanEnabled[p] ?? true;
-    if (!isEnabled) continue;
+  try {
+    await cancelPrevPrayerNotifications();
     
-    const timeStr = timings[p];
-    if (!timeStr) continue;
-    
-    const [hStr, mStr] = timeStr.split(":");
-    let h = parseInt(hStr, 10);
-    let m = parseInt(mStr, 10);
-    
-    if (isNaN(h) || isNaN(m)) continue;
-
-    // Apply manual offset adjustments
-    const offsetMin = offsets[p] || 0;
-    if (offsetMin !== 0) {
-      const dateObj = new Date();
-      dateObj.setHours(h, m, 0, 0);
-      const adjustedDate = new Date(dateObj.getTime() + offsetMin * 60 * 1000);
-      h = adjustedDate.getHours();
-      m = adjustedDate.getMinutes();
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== "granted") {
+      const res = await Notifications.requestPermissionsAsync();
+      if (res.status !== "granted") {
+        return { success: false, error: 'permission' };
+      }
     }
     
-    try {
-      const id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `${p} Prayer Time`,
-          body: `It is time for ${p} prayer.`,
-          sound: bgAzaanEnabled ? (Platform.OS === "android" ? "azaan" : "azaan.wav") : true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: h,
-          minute: m,
-          channelId: 'prayer-times',
-        },
+    // Check if background Azaan is enabled (defaults to true)
+    const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
+    const bgAzaanEnabled = bgAzaanRaw !== "false";
+    
+    // Set up channel for high importance and custom Adhan sound on Android
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('prayer-times', {
+        name: 'Prayer Time Notifications',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: bgAzaanEnabled ? 'azaan' : undefined,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
       });
-      newIds.push(id);
-    } catch (e) {
-      console.error(`Failed to schedule notification for ${p}:`, e);
     }
-  }
-  
-  await AsyncStorage.setItem(PRAYER_NOTIF_KEY, JSON.stringify(newIds));
-  
-  const hasEnabled = activePrayers.some(p => adhanEnabled[p] ?? true);
-  if (hasEnabled && newIds.length === 0) {
+
+    const newIds: string[] = [];
+    const activePrayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+    const settings = await getPrayerSettings();
+    const offsets = settings.offsets || {};
+    
+    for (const p of activePrayers) {
+      const isEnabled = adhanEnabled[p] ?? true;
+      if (!isEnabled) continue;
+      
+      const timeStr = timings[p];
+      if (!timeStr) continue;
+      
+      const [hStr, mStr] = timeStr.split(":");
+      let h = parseInt(hStr, 10);
+      let m = parseInt(mStr, 10);
+      
+      if (isNaN(h) || isNaN(m)) continue;
+
+      // Apply manual offset adjustments
+      const offsetMin = offsets[p] || 0;
+      if (offsetMin !== 0) {
+        const dateObj = new Date();
+        dateObj.setHours(h, m, 0, 0);
+        const adjustedDate = new Date(dateObj.getTime() + offsetMin * 60 * 1000);
+        h = adjustedDate.getHours();
+        m = adjustedDate.getMinutes();
+      }
+      
+      try {
+        const id = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `${p} Prayer Time`,
+            body: `It is time for ${p} prayer.`,
+            sound: bgAzaanEnabled ? (Platform.OS === "android" ? "azaan" : "azaan.wav") : true,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: h,
+            minute: m,
+            channelId: 'prayer-times',
+          },
+        });
+        newIds.push(id);
+      } catch (e) {
+        console.error(`Failed to schedule notification for ${p}:`, e);
+      }
+    }
+    
+    await AsyncStorage.setItem(PRAYER_NOTIF_KEY, JSON.stringify(newIds));
+    
+    const hasEnabled = activePrayers.some(p => adhanEnabled[p] ?? true);
+    if (hasEnabled && newIds.length === 0) {
+      return { success: false, error: 'failed' };
+    }
+    return { success: true };
+  } catch (e) {
+    console.error("Critical error in schedulePrayerNotifications:", e);
     return { success: false, error: 'failed' };
   }
-  return { success: true };
 };
 
 export const setupNotificationCategories = async () => {
@@ -532,8 +566,8 @@ export async function scheduleGoalNotifications(
   goalTimes?: GoalNotifTimes
 ): Promise<{ success: boolean; error?: 'permission' | 'failed' }> {
   if (Platform.OS === 'web') return { success: true };
-
-  await cancelGoalNotifications();
+  try {
+    await cancelGoalNotifications();
 
   const { status } = await Notifications.getPermissionsAsync();
   if (status !== 'granted') {
@@ -751,6 +785,10 @@ export async function scheduleGoalNotifications(
   await AsyncStorage.setItem(GOAL_NOTIF_KEY, JSON.stringify(newIds));
 
   return { success: true };
+  } catch (e) {
+    console.error("Critical error in scheduleGoalNotifications:", e);
+    return { success: false, error: 'failed' };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

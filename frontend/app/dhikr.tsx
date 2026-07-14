@@ -12,6 +12,8 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@/src/ThemeContext';
 import { useTranslation } from '@/src/localization';
+import { useAuth } from '@/src/AuthContext';
+import { usePremiumModal } from '@/src/PremiumModalContext';
 import { getDhikrCounts, setDhikrCount } from '@/src/storage';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { theme } from '@/src/theme';
@@ -63,9 +65,9 @@ const SUB_VEINS = [
 ];
 
 // ─── Kintsugi / Customized bead graphic ───────────────────────────────────────────
-export type BeadStyleType = 'gold' | 'walnut' | 'onyx' | 'pearl';
+export type BeadStyleType = 'gold' | 'emerald' | 'ruby' | 'aqua' | 'onyx' | 'pearl';
 
-const BeadGraphic = memo(({ size, darkMode, beadStyle = 'onyx' }: { size: number; darkMode: boolean; beadStyle?: BeadStyleType }) => {
+const BeadGraphic = memo(function BeadGraphic({ size, darkMode, beadStyle = 'onyx' }: { size: number; darkMode: boolean; beadStyle?: BeadStyleType }) {
   const r = size / 2;
   
   let bgColor = '#050505';
@@ -85,13 +87,12 @@ const BeadGraphic = memo(({ size, darkMode, beadStyle = 'onyx' }: { size: number
     subVeinColor = '#F0E68C';
     sheenColor = 'rgba(255,255,255,0.3)';
     hasVeins = false;
-  } else if (beadStyle === 'walnut') {
-    bgColor = '#4A2E15';
-    bColor = '#2F1B0A';
-    veinColor = '#3A200D';
-    subVeinColor = '#251205';
-    sheenColor = 'rgba(255,255,255,0.05)';
-    hasVeins = true; // Wood grain
+  } else if (beadStyle === 'emerald') {
+    bgColor = '#087A38'; bColor = '#03451F'; shadowColor = '#00A94F'; hasVeins = false;
+  } else if (beadStyle === 'ruby') {
+    bgColor = '#9E1524'; bColor = '#520812'; shadowColor = '#D9293D'; hasVeins = false;
+  } else if (beadStyle === 'aqua') {
+    bgColor = '#0799A4'; bColor = '#03545B'; shadowColor = '#19D7DE'; hasVeins = false;
   } else if (beadStyle === 'pearl') {
     bgColor = '#FDFBF7';
     bColor = '#E6E2D8';
@@ -115,7 +116,7 @@ const BeadGraphic = memo(({ size, darkMode, beadStyle = 'onyx' }: { size: number
       }}
     >
       <LinearGradient
-        colors={['#2a2a2a', '#050505', '#171717', '#000000']}
+        colors={beadStyle === 'gold' ? ['#FFF0A0', '#D99A16', '#8F5703', '#E8B52C'] : beadStyle === 'emerald' ? ['#65D98B', '#087A38', '#023A1A', '#0C9A49'] : beadStyle === 'ruby' ? ['#FF7580', '#A71929', '#4E0710', '#C6283A'] : beadStyle === 'aqua' ? ['#7EF5F1', '#0799A4', '#03464D', '#16BBC2'] : beadStyle === 'pearl' ? ['#FFFFFF', '#E8E1D5', '#B7B0A6', '#FAF8F2'] : ['#2a2a2a', '#050505', '#171717', '#000000']}
         start={{ x: 0.08, y: 0 }}
         end={{ x: 0.9, y: 1 }}
         style={StyleSheet.absoluteFillObject}
@@ -145,7 +146,7 @@ const BeadGraphic = memo(({ size, darkMode, beadStyle = 'onyx' }: { size: number
           position: 'absolute',
           height: v.h,
           backgroundColor: veinColor,
-          opacity: beadStyle === 'walnut' ? 0.4 : v.op,
+          opacity: v.op,
           width: size * v.w,
           top: size * v.top,
           left: size * v.left,
@@ -159,7 +160,7 @@ const BeadGraphic = memo(({ size, darkMode, beadStyle = 'onyx' }: { size: number
           position: 'absolute',
           height: 1,
           backgroundColor: subVeinColor,
-          opacity: beadStyle === 'walnut' ? 0.3 : 0.55,
+          opacity: 0.55,
           width: size * v.w,
           top: size * v.top,
           left: size * v.left,
@@ -294,6 +295,8 @@ export default function TasbihScreen() {
   const router = useRouter();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
   const isDark = colors.mode === 'dark';
 
   const tickPlayer = useAudioPlayer(require('../assets/audio/tick.wav'));
@@ -354,10 +357,11 @@ export default function TasbihScreen() {
       const appearanceRaw = await AsyncStorage.getItem('hikmah:tasbih:appearance:v1');
       if (appearanceRaw) {
         const parsed = JSON.parse(appearanceRaw);
-        setThemeType(parsed.themeType || 'color');
-        setThemeValue(parsed.themeValue || (isDark ? '#0B1120' : '#F8FAFC'));
-        setCounterStyle(parsed.counterStyle || 'beads');
-        setBeadStyle(parsed.beadStyle || 'onyx');
+        setThemeType('color');
+        setThemeValue(isDark ? '#0B1120' : '#F8FAFC');
+        setCounterStyle('beads');
+        const supportedBeads: BeadStyleType[] = ['gold', 'emerald', 'ruby', 'aqua', 'onyx', 'pearl'];
+        setBeadStyle(supportedBeads.includes(parsed.beadStyle) ? parsed.beadStyle : 'onyx');
       } else {
         setThemeValue(isDark ? '#0B1120' : '#F8FAFC');
       }
@@ -392,11 +396,12 @@ export default function TasbihScreen() {
   // ─── Audio ────────────────────────────────────────────────────────────────
   const handlePlayAudio = useCallback(() => {
     if (!selectedPhrase?.audioUrl) return;
+    if (profile?.tier !== 'premium' && !profile?.trialActive) { showPremiumModal('Dhikr Audio'); return; }
     try {
       if (recStatus.playing) { recitationPlayer.pause(); }
       else { recitationPlayer.replace({ uri: selectedPhrase.audioUrl }); recitationPlayer.play(); }
     } catch (e) { console.error(e); }
-  }, [selectedPhrase, recStatus.playing]);
+  }, [selectedPhrase, recStatus.playing, profile?.tier]);
 
   useEffect(() => { try { recitationPlayer.pause(); } catch {} }, [phraseId]);
 
@@ -405,7 +410,7 @@ export default function TasbihScreen() {
     if (!isMuted) { 
       try { 
         tickPlayer.seekTo(0); tickPlayer.play(); 
-        if (selectedPhrase?.audioUrl) {
+        if (selectedPhrase?.audioUrl && (profile?.tier === 'premium' || profile?.trialActive)) {
           recitationPlayer.replace({ uri: selectedPhrase.audioUrl });
           recitationPlayer.play();
         }
@@ -623,24 +628,15 @@ export default function TasbihScreen() {
           <ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing.lg }}>
             <Text style={[styles.sectionTitle, { color: colors.brand, marginTop: 12 }]}>Background</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-              <Pressable onPress={() => saveAppearance('color', isDark ? '#0B1120' : '#F8FAFC', counterStyle, beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, themeType === 'color' && themeValue !== '#1c281e' && { borderColor: colors.brand, borderWidth: 2 }]}>
+              <Pressable onPress={() => saveAppearance('color', isDark ? '#0B1120' : '#F8FAFC', 'beads', beadStyle)} style={[styles.optBtn, { borderColor: colors.brand, borderWidth: 2 }]}>
                 <Text style={{ color: colors.onSurface }}>Default</Text>
-              </Pressable>
-              <Pressable onPress={() => saveAppearance('color', '#1c281e', counterStyle, beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, themeValue === '#1c281e' && { borderColor: colors.brand, borderWidth: 2 }]}>
-                <Text style={{ color: colors.onSurface }}>Green</Text>
-              </Pressable>
-              <Pressable onPress={() => saveAppearance('image', 'https://images.unsplash.com/photo-1599839619722-39751411ea63?q=80&w=600&auto=format&fit=crop', counterStyle, beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, themeType === 'image' && { borderColor: colors.brand, borderWidth: 2 }]}>
-                <Text style={{ color: colors.onSurface }}>Nature</Text>
               </Pressable>
             </View>
 
             <Text style={[styles.sectionTitle, { color: colors.brand }]}>Counter Style</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-              <Pressable onPress={() => saveAppearance(themeType, themeValue, 'beads', beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, counterStyle === 'beads' && { borderColor: colors.brand, borderWidth: 2 }]}>
+              <Pressable onPress={() => saveAppearance('color', isDark ? '#0B1120' : '#F8FAFC', 'beads', beadStyle)} style={[styles.optBtn, { borderColor: colors.brand, borderWidth: 2 }]}>
                 <Text style={{ color: colors.onSurface }}>Beads</Text>
-              </Pressable>
-              <Pressable onPress={() => saveAppearance(themeType, themeValue, 'line', beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, counterStyle === 'line' && { borderColor: colors.brand, borderWidth: 2 }]}>
-                <Text style={{ color: colors.onSurface }}>Line</Text>
               </Pressable>
             </View>
 
@@ -648,9 +644,9 @@ export default function TasbihScreen() {
               <>
                 <Text style={[styles.sectionTitle, { color: colors.brand }]}>Bead Style</Text>
                 <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-                  {(['onyx', 'gold', 'walnut', 'pearl'] as BeadStyleType[]).map(bs => (
+                  {(['gold', 'emerald', 'ruby', 'aqua', 'onyx', 'pearl'] as BeadStyleType[]).map(bs => (
                     <Pressable key={bs} onPress={() => saveAppearance(themeType, themeValue, counterStyle, bs)} style={[styles.optBtn, { borderColor: colors.border }, beadStyle === bs && { borderColor: colors.brand, borderWidth: 2 }]}>
-                      <Text style={{ color: colors.onSurface, textTransform: 'capitalize' }}>{bs}</Text>
+                      <View style={{ alignItems: 'center', gap: 6 }}><BeadGraphic size={28} darkMode={isDark} beadStyle={bs} /><Text style={{ color: colors.onSurface, textTransform: 'capitalize' }}>{bs}</Text></View>
                     </Pressable>
                   ))}
                 </View>
@@ -689,7 +685,10 @@ export default function TasbihScreen() {
             <Pressable onPress={() => setIsMuted(!isMuted)} hitSlop={10} style={styles.hBtn}>
               <MaterialCommunityIcons name={isMuted ? 'volume-off' : 'volume-high'} size={22} color={colors.onSurface} />
             </Pressable>
-            <Pressable onPress={() => setShowAppearanceModal(true)} hitSlop={10} style={styles.hBtn}>
+            <Pressable onPress={() => {
+              if (profile?.tier !== 'premium' && !profile?.trialActive) { showPremiumModal('Appearance Settings'); return; }
+              setShowAppearanceModal(true);
+            }} hitSlop={10} style={styles.hBtn}>
               <MaterialCommunityIcons name="palette-outline" size={22} color={colors.onSurface} />
             </Pressable>
             <Pressable onPress={() => router.replace('/(tabs)')} hitSlop={10} style={styles.hBtn}>
@@ -829,7 +828,10 @@ export default function TasbihScreen() {
                   )}
                 </Pressable>
               ))}
-              <Pressable onPress={() => { setShowPicker(true); setPickerTab('all'); setSearchQuery(''); }}
+              <Pressable onPress={() => {
+                if (profile?.tier !== 'premium' && !profile?.trialActive) { showPremiumModal('Add More Dhikr'); return; }
+                setShowPicker(true); setPickerTab('all'); setSearchQuery('');
+              }}
                 style={[styles.addBtn, { backgroundColor: colors.brand + '15', borderColor: colors.brand }]}>
                 <MaterialCommunityIcons name="plus-circle-outline" size={22} color={colors.brand} />
                 <Text style={[styles.addBtnTxt, { color: colors.brand }]}>Add more{'\n'}Dhikr</Text>
@@ -865,7 +867,10 @@ export default function TasbihScreen() {
 
           {/* ── Quick Actions ── */}
           <View style={[styles.actionRow, { paddingHorizontal: 16 }]}>
-            <TouchableOpacity onPress={() => { setSessionNameInput(''); setShowSaveModal(true); }}
+            <TouchableOpacity onPress={() => {
+              if (profile?.tier !== 'premium' && !profile?.trialActive) { showPremiumModal('Save Dhikr Session'); return; }
+              setSessionNameInput(''); setShowSaveModal(true);
+            }}
               style={[styles.actionBtn, { backgroundColor: 'rgba(39,174,96,0.08)', borderColor: 'rgba(39,174,96,0.3)' }]}>
               <MaterialCommunityIcons name="content-save-outline" size={18} color="#27ae60" />
               <Text style={[styles.actionBtnTxt, { color: '#27ae60' }]}>Save</Text>
@@ -904,7 +909,7 @@ export default function TasbihScreen() {
               </View>
               {hadithExpanded && (
                 <View style={styles.hadithBody}>
-                  <Text style={[styles.hadithText, { color: colors.onSurface }]}>"{selectedPhrase.hadith}"</Text>
+                  <Text style={[styles.hadithText, { color: colors.onSurface }]}>&ldquo;{selectedPhrase.hadith}&rdquo;</Text>
                   {selectedPhrase.hadithSource && (
                     <Text style={[styles.hadithSource, { color: colors.brand }]}>— {selectedPhrase.hadithSource}</Text>
                   )}

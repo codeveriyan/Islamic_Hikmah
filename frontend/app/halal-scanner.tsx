@@ -21,6 +21,8 @@ import * as FileSystem from "expo-file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
 
 type IngredientStatus = "halal" | "mushbooh" | "haram";
 type VerifyMode = "photo" | "barcode" | "text";
@@ -96,6 +98,16 @@ function analyzeIngredients(ingredients: string) {
 export default function HalalScannerScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
+
+  // Gate entire screen behind premium
+  useEffect(() => {
+    if (profile?.tier !== "premium" && !profile?.trialActive) {
+      router.back();
+      showPremiumModal("Halal Product Scanner");
+    }
+  }, [profile?.tier, profile?.trialActive]);
   const [productName, setProductName] = useState("");
   const [barcode, setBarcode] = useState("");
   const [ingredients, setIngredients] = useState("");
@@ -210,12 +222,17 @@ export default function HalalScannerScreen() {
   };
 
   const openBarcodeScanner = async () => {
-    const permission = cameraPermission?.granted ? cameraPermission : await requestCameraPermission();
-    if (!permission?.granted) {
-      Alert.alert("Camera permission needed", "Allow camera access to scan product barcodes.");
-      return;
+    try {
+      const permission = cameraPermission?.granted ? cameraPermission : await requestCameraPermission();
+      if (!permission?.granted) {
+        Alert.alert("Camera permission needed", "Allow camera access to scan product barcodes.");
+        return;
+      }
+      setScannerVisible(true);
+    } catch (err) {
+      console.error("Failed to open barcode scanner:", err);
+      Alert.alert("Error", "Could not open barcode scanner. Please check your camera settings.");
     }
-    setScannerVisible(true);
   };
 
   const handleBarcodeScanned = ({ data }: BarcodeScanningResult) => {
@@ -226,36 +243,46 @@ export default function HalalScannerScreen() {
   };
 
   const pickLabelPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Photo permission needed", "Allow photo access to choose an ingredient label.");
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.85,
-    });
-    if (!result.canceled) {
-      const uri = result.assets[0]?.uri || null;
-      setPhotoUri(uri);
-      if (uri) extractTextFromImage(uri).catch(() => {});
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Photo permission needed", "Allow photo access to choose an ingredient label.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.85,
+      });
+      if (!result.canceled) {
+        const uri = result.assets[0]?.uri || null;
+        setPhotoUri(uri);
+        if (uri) extractTextFromImage(uri).catch(() => {});
+      }
+    } catch (err) {
+      console.error("Failed to pick image:", err);
+      Alert.alert("Error", "Could not access photo library. Please try again.");
     }
   };
 
   const captureLabelPhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Camera permission needed", "Allow camera access to capture ingredient labels.");
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      quality: 0.85,
-    });
-    if (!result.canceled) {
-      const uri = result.assets[0]?.uri || null;
-      setPhotoUri(uri);
-      if (uri) extractTextFromImage(uri).catch(() => {});
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Camera permission needed", "Allow camera access to capture ingredient labels.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.85,
+      });
+      if (!result.canceled) {
+        const uri = result.assets[0]?.uri || null;
+        setPhotoUri(uri);
+        if (uri) extractTextFromImage(uri).catch(() => {});
+      }
+    } catch (err) {
+      console.error("Failed to capture image:", err);
+      Alert.alert("Error", "Could not start camera to capture photo. Please check your device settings.");
     }
   };
 

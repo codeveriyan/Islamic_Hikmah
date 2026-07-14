@@ -13,8 +13,8 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Show accurate prayer times and Qibla direction",
         "NSMotionUsageDescription": "Detect compass heading for Qibla direction",
-        "NSCameraUsageDescription": "Scan barcodes and capture food ingredient labels for halal checking",
-        "NSPhotoLibraryUsageDescription": "Choose ingredient label photos for halal OCR checking",
+        "NSCameraUsageDescription": "Take a profile photo or capture food ingredient labels for halal checking",
+        "NSPhotoLibraryUsageDescription": "Choose a profile photo or ingredient label image from your library",
         "UIBackgroundModes": [
           "audio"
         ]
@@ -57,7 +57,10 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#000000"
+          "color": "#000000",
+          "sounds": [
+            "./assets/audio/azaan.wav"
+          ]
         }
       ],
       "expo-asset"

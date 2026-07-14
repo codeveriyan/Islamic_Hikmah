@@ -2216,7 +2216,7 @@ export default function QuranPageReader() {
 
                     {focusedVerseTab === "answers" && (
                       <Text style={{ fontSize: 13, lineHeight: 20, color: colors.onSurfaceSecondary }}>
-                        <Text style={{ fontWeight: "700" }}>Q: Why is the Day of Judgment referred to as the 'Day of Recompense' (Yawm ad-Din)?</Text>{"\n"}
+                        <Text style={{ fontWeight: "700" }}>{"Q: Why is the Day of Judgment referred to as the 'Day of Recompense' (Yawm ad-Din)?"}</Text>{"\n"}
                         <Text style={{ color: colors.brand }}>A:</Text> Because it is the day when every soul will be recompensed for their deeds, whether good or bad, with absolute justice.
                       </Text>
                     )}

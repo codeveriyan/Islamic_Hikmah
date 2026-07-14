@@ -13,7 +13,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup
 } from "firebase/auth";
-import { auth } from "./firebase";
+import { auth, db } from "./firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
 
@@ -28,6 +29,10 @@ export interface UserProfile {
   status: "Active" | "Blocked";
   tier: "free" | "premium";
   premiumUntil?: number;
+  // Trial fields
+  trialStartedAt?: number;   // unix ms when trial began (undefined = never started)
+  trialActive: boolean;      // true if trial started AND not expired
+  trialDaysLeft: number;     // 0–7 days remaining (0 = expired or not started)
 }
 
 interface AuthContextType {
@@ -44,6 +49,7 @@ interface AuthContextType {
   updateProfileInfo: (name: string, photoURL?: string) => Promise<void>;
   reloadUser: () => Promise<void>;
   togglePremiumTier: () => Promise<void>;
+  startTrial: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -71,9 +77,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         setUser(firebaseUser);
         setIsGuest(false);
-        // Load tier details from local storage for local persistence override
-        const localTier = await AsyncStorage.getItem(`ruhani:tier:${firebaseUser.uid}`);
+        // Load tier details from local storage and Firestore
+        let localTier = await AsyncStorage.getItem(`ruhani:tier:${firebaseUser.uid}`);
+        let finalTier: "free" | "premium" = (localTier as "free" | "premium") || "free";
         
+        try {
+          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            if (data?.tier === "premium" || data?.tier === "free") {
+              finalTier = data.tier;
+              await AsyncStorage.setItem(`ruhani:tier:${firebaseUser.uid}`, finalTier);
+            }
+          } else {
+            // First time login/signup: create document with default tier
+            await setDoc(doc(db, "users", firebaseUser.uid), {
+              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
+              email: firebaseUser.email || "",
+              tier: finalTier,
+              createdAt: Date.now()
+            }, { merge: true });
+          }
+        } catch (e) {
+          console.warn("Failed to sync tier with Firestore:", e);
+        }
+
+        // ── Trial computation ──────────────────────────────────────────────
+        let trialStartedAt: number | undefined = undefined;
+        let trialActive = false;
+        let trialDaysLeft = 0;
+        try {
+          const trialRaw = await AsyncStorage.getItem(`ruhani:trial:${firebaseUser.uid}`);
+          if (trialRaw) {
+            trialStartedAt = parseInt(trialRaw, 10);
+          } else {
+            // Try loading from Firestore
+            const userDoc2 = await getDoc(doc(db, "users", firebaseUser.uid));
+            if (userDoc2.exists() && userDoc2.data()?.trialStartedAt) {
+              trialStartedAt = userDoc2.data().trialStartedAt;
+              await AsyncStorage.setItem(`ruhani:trial:${firebaseUser.uid}`, String(trialStartedAt));
+            }
+          }
+          if (trialStartedAt) {
+            const TRIAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+            const elapsed = Date.now() - trialStartedAt;
+            trialActive = elapsed < TRIAL_MS;
+            trialDaysLeft = trialActive ? Math.ceil((TRIAL_MS - elapsed) / (24 * 60 * 60 * 1000)) : 0;
+          }
+        } catch (e) {
+          console.warn("Failed to load trial state:", e);
+        }
+
         const userProfile: UserProfile = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
@@ -83,7 +137,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           photoURL: firebaseUser.photoURL || undefined,
           createdAt: firebaseUser.metadata.creationTime ? new Date(firebaseUser.metadata.creationTime).getTime() : Date.now(),
           status: "Active",
-          tier: (localTier as "free" | "premium") || "free"
+          tier: finalTier,
+          trialStartedAt,
+          trialActive,
+          trialDaysLeft,
         };
         setProfile(userProfile);
       } else {
@@ -98,7 +155,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             emailVerified: true,
             createdAt: Date.now(),
             status: "Active",
-            tier: "free"
+            tier: "free",
+            trialActive: false,
+            trialDaysLeft: 0,
           });
         } else {
           setUser(null);
@@ -179,7 +238,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         emailVerified: true,
         createdAt: Date.now(),
         status: "Active",
-        tier: "free"
+        tier: "free",
+        trialActive: false,
+        trialDaysLeft: 0,
       });
     } finally {
       setLoading(false);
@@ -220,7 +281,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsGuest(false);
       await AsyncStorage.removeItem("auth_is_guest");
       await AsyncStorage.removeItem("auth_guest_name");
-      await signOut(auth);
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.warn("Firebase signOut error (ignoring):", err);
+      }
     } finally {
       setLoading(false);
     }
@@ -268,10 +333,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     const nextTier = profile?.tier === "premium" ? "free" : "premium";
     await AsyncStorage.setItem(`ruhani:tier:${user.uid}`, nextTier);
+    
+    try {
+      await setDoc(doc(db, "users", user.uid), { tier: nextTier }, { merge: true });
+    } catch (e) {
+      console.warn("Failed to save premium tier change to Firestore:", e);
+    }
+
     if (profile) {
       setProfile({
         ...profile,
         tier: nextTier
+      });
+    }
+  };
+
+  // Start 7-day free trial (requires real login, not guest)
+  const startTrial = async () => {
+    if (!user || isGuest) return;
+    const now = Date.now();
+    const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
+    await AsyncStorage.setItem(`ruhani:trial:${user.uid}`, String(now));
+    try {
+      await setDoc(doc(db, "users", user.uid), { trialStartedAt: now }, { merge: true });
+    } catch (e) {
+      console.warn("Failed to save trial start to Firestore:", e);
+    }
+    if (profile) {
+      setProfile({
+        ...profile,
+        trialStartedAt: now,
+        trialActive: true,
+        trialDaysLeft: 7,
       });
     }
   };
@@ -291,7 +384,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         updateProfileInfo,
         reloadUser,
-        togglePremiumTier
+        togglePremiumTier,
+        startTrial,
       }}
     >
       {children}

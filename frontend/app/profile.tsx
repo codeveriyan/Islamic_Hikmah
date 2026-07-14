@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   View, 
   Text, 
@@ -19,6 +19,7 @@ import { useAuth } from "@/src/AuthContext";
 import { deleteUser } from "firebase/auth";
 import { auth } from "@/src/firebase";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -29,6 +30,25 @@ export default function ProfileScreen() {
   const [name, setName] = useState(profile?.name || "");
   const [photoURL, setPhotoURL] = useState(profile?.photoURL || "");
   const [updating, setUpdating] = useState(false);
+
+  const chooseProfilePhoto = async (source: "camera" | "gallery") => {
+    try {
+      const permission = source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission required", `Please allow ${source === "camera" ? "camera" : "photo library"} access to select a profile photo.`);
+        return;
+      }
+      const result = source === "camera"
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.82 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.82 });
+      if (!result.canceled && result.assets[0]?.uri) setPhotoURL(result.assets[0].uri);
+    } catch (err) {
+      console.error("Failed to select profile photo:", err);
+      Alert.alert("Error", "Unable to select profile photo. Please try again.");
+    }
+  };
 
   const handleSaveProfile = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -101,6 +121,26 @@ export default function ProfileScreen() {
   const joinedDate = profile?.createdAt 
     ? new Date(profile.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     : "Recently Joined";
+
+  // ── Trial countdown ────────────────────────────────────────────────────────
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (!profile?.trialActive) return;
+    const interval = setInterval(() => setNowMs(Date.now()), 60000); // refresh every minute
+    return () => clearInterval(interval);
+  }, [profile?.trialActive]);
+
+  const trialCountdown = useMemo(() => {
+    if (!profile?.trialActive || !profile?.trialStartedAt) return null;
+    const trialEndsAt = profile.trialStartedAt + 7 * 24 * 60 * 60 * 1000;
+    const msLeft = trialEndsAt - nowMs;
+    if (msLeft <= 0) return { days: 0, hours: 0, label: 'Trial Expired', urgent: true };
+    const days = Math.floor(msLeft / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((msLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const urgent = days < 2;
+    return { days, hours, label: days === 0 ? `${hours}h remaining` : `${days}d ${hours}h remaining`, urgent };
+  }, [profile?.trialActive, profile?.trialStartedAt, nowMs]);
+  // ──────────────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
@@ -181,6 +221,85 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Subscription Status Card */}
+        <View style={[styles.subscriptionCard, {
+          backgroundColor: profile?.tier === 'premium'
+            ? 'rgba(212,175,55,0.10)'
+            : profile?.trialActive
+              ? 'rgba(39,174,96,0.10)'
+              : 'rgba(108,117,125,0.08)',
+          borderColor: profile?.tier === 'premium'
+            ? '#d4af37'
+            : profile?.trialActive
+              ? '#27ae60'
+              : colors.border,
+        }]}>
+          {profile?.tier === 'premium' ? (
+            // ─── PREMIUM user ────────────────────────────────────────────────
+            <>
+              <View style={styles.subscriptionRow}>
+                <Text style={styles.subscriptionCrown}>👑</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subscriptionTitle, { color: '#d4af37' }]}>Premium Member</Text>
+                  <Text style={[styles.subscriptionSub, { color: colors.onSurfaceMuted }]}>Full access to all premium features</Text>
+                </View>
+                <View style={[styles.subscriptionBadge, { backgroundColor: '#d4af37' }]}>
+                  <Text style={styles.subscriptionBadgeTxt}>PREMIUM</Text>
+                </View>
+              </View>
+            </>
+          ) : profile?.trialActive && trialCountdown ? (
+            // ─── TRIAL user ──────────────────────────────────────────────────
+            <>
+              <View style={styles.subscriptionRow}>
+                <Text style={styles.subscriptionCrown}>⏳</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subscriptionTitle, { color: trialCountdown.urgent ? '#e74c3c' : '#27ae60' }]}>Free Trial Active</Text>
+                  <Text style={[styles.subscriptionSub, { color: colors.onSurfaceMuted }]}>Enjoying full premium access</Text>
+                </View>
+                <View style={[styles.subscriptionBadge, { backgroundColor: trialCountdown.urgent ? '#e74c3c' : '#27ae60' }]}>
+                  <Text style={styles.subscriptionBadgeTxt}>{trialCountdown.urgent ? '⚠️ URGENT' : 'TRIAL'}</Text>
+                </View>
+              </View>
+              <View style={[styles.countdownBox, { borderColor: trialCountdown.urgent ? '#e74c3c40' : '#27ae6040', backgroundColor: trialCountdown.urgent ? 'rgba(231,76,60,0.08)' : 'rgba(39,174,96,0.08)' }]}>
+                <Text style={[styles.countdownEmoji]}>{trialCountdown.days === 0 ? '🔴' : trialCountdown.urgent ? '🟡' : '🟢'}</Text>
+                <View>
+                  <Text style={[styles.countdownTime, { color: trialCountdown.urgent ? '#e74c3c' : '#27ae60' }]}>{trialCountdown.label}</Text>
+                  <Text style={[styles.countdownNote, { color: colors.onSurfaceMuted }]}>{trialCountdown.urgent ? 'Upgrade now to keep your access!' : 'Trial ends — upgrade to continue'}</Text>
+                </View>
+              </View>
+              <Pressable
+                onPress={() => router.push('/premium')}
+                style={({ pressed }) => [styles.upgradeBtn, pressed && { opacity: 0.85 }]}
+              >
+                <MaterialCommunityIcons name="crown" size={16} color="#fff" />
+                <Text style={styles.upgradeBtnTxt}>Upgrade to Premium</Text>
+              </Pressable>
+            </>
+          ) : (
+            // ─── FREE user ───────────────────────────────────────────────────
+            <>
+              <View style={styles.subscriptionRow}>
+                <Text style={styles.subscriptionCrown}>🔓</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subscriptionTitle, { color: colors.onSurface }]}>Free Plan</Text>
+                  <Text style={[styles.subscriptionSub, { color: colors.onSurfaceMuted }]}>Start a 7-day trial to unlock all features</Text>
+                </View>
+                <View style={[styles.subscriptionBadge, { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border }]}>
+                  <Text style={[styles.subscriptionBadgeTxt, { color: colors.onSurfaceMuted }]}>FREE</Text>
+                </View>
+              </View>
+              <Pressable
+                onPress={() => router.push('/premium')}
+                style={({ pressed }) => [styles.upgradeBtn, pressed && { opacity: 0.85 }]}
+              >
+                <MaterialCommunityIcons name="crown" size={16} color="#fff" />
+                <Text style={styles.upgradeBtnTxt}>Start Free Trial / Buy Premium</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+
         {/* Action Buttons */}
         <View style={styles.actionSection}>
           <Pressable
@@ -221,17 +340,20 @@ export default function ProfileScreen() {
                 />
               </View>
 
-              {/* Photo URL */}
+              {/* Profile photo */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Avatar Image URL</Text>
-                <TextInput
-                  style={[styles.input, { color: colors.onSurface, backgroundColor: colors.surface, borderColor: colors.border }]}
-                  placeholder="Paste image URL (optional)"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  value={photoURL}
-                  onChangeText={setPhotoURL}
-                  autoCapitalize="none"
-                />
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Profile Photo</Text>
+                {photoURL ? <Image source={{ uri: photoURL }} style={styles.photoPreview} /> : null}
+                <View style={styles.photoActions}>
+                  <Pressable onPress={() => chooseProfilePhoto("camera")} style={[styles.photoBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <MaterialCommunityIcons name="camera-outline" size={22} color={colors.brand} />
+                    <Text style={[styles.photoBtnText, { color: colors.onSurface }]}>Camera</Text>
+                  </Pressable>
+                  <Pressable onPress={() => chooseProfilePhoto("gallery")} style={[styles.photoBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <MaterialCommunityIcons name="image-multiple-outline" size={22} color={colors.brand} />
+                    <Text style={[styles.photoBtnText, { color: colors.onSurface }]}>Gallery</Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
 
@@ -435,6 +557,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 15,
   },
+  photoPreview: { width: 82, height: 82, borderRadius: 41, alignSelf: "center", marginVertical: 4 },
+  photoActions: { flexDirection: "row", gap: 12 },
+  photoBtn: { flex: 1, height: 50, borderRadius: 12, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  photoBtnText: { fontSize: 14, fontWeight: "700" },
   modalButtons: {
     flexDirection: "row",
     gap: 12,
@@ -450,5 +576,76 @@ const styles = StyleSheet.create({
   modalBtnTxt: {
     fontSize: 16,
     fontWeight: "700",
+  },
+
+  // ── Subscription Status Card ─────────────────────────────────────────────
+  subscriptionCard: {
+    borderRadius: 18,
+    borderWidth: 1.5,
+    padding: 18,
+    gap: 14,
+  },
+  subscriptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  subscriptionCrown: {
+    fontSize: 28,
+  },
+  subscriptionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  subscriptionSub: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  subscriptionBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  subscriptionBadgeTxt: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#fff",
+    letterSpacing: 0.6,
+  },
+  countdownBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  countdownEmoji: {
+    fontSize: 22,
+  },
+  countdownTime: {
+    fontSize: 17,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  countdownNote: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  upgradeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "#d4af37",
+  },
+  upgradeBtnTxt: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 0.3,
   },
 });

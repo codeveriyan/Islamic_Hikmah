@@ -92,21 +92,21 @@ export default function ReminderScreen() {
         </View>
         <Pressable
           onPress={() => setAdding(true)}
-          style={styles.addBtn}
+          style={[styles.addBtn, { backgroundColor: colors.brand }]}
           testID="add-reminder-btn"
         >
-          <MaterialCommunityIcons name="plus" size={22} color={theme.colors.onBrandPrimary} />
+          <MaterialCommunityIcons name="plus" size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
 
       {adding ? (
-        <View style={styles.addPanel} testID="add-reminder-panel">
+        <View style={[styles.addPanel, { backgroundColor: colors.surfaceSecondary }]} testID="add-reminder-panel">
           <TextInput
             placeholder="What to remember? (e.g. Read Surah Mulk)"
-            placeholderTextColor={theme.colors.onSurfaceMuted}
+            placeholderTextColor={colors.onSurfaceMuted}
             value={title}
             onChangeText={setTitle}
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.surfaceTertiary, color: colors.onSurface }]}
             testID="reminder-title-input"
           />
           <View style={styles.timeRow}>
@@ -115,33 +115,33 @@ export default function ReminderScreen() {
               onChangeText={setHour}
               keyboardType="number-pad"
               maxLength={2}
-              style={[styles.input, styles.timeInput]}
+              style={[styles.input, styles.timeInput, { backgroundColor: colors.surfaceTertiary, color: colors.onSurface }]}
               testID="reminder-hour-input"
             />
-            <Text style={styles.colon}>:</Text>
+            <Text style={[styles.colon, { color: colors.onSurface }]}>:</Text>
             <TextInput
               value={minute}
               onChangeText={setMinute}
               keyboardType="number-pad"
               maxLength={2}
-              style={[styles.input, styles.timeInput]}
+              style={[styles.input, styles.timeInput, { backgroundColor: colors.surfaceTertiary, color: colors.onSurface }]}
               testID="reminder-minute-input"
             />
           </View>
           <View style={styles.actions}>
             <Pressable
               onPress={() => setAdding(false)}
-              style={[styles.actionBtn, { backgroundColor: theme.colors.surfaceTertiary }]}
+              style={[styles.actionBtn, { backgroundColor: colors.surfaceTertiary }]}
               testID="reminder-cancel-btn"
             >
-              <Text style={[styles.actionTxt, { color: theme.colors.onSurface }]}>{t("cancel")}</Text>
+              <Text style={[styles.actionTxt, { color: colors.onSurface }]}>{t("cancel")}</Text>
             </Pressable>
             <Pressable
               onPress={addReminder}
-              style={[styles.actionBtn, { backgroundColor: theme.colors.brand }]}
+              style={[styles.actionBtn, { backgroundColor: colors.brand }]}
               testID="reminder-save-btn"
             >
-              <Text style={[styles.actionTxt, { color: theme.colors.onBrandPrimary }]}>{t("save")}</Text>
+              <Text style={[styles.actionTxt, { color: colors.onBrandPrimary }]}>{t("save")}</Text>
             </Pressable>
           </View>
         </View>
@@ -149,9 +149,9 @@ export default function ReminderScreen() {
 
       {items.length === 0 && !adding ? (
         <View style={styles.empty} testID="rem-empty">
-          <MaterialCommunityIcons name="bell-ring-outline" size={64} color={theme.colors.brand} />
-          <Text style={styles.emptyTitle}>No reminders</Text>
-          <Text style={styles.emptyText}>Set daily reminders for adhkar, Quran reading, or any Du{`'`}a habit.</Text>
+          <MaterialCommunityIcons name="bell-ring-outline" size={64} color={colors.brand} />
+          <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>No reminders</Text>
+          <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>Set daily reminders for adhkar, Quran reading, or any Du{`'`}a habit.</Text>
         </View>
       ) : (
         <FlatList
@@ -159,21 +159,21 @@ export default function ReminderScreen() {
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md }}
           renderItem={({ item }) => (
-            <View style={styles.card} testID={`reminder-${item.id}`}>
+            <View style={[styles.card, { backgroundColor: colors.surfaceSecondary }]} testID={`reminder-${item.id}`}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardTime}>
+                <Text style={[styles.cardTitle, { color: colors.onSurface }]}>{item.title}</Text>
+                <Text style={[styles.cardTime, { color: colors.brand }]}>
                   {String(item.hour).padStart(2, "0")}:{String(item.minute).padStart(2, "0")}
                 </Text>
               </View>
               <Switch
                 value={item.enabled}
                 onValueChange={() => toggle(item.id)}
-                trackColor={{ true: theme.colors.brandSecondary, false: theme.colors.surfaceTertiary }}
+                trackColor={{ true: colors.brandSecondary, false: colors.surfaceTertiary }}
                 testID={`switch-${item.id}`}
               />
               <Pressable onPress={() => remove(item.id)} hitSlop={10} testID={`delete-${item.id}`}>
-                <MaterialCommunityIcons name="trash-can-outline" size={20} color={theme.colors.error} />
+                <MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.error} />
               </Pressable>
             </View>
           )}

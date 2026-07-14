@@ -14,21 +14,15 @@ import {
   getCompletedGoals,
   getGoogleCalendarConnected,
   setGoogleCalendarConnected,
+  getRecentGoalHistory,
 } from "@/src/storage";
 
 type PreviousDay = {
+  date: Date;
   dateLabel: string;
   completedRatio: string;
+  completedIds: string[];
 };
-
-const PREVIOUS_DAYS_MOCK: PreviousDay[] = [
-  { dateLabel: "Yesterday, Jul 7", completedRatio: "0/12 goals completed" },
-  { dateLabel: "Monday, Jul 6", completedRatio: "0/13 goals completed" },
-  { dateLabel: "Sunday, Jul 5", completedRatio: "0/12 goals completed" },
-  { dateLabel: "Saturday, Jul 4", completedRatio: "0/12 goals completed" },
-  { dateLabel: "Friday, Jul 3", completedRatio: "0/10 goals completed" },
-  { dateLabel: "Thursday, Jul 2", completedRatio: "0/12 goals completed" },
-];
 
 function getHijriDate() {
   try {
@@ -108,27 +102,38 @@ function getHijriDate() {
 export default function PreviousGoalsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { profile } = useAuth();
+  const { profile, user, isGuest } = useAuth();
   
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
+  const [previousDays, setPreviousDays] = useState<PreviousDay[]>([]);
+  const isCredentialUser = !!user && !isGuest;
 
   useEffect(() => {
     (async () => {
-      const connected = await getGoogleCalendarConnected();
-      setCalendarConnected(connected);
+      const [connected, history, activeIds] = await Promise.all([
+        getGoogleCalendarConnected(), getRecentGoalHistory(7), getActiveGoalIds()
+      ]);
+      setCalendarConnected(isCredentialUser && connected);
+      setPreviousDays((history as { date: Date; completedIds: string[] }[]).map(({ date, completedIds }: { date: Date; completedIds: string[] }, index: number) => ({
+        date,
+        completedIds,
+        dateLabel: index === 0 ? `Yesterday, ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }),
+        completedRatio: `${completedIds.filter((id: string) => activeIds.includes(id)).length}/${activeIds.length} goals completed`,
+      })));
     })();
-  }, []);
+  }, [isCredentialUser]);
 
   const handleLogin = () => {
-    setIsLoggedIn(true);
-    Alert.alert("Success", "Logged in successfully to sync progress!");
+    router.push("/auth/login");
   };
 
   const handleCalendarSync = async () => {
-    if (profile?.tier !== "premium") {
+    if (!isCredentialUser) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-      router.push("/premium");
+      Alert.alert("Login required", "Sign in with your account credentials before connecting Google Calendar.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Login", onPress: handleLogin },
+      ]);
       return;
     }
 
@@ -136,7 +141,7 @@ export default function PreviousGoalsScreen() {
       Haptics.selectionAsync().catch(() => {});
       Alert.alert(
         "Disconnect Google Calendar 🗓️",
-        "Are you sure you want to disconnect Google Calendar from syncing with your Hijri Calendar?",
+        "Are you sure you want to disconnect Google Calendar from syncing with your Islamic Calendar?",
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -154,9 +159,6 @@ export default function PreviousGoalsScreen() {
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    setCalendarConnected(true);
-    await setGoogleCalendarConnected(true);
-
     try {
       const activeIds = await getActiveGoalIds();
       const completedIds = await getCompletedGoals();
@@ -181,20 +183,25 @@ export default function PreviousGoalsScreen() {
 
       const { Linking } = require("react-native");
       await Linking.openURL(calUrl);
+      setCalendarConnected(true);
+      await setGoogleCalendarConnected(true);
     } catch (e) {
       console.warn("Calendar sync error:", e);
+      Alert.alert("Unable to open Google Calendar", "Please check your connection and try again.");
+      return;
     }
 
     Alert.alert(
       "Sync Successful 🌙",
-      `Your daily goals have been synced to Google Calendar with today's Hijri date. Goals are now saved in both your Hijri calendar and Google Calendar!`
+      `Your daily goals have been synced to Google Calendar with today's Hijri date. Goals are now saved in both your Islamic Calendar and Google Calendar!`
     );
   };
 
   const handleDayPress = (day: PreviousDay) => {
+    const completedGoals = DEFAULT_GOALS.filter(goal => day.completedIds.includes(goal.id));
     Alert.alert(
       day.dateLabel,
-      `You completed ${day.completedRatio.split(" ")[0]} goals on this day.`
+      completedGoals.length ? `Goals completed:\n\n${completedGoals.map(goal => `✓ ${goal.title}`).join("\n")}` : "No goals were completed on this day."
     );
   };
 
@@ -211,7 +218,7 @@ export default function PreviousGoalsScreen() {
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}>
         {/* Login Sync Banner */}
-        {!isLoggedIn ? (
+        {!isCredentialUser ? (
           <View style={[styles.loginCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             <View style={[styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
               <MaterialCommunityIcons name="account" size={32} color={colors.onSurfaceMuted} />
@@ -233,43 +240,35 @@ export default function PreviousGoalsScreen() {
             </View>
             <View style={{ flex: 1, marginLeft: 16 }}>
               <Text style={[styles.loginText, { color: colors.onSurface }]}>Connected &amp; Syncing Progress</Text>
-              <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 4 }}>Logged in as Guest</Text>
+              <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 4 }}>Logged in as {profile?.email || profile?.name}</Text>
             </View>
           </View>
         )}
 
         {/* Google Calendar Card */}
-        <View style={[styles.calendarCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1 }]}>
-          <View style={styles.calendarHeader}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={[styles.calendarTitle, { color: colors.onSurface }]}>
-                Connect your Google Calendar with Hijri Calendar to sync complete goals.
-              </Text>
+        <Pressable onPress={() => router.push("/calendar-sync")}
+          style={[styles.settingRowFull, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, marginBottom: 20 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+            <View style={{ width: 22, height: 22, marginRight: 12, borderRadius: 4, overflow: 'hidden', borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: 14, height: 14, backgroundColor: '#4285F4', borderRadius: 2, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 8, fontWeight: 'bold', lineHeight: 9 }}>31</Text>
+              </View>
             </View>
+            <Text style={[styles.settingLabel, { color: colors.onSurface, fontWeight: "700" }]}>Sync with Calendar</Text>
           </View>
-          <Pressable 
-            onPress={handleCalendarSync}
-            style={[
-              styles.calendarBtn, 
-              { backgroundColor: calendarConnected ? "#22c55e" : colors.brand }
-            ]}
-          >
-            <Text style={styles.calendarBtnTxt}>
-              {calendarConnected ? "Connected" : "Start sync"}
-            </Text>
-          </Pressable>
-        </View>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
+        </Pressable>
 
         {/* Section Header */}
         <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Recent Goals</Text>
 
         {/* Previous Days List */}
         <View style={[styles.listContainer, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-          {PREVIOUS_DAYS_MOCK.map((day, idx) => {
-            const isLast = idx === PREVIOUS_DAYS_MOCK.length - 1;
+          {previousDays.map((day, idx) => {
+            const isLast = idx === previousDays.length - 1;
             return (
               <Pressable
-                key={day.dateLabel}
+                key={day.date.toISOString()}
                 onPress={() => handleDayPress(day)}
                 style={({ pressed }) => [
                   styles.dayRow,
@@ -367,31 +366,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  calendarCard: {
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.lg,
-    marginBottom: 24,
-  },
-  calendarHeader: {
+  settingRowFull: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
   },
-  calendarTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-  calendarBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-  },
-  calendarBtnTxt: {
-    color: "#FFFFFF",
-    fontSize: 13,
+  settingLabel: {
+    fontSize: 15,
     fontWeight: "700",
   },
 });

@@ -23,6 +23,8 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/src/ThemeContext';
 import { useTranslation } from '@/src/localization';
 import { theme } from '@/src/theme';
+import { useAuth } from '@/src/AuthContext';
+import { usePremiumModal } from '@/src/PremiumModalContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,6 +49,8 @@ export default function QiblaScreen() {
   const router = useRouter();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
 
   const [heading, setHeading] = useState<number>(0);
   const [qiblaDirection, setQiblaDirection] = useState<number>(0);
@@ -478,8 +482,15 @@ export default function QiblaScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Text style={{ fontSize: 24 }}>🕋</Text>
               <View>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.onSurface }}>Kaaba Distance</Text>
-                <Text style={{ fontSize: 13, color: colors.onSurfaceMuted }}>{distanceToKaaba.toLocaleString(undefined, { maximumFractionDigits: 1 })} km</Text>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.onSurface }}>Kaaba Distance</Text>
+                {profile?.tier === 'premium' || profile?.trialActive ? (
+                  <Text style={{ fontSize: 13, color: colors.onSurfaceMuted }}>{distanceToKaaba.toLocaleString(undefined, { maximumFractionDigits: 1 })} km</Text>
+                ) : (
+                  <TouchableOpacity onPress={() => showPremiumModal('Kaaba Distance')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <MaterialCommunityIcons name="lock" size={13} color={colors.brand} />
+                    <Text style={{ color: colors.brand, fontSize: 12, fontWeight: '600' }}>Premium</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -708,9 +719,16 @@ export default function QiblaScreen() {
           <View style={styles.infoContainer}>
             <View style={[styles.infoBox, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
               <Text style={[styles.infoLabel, { color: colors.onSurfaceMuted }]}>Distance to Mecca</Text>
-              <Text style={[styles.infoValue, { color: colors.onSurface }]}>
-                {distanceToKaaba.toLocaleString(undefined, { maximumFractionDigits: 1 })} km
-              </Text>
+              {profile?.tier === 'premium' || profile?.trialActive ? (
+                <Text style={[styles.infoValue, { color: colors.onSurface }]}>
+                  {distanceToKaaba.toLocaleString(undefined, { maximumFractionDigits: 1 })} km
+                </Text>
+              ) : (
+                <TouchableOpacity onPress={() => showPremiumModal('Kaaba Distance')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <MaterialCommunityIcons name="lock" size={14} color={colors.brand} />
+                  <Text style={{ color: colors.brand, fontSize: 12, fontWeight: '600' }}>Premium</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <View style={[styles.infoBox, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
               <Text style={[styles.infoLabel, { color: colors.onSurfaceMuted }]}>Qibla Angle</Text>
@@ -725,15 +743,28 @@ export default function QiblaScreen() {
               {DIAL_SKINS.map(skin => (
                 <TouchableOpacity
                   key={skin.id}
-                  onPress={() => setActiveSkin(skin)}
+                  onPress={() => {
+                    if (skin.id !== 'hikmah' && profile?.tier !== 'premium' && !profile?.trialActive) {
+                      showPremiumModal('Compass Skins');
+                      return;
+                    }
+                    setActiveSkin(skin);
+                  }}
                   style={[
                     styles.skinCard,
                     { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
                     activeSkin.id === skin.id && { borderColor: colors.brand, borderWidth: 2 }
                   ]}
                 >
-                  <View style={[styles.skinColorDot, { backgroundColor: skin.ringColor }]} />
+                  <View style={[styles.skinPreview, { backgroundColor: skin.bg, borderColor: skin.ringColor }]}>
+                    <Text style={[styles.skinNorth, { color: skin.accent }]}>N</Text>
+                    <View style={[styles.skinNeedle, { backgroundColor: skin.needleColorLight }]} />
+                    <View style={[styles.skinHub, { backgroundColor: skin.ringColor }]} />
+                  </View>
                   <Text style={[styles.skinName, { color: colors.onSurface }]}>{skin.name}</Text>
+                  {skin.id !== 'hikmah' && profile?.tier !== 'premium' && (
+                    <MaterialCommunityIcons name="lock" size={12} color={colors.brand} style={{ position: 'absolute', top: 4, right: 4 }} />
+                  )}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1089,6 +1120,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginRight: 8,
   },
+  skinPreview: { width: 54, height: 54, borderRadius: 27, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
+  skinNorth: { position: 'absolute', top: 3, fontSize: 9, fontWeight: '900' },
+  skinNeedle: { width: 3, height: 32, borderRadius: 2, transform: [{ rotate: '20deg' }] },
+  skinHub: { position: 'absolute', width: 9, height: 9, borderRadius: 5 },
   skinName: {
     fontSize: 12,
     fontWeight: '600',

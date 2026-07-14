@@ -8,6 +8,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
+import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
 import { toggleFavourite, getFavourites, addQuranBookmark, removeQuranBookmark, getQuranBookmarks, saveQuranLastRead } from "@/src/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useIsFocused } from "@react-navigation/native";
@@ -81,6 +83,8 @@ export default function SurahDetail() {
   const status = useAudioPlayerStatus(player);
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
 
   // Reading mode — default / sepia / dark (loaded from AsyncStorage, set in Quick Settings)
   const [readingMode, setReadingMode] = useState<"default" | "sepia" | "dark">("default");
@@ -1077,7 +1081,10 @@ export default function SurahDetail() {
           <Pressable onPress={() => setShowReciters((s) => !s)} hitSlop={10} testID="reciter-toggle">
             <MaterialCommunityIcons name="account-music" size={26} color={colors.brand} />
           </Pressable>
-          <Pressable onPress={() => router.push("/quran/personalise")} hitSlop={10} style={{ padding: 2 }}>
+          <Pressable onPress={() => {
+            if (profile?.tier !== "premium" && !profile?.trialActive) { showPremiumModal("Quran Personalise"); return; }
+            router.push("/quran/personalise");
+          }} hitSlop={10} style={{ padding: 2 }}>
             <MaterialCommunityIcons name="tune-variant" size={24} color={rc.arabic} />
           </Pressable>
           <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
@@ -1098,6 +1105,10 @@ export default function SurahDetail() {
                 <Pressable
                   key={`qdc-${r.qdcId}`}
                   onPress={() => {
+                    if (r.qdcId !== 7 && profile?.tier !== "premium" && !profile?.trialActive) {
+                      showPremiumModal(`Qari: ${r.name}`);
+                      return;
+                    }
                     setReciterId(r.qdcId as ReciterQdcId);
                     setShowReciters(false);
                     stopAll();
@@ -1182,10 +1193,13 @@ export default function SurahDetail() {
               : "Play Full Surah"}
           </Text>
         </Pressable>
-        {/* Download button for offline use */}
+        {/* Download button for offline use — premium only */}
         {!!FileSystem.documentDirectory && !audioErr && audioUrl && !audioUrl.startsWith(FileSystem.documentDirectory ?? "file://") && (
           <Pressable
-            onPress={downloadSurah}
+            onPress={() => {
+              if (profile?.tier !== "premium" && !profile?.trialActive) { showPremiumModal("Offline Download"); return; }
+              downloadSurah();
+            }}
             disabled={downloadStatus[`${reciterId}_${Number(id)}`] === "downloading"}
             style={[
               styles.playAllBtn,
@@ -1213,7 +1227,7 @@ export default function SurahDetail() {
           </Pressable>
         )}
         {audioErr ? (
-          <Text style={[styles.bgHint, { color: theme.colors.error }]}>⚠️ Audio unavailable</Text>
+          <Text style={[styles.bgHint, { color: colors.error }]}>⚠️ Audio unavailable</Text>
         ) : (
           <Text style={[styles.bgHint, { color: colors.onSurfaceMuted }]}>
             {!!FileSystem.documentDirectory && audioUrl?.startsWith(FileSystem.documentDirectory ?? "file://") ? "📥 Playing Offline" : "🔊 Online Stream"}
@@ -1222,7 +1236,7 @@ export default function SurahDetail() {
       </View>
 
       {loading ? (
-        <ActivityIndicator color={theme.colors.brand} style={{ marginTop: 40 }} />
+        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
           ref={scrollRef}
@@ -1294,7 +1308,7 @@ export default function SurahDetail() {
                       <MaterialCommunityIcons
                         name={isFav ? "heart" : "heart-outline"}
                         size={24}
-                        color={isFav ? theme.colors.error : colors.onSurfaceMuted}
+                        color={isFav ? colors.error : colors.onSurfaceMuted}
                       />
                     </Pressable>
                     <Pressable

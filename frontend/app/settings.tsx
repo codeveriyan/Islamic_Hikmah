@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
-import { useTheme } from "@/src/ThemeContext";
+import { APP_THEMES, AppThemeId, useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { useState, useEffect } from "react";
 import * as Haptics from "expo-haptics";
@@ -58,7 +58,7 @@ const ITEMS: SettingItem[] = [
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { colors, mode, setMode, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor } = useTheme();
+  const { colors, mode, setMode, themeId, setThemeId, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor } = useTheme();
   const { t } = useTranslation(language);
   const [activeItem, setActiveItem] = useState<SettingItem | null>(null);
 
@@ -229,6 +229,37 @@ export default function SettingsScreen() {
         return (
           <View style={styles.modalContent}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Appearance Settings</Text>
+
+            <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted }]}>App Theme</Text>
+            <View style={styles.themeGrid}>
+              {(Object.keys(APP_THEMES) as AppThemeId[]).map((id) => {
+                const item = APP_THEMES[id];
+                const selected = themeId === id;
+                return (
+                  <Pressable
+                    key={id}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setThemeId(id);
+                    }}
+                    style={[
+                      styles.themeCard,
+                      { backgroundColor: colors.surfaceTertiary, borderColor: selected ? colors.brand : colors.border },
+                      selected && { borderWidth: 2 },
+                    ]}
+                  >
+                    <View style={styles.themeSwatches}>
+                      {item.preview.map((swatch) => <View key={swatch} style={[styles.themeSwatch, { backgroundColor: swatch }]} />)}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeName, { color: colors.onSurface }]}>{item.name}</Text>
+                      <Text style={[styles.themeDescription, { color: colors.onSurfaceMuted }]}>{item.description}</Text>
+                    </View>
+                    {selected && <MaterialCommunityIcons name="check-circle" size={19} color={colors.brand} />}
+                  </Pressable>
+                );
+              })}
+            </View>
 
             <View style={styles.optionRow}>
               <View style={{ flex: 1 }}>
@@ -699,6 +730,12 @@ const styles = StyleSheet.create({
   previewLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 4 },
   arabicPreview: { fontSize: 22, fontFamily: "Amiri", textAlign: "right", marginVertical: 8 },
   transPreview: { fontSize: 12, fontStyle: "italic", lineHeight: 18 },
+  themeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 16 },
+  themeCard: { width: "48%", minHeight: 74, borderWidth: 1, borderRadius: 12, padding: 10, flexDirection: "row", alignItems: "center", gap: 9 },
+  themeSwatches: { width: 24, height: 48, borderRadius: 8, overflow: "hidden" },
+  themeSwatch: { flex: 1 },
+  themeName: { fontSize: 13, fontWeight: "800" },
+  themeDescription: { fontSize: 10, marginTop: 3 },
 
   // Audio options
   sectionLabel: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
