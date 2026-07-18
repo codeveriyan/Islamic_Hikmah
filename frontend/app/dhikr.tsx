@@ -405,6 +405,14 @@ export default function TasbihScreen() {
 
   useEffect(() => { try { recitationPlayer.pause(); } catch {} }, [phraseId]);
 
+  // Stop both audio players on unmount to prevent crash from released shared object.
+  useEffect(() => {
+    return () => {
+      try { tickPlayer.pause(); } catch (e) { /* already released */ }
+      try { recitationPlayer.pause(); } catch (e) { /* already released */ }
+    };
+  }, [tickPlayer, recitationPlayer]);
+
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleIncrement = useCallback(() => {
     if (!isMuted) { 

@@ -382,7 +382,7 @@ export const setupNotificationCategories = async () => {
 };
 
 export const updateStickyPrayerNotification = async (timings: Record<string, string>) => {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS !== 'android') return;
 
   try {
     // 1. Calculate next prayer details
@@ -451,6 +451,7 @@ export const updateStickyPrayerNotification = async (timings: Record<string, str
         sticky: true,
         priority: 'low',
         color: '#C5A880',
+        channelId: 'sticky-prayer',
       } as any,
       trigger: null,
     });
