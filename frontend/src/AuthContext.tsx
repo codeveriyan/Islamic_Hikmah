@@ -17,6 +17,19 @@ import { auth, db } from "./firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+
+// If on native, configure Google Sign-In dynamically using Web Client ID
+if (Platform.OS !== "web") {
+  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  if (webClientId) {
+    GoogleSignin.configure({
+      webClientId,
+      offlineAccess: true,
+    });
+  }
+}
+
 
 export interface UserProfile {
   uid: string;
@@ -247,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Login with Google (Web Support + Native Fallback Alert)
+  // Login with Google (Web Support + Native Integration)
   const loginWithGoogle = async () => {
     setLoading(true);
     try {
@@ -259,11 +272,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.removeItem("auth_is_guest");
         await AsyncStorage.removeItem("auth_guest_name");
       } else {
-        alert("Google Sign-In on native apps requires Expo Dev Client configuration. Please use web for now or sign in with email.");
+        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+        if (!webClientId) {
+          alert("Google Sign-In is not configured. Please set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in your .env file, register your SHA-1 in the Firebase console, and rebuild.");
+          setLoading(false);
+          return;
+        }
+
+        // Native Google Sign-In
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        const userInfo = await GoogleSignin.signIn();
+        
+        const idToken = userInfo.data?.idToken || userInfo.idToken;
+        if (!idToken) {
+          throw new Error("No ID Token returned from Google Sign-In.");
+        }
+
+        const credential = GoogleAuthProvider.credential(idToken);
+        const cred = await signInWithCredential(auth, credential);
+        
+        setUser(cred.user);
+        setIsGuest(false);
+        await AsyncStorage.removeItem("auth_is_guest");
+        await AsyncStorage.removeItem("auth_guest_name");
       }
     } catch (err: any) {
       console.error("Google Sign-In Error:", err);
-      alert("Failed to sign in with Google: " + err.message);
+      // Suppress alert if user cancelled the sign-in modal (Google code 12501 or message)
+      if (err.code !== "SIGN_IN_CANCELLED" && err.message !== "Sign in action cancelled" && err.code !== "12501") {
+        alert("Failed to sign in with Google: " + err.message);
+      }
     } finally {
       setLoading(false);
     }
