@@ -46,9 +46,16 @@ export default function AllahNamesScreen() {
   const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   // Stop audio on unmount
+  // expo-audio's own useAudioPlayer hook releases the native player on unmount.
+  // That release can fire before this cleanup, leaving `player` pointing at an
+  // already-released native shared object. Swallow that race safely.
   useEffect(() => {
     return () => {
-      player.pause();
+      try {
+        player.pause();
+      } catch (e) {
+        // Player was already released by expo-audio's own teardown — safe to ignore.
+      }
     };
   }, [player]);
 
