@@ -665,6 +665,17 @@ export default function SurahDetail() {
     });
   }, []);
 
+  // Stop audio on unmount to prevent crash from released shared object.
+  useEffect(() => {
+    return () => {
+      try {
+        player.pause();
+      } catch (e) {
+        // Player was already released by expo-audio's own teardown — safe to ignore.
+      }
+    };
+  }, [player]);
+
   // Effect 2: Eagerly fetch continuous recitation audio URL and word timings from Quran.com QDC API.
   // Checks for a locally cached (downloaded) file first and uses it if available.
   // Caches timings locally so playing downloaded files works offline!
