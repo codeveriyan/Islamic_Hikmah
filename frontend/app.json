@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Islamic Hikmah",
-    "slug": "islamic-hikmah",
+    "slug": "ashiqhikmah",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -33,7 +33,9 @@
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "READ_MEDIA_IMAGES",
-        "VIBRATE"
+        "VIBRATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -71,8 +73,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "0a9c49f5-f88c-499b-82da-a797f2ded67f"
+        "projectId": "9549a450-50cb-4808-9b76-00ce536b6d2c"
       }
-    }
+    },
+    "owner": "mohammedashiqs-team"
   }
 }
