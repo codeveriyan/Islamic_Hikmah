@@ -283,7 +283,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
         const userInfo = await GoogleSignin.signIn();
         
-        const idToken = userInfo.data?.idToken || userInfo.idToken;
+        const idToken = (userInfo as any)?.data?.idToken || (userInfo as any)?.idToken;
         if (!idToken) {
           throw new Error("No ID Token returned from Google Sign-In.");
         }
