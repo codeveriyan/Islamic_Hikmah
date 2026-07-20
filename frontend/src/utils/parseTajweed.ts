@@ -5,6 +5,17 @@ export type TajweedSegment = {
   rule: TajweedRuleKey | null;
 };
 
+// Al Quran Cloud's compact API notation uses markers such as `[h:13[ٱ]`.
+// The number is metadata; only the code and the enclosed Quranic text matter.
+const BRACKET_RULES: Record<string, TajweedRuleKey> = {
+  h: "ham_wasl", s: "silent", l: "laam_shamsiyah", n: "madda_normal",
+  p: "madda_permissible", m: "madda_necessary", q: "qalaqah",
+  o: "madda_obligatory", c: "ikhafa_shafawi", f: "ikhafa",
+  w: "idgham_shafawi", i: "iqlab", a: "idgham_ghunnah",
+  u: "idgham_wo_ghunnah", d: "idgham_mutajanisayn",
+  b: "idgham_mutaqaribayn", g: "ghunnah",
+};
+
 /**
  * Parses the `text` field returned by Al Quran Cloud's `quran-tajweed` edition,
  * e.g.:
@@ -25,12 +36,14 @@ export function parseTajweedText(raw: string): TajweedSegment[] {
 
   const segments: TajweedSegment[] = [];
   const tagPattern = /<tajweed[^>]*class=["']?([a-z_]+)["']?[^>]*>(.*?)<\/tajweed>/gi;
+  const bracketPattern = /\[([a-z])(?::\d+)?\[([^\]]*)\]/gi;
+  const pattern = cleaned.includes("<tajweed") ? tagPattern : bracketPattern;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = tagPattern.exec(cleaned)) !== null) {
-    const [fullMatch, ruleKey, innerText] = match;
+  while ((match = pattern.exec(cleaned)) !== null) {
+    const [fullMatch, rawRuleKey, innerText] = match;
     const matchStart = match.index;
 
     if (matchStart > lastIndex) {
@@ -39,7 +52,10 @@ export function parseTajweedText(raw: string): TajweedSegment[] {
     }
 
     if (innerText) {
-      segments.push({ text: innerText, rule: ruleKey as TajweedRuleKey });
+      const rule = pattern === bracketPattern
+        ? BRACKET_RULES[rawRuleKey.toLowerCase()] ?? null
+        : rawRuleKey as TajweedRuleKey;
+      segments.push({ text: innerText, rule });
     }
 
     lastIndex = matchStart + fullMatch.length;
