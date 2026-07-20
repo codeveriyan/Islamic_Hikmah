@@ -19,7 +19,7 @@ import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
-  getActiveGoalIds, getPrayerSettings, updateStickyPrayerNotification,
+  getActiveGoalIds, getPrayerSettings, schedulePrayerNotifications, updateStickyPrayerNotification,
   getMenstrualModeActive, setMenstrualModeActive,
   getGoogleCalendarConnected, setGoogleCalendarConnected,
   getGoogleCalendarDismissed, setGoogleCalendarDismissed,
@@ -327,7 +327,13 @@ export default function HomeScreen() {
         const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
         const r = await fetch(url);
         const j = await r.json();
-        setTimes(j?.data?.timings || null);
+        const fetchedTimings = j?.data?.timings || null;
+        setTimes(fetchedTimings);
+        // Reconcile once on launch: cancel orphaned legacy schedules, then
+        // retain exactly one daily Adhan alert for each enabled prayer.
+        if (fetchedTimings) {
+          await schedulePrayerNotifications(fetchedTimings, settings.adhanEnabled);
+        }
       } catch (e) {
         console.error("Failed to load home page timings:", e);
       }

@@ -251,15 +251,19 @@ const BeadView = memo(function BeadView({ index, totalBeads, targetCount, countA
     <Animated.View
       style={{
         position: 'absolute',
-        left: animLeft,
-        top: animTop,
+        left: 0,
+        top: 0,
         width: size,
         height: size,
         marginLeft: -size / 2,
         marginTop: -size / 2,
         zIndex: 5,
         opacity: animOpacity,
-        transform: [{ rotate: countAnim.interpolate({ inputRange, outputRange: rotateOutput, extrapolate: 'clamp' }) }],
+        transform: [
+          { translateX: countAnim.interpolate({ inputRange, outputRange: xOutput, extrapolate: 'clamp' }) },
+          { translateY: countAnim.interpolate({ inputRange, outputRange: yOutput, extrapolate: 'clamp' }) },
+          { rotate: countAnim.interpolate({ inputRange, outputRange: rotateOutput, extrapolate: 'clamp' }) },
+        ],
       }}
     >
       <BeadGraphic size={size} darkMode={darkMode} beadStyle={beadStyle} />
@@ -389,7 +393,7 @@ export default function TasbihScreen() {
       toValue: count,
       duration: 880,
       easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start();
   }, [count]);
 
@@ -446,7 +450,7 @@ export default function TasbihScreen() {
       Animated.timing(countAnim, {
         toValue: targetCount,
         duration: 180,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start(() => {
         setTimeout(snapBack, 60);
       });

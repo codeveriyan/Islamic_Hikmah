@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Share, ScrollView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -64,6 +64,8 @@ const toPlainText = (value: unknown) => String(value || "")
   .replace(/\s+/g, " ")
   .trim();
 
+const hadithMemoryCache = new Map<string, Hadith[]>();
+
 export default function HadithDetailScreen() {
   const { book, chapter } = useLocalSearchParams<{ book: string; chapter?: string }>();
   const router = useRouter();
@@ -73,6 +75,7 @@ export default function HadithDetailScreen() {
 
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const lastScrollProgressRef = useRef(0);
 
   const loadSavedStates = useCallback(() => {
     Promise.all([getFavourites(), getHadithBookmarks()]).then(([favs, bms]) => {
@@ -176,124 +179,115 @@ export default function HadithDetailScreen() {
   // Load the full book once (English and Arabic in parallel)
   useEffect(() => {
     if (!book) return;
+
+    const cacheKey = `hadith_${book}`;
+    if (hadithMemoryCache.has(cacheKey)) {
+      setHadiths(hadithMemoryCache.get(cacheKey)!);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     
     const bookMeta = HADITH_BOOKS.find((b) => b.id === book);
     
     const sunnahCollection = SUNNAH_COLLECTION_IDS[book];
 
+    const saveLoadedHadiths = (list: Hadith[]) => {
+      hadithMemoryCache.set(cacheKey, list);
+      setHadiths(list);
+    };
+
+    // These sources predate the official integration. They are intentionally
+    // retained only for offline or upstream-outage recovery.
+    const loadFallbackCollection = async () => {
+      if (bookMeta?.source === "fawazahmed") {
+        const [engResponse, araResponse] = await Promise.all([
+          fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`),
+          fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).catch(() => null),
+        ]);
+        if (!engResponse.ok) throw new Error(`Fallback Hadith API returned ${engResponse.status}`);
+        const engData = await engResponse.json();
+        const araData = araResponse?.ok ? await araResponse.json() : { hadiths: [] };
+        const araMap: Record<number, string> = {};
+        (araData?.hadiths || []).forEach((h: any) => {
+          if (h.hadithnumber) araMap[h.hadithnumber] = h.text;
+        });
+        return (engData?.hadiths || []).reduce((items: Hadith[], eng: any) => {
+          const arabicText = araMap[eng.hadithnumber] || "";
+          if (!String(eng.text || "").trim() && !arabicText.trim()) return items;
+          items.push({ hadithnumber: eng.hadithnumber, text: eng.text || "", arabicText });
+          return items;
+        }, []);
+      }
+
+      if (bookMeta?.source?.startsWith("ahmedbaset_")) {
+        let folder = "";
+        let file = book === "ahmad" ? "ahmed" : book;
+        if (bookMeta.source === "ahmedbaset_nine") folder = "the_9_books";
+        else if (bookMeta.source === "ahmedbaset_other") folder = "other_books";
+        else if (bookMeta.source === "ahmedbaset_forties") folder = "forties";
+
+        const response = await fetch(`https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/${folder}/${file}.json`);
+        if (!response.ok) throw new Error(`Fallback Hadith API returned ${response.status}`);
+        const data = await response.json();
+        return (data.hadiths || []).map((h: any) => ({
+          hadithnumber: h.idInBook || h.id,
+          text: (h.english?.narrator ? `${h.english.narrator} ` : "") + (h.english?.text || ""),
+          arabicText: h.arabic || "",
+        }));
+      }
+
+      return ((hadithFallback as any)[book] || []).map((h: any) => ({
+        hadithnumber: h.hadithnumber,
+        text: h.text,
+        arabicText: h.arabicText || "",
+      }));
+    };
+
     // The API key remains on our backend. When configured, this is the
     // authoritative source and supersedes the old partial third-party feeds.
-    if (HADITH_API_BASE_URL && sunnahCollection) {
-      const loadFullCollection = async () => {
+    const loadOfficialCollection = async () => {
+      if (!HADITH_API_BASE_URL || !sunnahCollection) {
+        throw new Error("Sunnah.com integration is not configured for this collection");
+      }
         const allItems: any[] = [];
         let page = 1;
         let nextPage: number | null = 1;
+        const visitedPages = new Set<number>();
 
         while (nextPage) {
+          if (visitedPages.has(page)) throw new Error("Sunnah.com returned a repeated page");
+          visitedPages.add(page);
           const response = await fetch(
             `${HADITH_API_BASE_URL}/api/hadith/${sunnahCollection}/hadiths?limit=100&page=${page}`,
           );
           if (!response.ok) throw new Error(`Hadith API returned ${response.status}`);
           const data = await response.json();
-          allItems.push(...(data.data || []));
+          if (!Array.isArray(data.data)) throw new Error("Sunnah.com returned an invalid hadith response");
+          allItems.push(...data.data);
           nextPage = data.next || null;
           page = nextPage || page + 1;
         }
 
-        return allItems.map((item: any) => {
-            const translations = item.hadith || [];
-            const english = translations.find((entry: any) => entry.lang === "en") || translations[0] || {};
-            const arabic = translations.find((entry: any) => entry.lang === "ar") || {};
-            return {
-              hadithnumber: Number(item.hadithNumber),
-              text: toPlainText(english.body),
-              arabicText: toPlainText(arabic.body),
-            };
-          }).filter((item: Hadith) => Number.isFinite(item.hadithnumber) && (item.text || item.arabicText));
-      };
+      const list = allItems.map((item: any) => {
+        const translations = item.hadith || [];
+        const english = translations.find((entry: any) => entry.lang === "en") || translations[0] || {};
+        const arabic = translations.find((entry: any) => entry.lang === "ar") || {};
+        return { hadithnumber: Number(item.hadithNumber), text: toPlainText(english.body), arabicText: toPlainText(arabic.body) };
+      }).filter((item: Hadith) => Number.isFinite(item.hadithnumber) && (item.text || item.arabicText));
+      if (!list.length) throw new Error("Sunnah.com returned no readable hadiths");
+      return list;
+    };
 
-      loadFullCollection()
-        .then(setHadiths)
-        .catch((e) => {
-          // Keep the existing offline/community source as a graceful fallback
-          // when the server has not been configured or is temporarily offline.
-          console.warn("Failed to fetch Hadiths from Sunnah.com:", e);
-        })
-        .finally(() => setLoading(false));
-    } else if (bookMeta?.source === "fawazahmed") {
-      Promise.all([
-        fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`).then((r) => r.json()),
-        fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).then((r) => r.json()).catch(() => ({ hadiths: [] })),
-      ])
-        .then(([engData, araData]) => {
-          const engList = engData?.hadiths || [];
-          const araList = araData?.hadiths || [];
-          
-          const zippedList: (Hadith & { arabicText?: string })[] = [];
-          
-          const araMap: Record<number, string> = {};
-          araList.forEach((h: any) => {
-            if (h.hadithnumber) araMap[h.hadithnumber] = h.text;
-          });
-
-          engList.forEach((eng: any) => {
-            const araText = araMap[eng.hadithnumber] || "";
-            if (eng.text.trim() === "" && araText.trim() === "") return;
-
-            zippedList.push({
-              hadithnumber: eng.hadithnumber,
-              text: eng.text,
-              arabicText: araText,
-            });
-          });
-
-          setHadiths(zippedList);
-        })
-        .catch((e) => {
-          console.error("Failed to fetch Hadiths (Fawaz Ahmed):", e);
-        })
-        .finally(() => setLoading(false));
-    } 
-    else if (bookMeta?.source?.startsWith("ahmedbaset_")) {
-      let folder = "";
-      let file = book;
-      if (book === "ahmad") file = "ahmed";
-      
-      if (bookMeta.source === "ahmedbaset_nine") {
-        folder = "the_9_books";
-      } else if (bookMeta.source === "ahmedbaset_other") {
-        folder = "other_books";
-      } else if (bookMeta.source === "ahmedbaset_forties") {
-        folder = "forties";
-      }
-      
-      fetch(`https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/${folder}/${file}.json`)
-        .then((r) => r.json())
-        .then((data) => {
-          const parsedList: Hadith[] = (data.hadiths || []).map((h: any) => ({
-            hadithnumber: h.idInBook || h.id,
-            text: (h.english?.narrator ? `${h.english.narrator} ` : "") + (h.english?.text || ""),
-            arabicText: h.arabic || ""
-          }));
-          setHadiths(parsedList);
-        })
-        .catch((e) => {
-          console.error("Failed to fetch Hadiths (Ahmed Baset):", e);
-        })
-        .finally(() => setLoading(false));
-    }
-    else {
-      // Local fallback collections
-      const fallbackList = (hadithFallback as any)[book] || [];
-      const parsedList: Hadith[] = fallbackList.map((h: any) => ({
-        hadithnumber: h.hadithnumber,
-        text: h.text,
-        arabicText: h.arabicText || ""
-      }));
-      setHadiths(parsedList);
-      setLoading(false);
-    }
+    loadOfficialCollection()
+      .catch(async (error) => {
+        console.warn("Failed to fetch Hadiths from Sunnah.com; using fallback:", error);
+        return loadFallbackCollection();
+      })
+      .then(saveLoadedHadiths)
+      .catch((error) => console.error("Failed to load Hadith collection:", error))
+      .finally(() => setLoading(false));
   }, [book]);
 
   const handleShare = async (item: Hadith) => {
@@ -606,16 +600,24 @@ export default function HadithDetailScreen() {
           extraData={[favIds, bookmarkedIds]}
           keyExtractor={(item) => String(item.hadithnumber)}
           renderItem={renderItem}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           onScroll={(e) => {
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
             const scrollable = contentSize.height - layoutMeasurement.height;
             if (scrollable > 0) {
-              setScrollProgress(Math.min(1, contentOffset.y / scrollable));
+              const p = Math.min(1, contentOffset.y / scrollable);
+              if (Math.abs(p - lastScrollProgressRef.current) >= 0.02) {
+                lastScrollProgressRef.current = p;
+                setScrollProgress(p);
+              }
             }
           }}
           ListFooterComponent={() => {

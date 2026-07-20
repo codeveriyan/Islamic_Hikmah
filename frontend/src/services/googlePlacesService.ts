@@ -159,7 +159,7 @@ export const searchMasjids = async (
   if (!GOOGLE_MAPS_API_KEY) {
     console.log("No Google Maps API Key found, returning consolidated OSM + local mock masjids");
     const osmResults = await fetchOsmFallback(latitude, longitude, "mosque OR masjid", radiusKm);
-    return deduplicatePlaces([...osmResults, ...LOCAL_MOCK_MASJIDS]);
+    return deduplicatePlaces(osmResults);
   }
 
   const keywords = ['mosque', 'masjid', 'islamic center', 'prayer room'];
@@ -193,7 +193,7 @@ export const searchMasjids = async (
   } catch (error) {
     console.warn('Google search masjids failed, falling back to OSM + mock:', error);
     const osmResults = await fetchOsmFallback(latitude, longitude, "mosque OR masjid", radiusKm);
-    return deduplicatePlaces([...osmResults, ...LOCAL_MOCK_MASJIDS]);
+    return deduplicatePlaces(osmResults);
   }
 };
 
@@ -206,7 +206,7 @@ export const searchHalalFood = async (
   if (!GOOGLE_MAPS_API_KEY) {
     console.log("No Google Maps API Key found, returning consolidated OSM + local mock food places");
     const osmResults = await fetchOsmFallback(latitude, longitude, "halal restaurant OR halal food", radiusKm);
-    return deduplicatePlaces([...osmResults, ...LOCAL_MOCK_FOOD]);
+    return deduplicatePlaces(osmResults);
   }
 
   const keywords = [
@@ -249,7 +249,7 @@ export const searchHalalFood = async (
   } catch (error) {
     console.warn('Google search halal food failed, falling back to OSM + mock:', error);
     const osmResults = await fetchOsmFallback(latitude, longitude, "halal restaurant OR halal food", radiusKm);
-    return deduplicatePlaces([...osmResults, ...LOCAL_MOCK_FOOD]);
+    return deduplicatePlaces(osmResults);
   }
 };
 
@@ -262,7 +262,7 @@ export const searchHalalButchers = async (
   if (!GOOGLE_MAPS_API_KEY) {
     console.log("No Google Maps API Key found, returning consolidated OSM + local mock butchers");
     const osmResults = await fetchOsmFallback(latitude, longitude, "halal butcher OR halal meat OR halal chicken OR chicken stall", radiusKm);
-    return deduplicatePlaces([...osmResults, ...LOCAL_MOCK_BUTCHERS]);
+    return deduplicatePlaces(osmResults);
   }
 
   const keywords = [
@@ -301,7 +301,7 @@ export const searchHalalButchers = async (
   } catch (error) {
     console.warn('Google search halal butchers failed, falling back to OSM + mock:', error);
     const osmResults = await fetchOsmFallback(latitude, longitude, "halal butcher OR halal meat OR halal chicken OR chicken stall", radiusKm);
-    return deduplicatePlaces([...osmResults, ...LOCAL_MOCK_BUTCHERS]);
+    return deduplicatePlaces(osmResults);
   }
 };
 

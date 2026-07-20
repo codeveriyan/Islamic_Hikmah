@@ -75,6 +75,11 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number): st
   return d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`;
 }
 
+function distanceInKm(distance: string): number {
+  const value = parseFloat(distance);
+  return distance.endsWith(" m") ? value / 1000 : value;
+}
+
 export default function FinderScreen() {
   const router = useRouter();
   const { type } = useLocalSearchParams<{ type: "mosque" | "halal" }>();
@@ -131,6 +136,7 @@ export default function FinderScreen() {
           'Accept-Language': 'en'
         }
       });
+      if (!res.ok) throw new Error(`Place search failed (${res.status})`);
       fetchedData = await res.json();
     } catch (fetchErr) {
       console.warn("Nominatim fetch failed, using fallback:", fetchErr);
@@ -155,27 +161,11 @@ export default function FinderScreen() {
         };
       });
       // Sort by distance
-      parsed.sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
+      parsed.sort((a, b) => distanceInKm(a.distance) - distanceInKm(b.distance));
       setPlaces(parsed);
     } else {
-      // Fallback to high-fidelity mock places
-      let mockList: MapPlace[];
-      if (type === "mosque") {
-        mockList = MOCK_MOSQUES;
-      } else if (halalSubTab === "food") {
-        mockList = MOCK_HALAL;
-      } else {
-        mockList = MOCK_BUTCHERS;
-      }
-      const updatedMock = mockList.map(item => ({
-        ...item,
-        distance: getDistance(loc.lat, loc.lon, item.lat, item.lng)
-      }));
-      updatedMock.sort((a, b) => {
-        const getVal = (s: string) => parseFloat(s.split(" ")[0]);
-        return getVal(a.distance) - getVal(b.distance);
-      });
-      setPlaces(updatedMock);
+      // Do not show results from a different city when the provider returns none.
+      setPlaces([]);
     }
 
     setLoading(false);
@@ -184,16 +174,13 @@ export default function FinderScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const loc = await resolveUserLocation();
+        const loc = await resolveUserLocation({ preferCurrent: true, requireCurrent: true });
         setCity(loc.city || "Nearby");
         setUserCoords({ lat: loc.lat, lon: loc.lon });
         await fetchPlaces({ lat: loc.lat, lon: loc.lon, city: loc.city });
       } catch (e) {
         console.error(e);
-        // Still show mock data with default coords if location fails
-        const defaultLoc = { lat: 10.979, lon: 76.945 };
-        setUserCoords(defaultLoc);
-        await fetchPlaces(defaultLoc);
+        setPlaces([]);
       }
     })();
   }, [fetchPlaces]);

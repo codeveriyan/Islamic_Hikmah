@@ -23,6 +23,7 @@ import naqaaReciters from "@/src/data/quran/naqaaReciters.json";
 import {
   addQuranBookmark, removeQuranBookmark, getQuranBookmarks, QuranBookmark,
 } from "@/src/storage";
+import { getTajweedColor, parseTajweedText } from "@/src/utils/parseTajweed";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type LocalAyah = { numberInSurah: number; arabic: string; translation: string; transliteration: string };
@@ -305,7 +306,7 @@ const FALLBACK_RECITERS: ApiReciter[] = [
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function QuranPageReader() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { page } = useLocalSearchParams<{ page: string }>();
   const currentPageNum = Math.max(1, Math.min(TOTAL_PAGES, parseInt(page || "1", 10)));
   const scrollRef = useRef<ScrollView>(null);
@@ -324,6 +325,7 @@ export default function QuranPageReader() {
 
   // ─── Quran.com settings options (Screenshot settings incorporated) ───────
   const [quranScript, setQuranScript] = useState<"uthmani" | "indopak" | "tajweed">("uthmani");
+  const [tajweedTexts, setTajweedTexts] = useState<Record<string, string>>({});
   const [fontStyle, setFontStyle] = useState<"King Fahad Complex" | "Madani" | "IndoPak">("King Fahad Complex");
   const [copyAsGlyphs, setCopyAsGlyphs] = useState(false);
   const [showFontStyleDropdown, setShowFontStyleDropdown] = useState(false);
@@ -449,6 +451,50 @@ export default function QuranPageReader() {
       };
     });
   }, [currentPageNum]);
+
+  // Tajweed markup is supplied per ayah by Al Quran Cloud. Keep the plain
+  // local Mushaf text as the fallback so the reader remains usable offline.
+  useEffect(() => {
+    if (quranScript !== "tajweed") return;
+
+    let cancelled = false;
+    const cacheKey = `islamic_hikmah:tajweed_page:${currentPageNum}`;
+    AsyncStorage.getItem(cacheKey).then(cached => {
+      if (!cached || cancelled) return;
+      try { setTajweedTexts(JSON.parse(cached) as Record<string, string>); } catch {}
+    });
+
+    fetch(`https://api.alquran.cloud/v1/page/${currentPageNum}/quran-tajweed`)
+      .then(response => {
+        if (!response.ok) throw new Error(`Tajweed text request failed (${response.status})`);
+        return response.json();
+      })
+      .then(payload => {
+        if (cancelled || !Array.isArray(payload?.data?.ayahs)) return;
+        const texts: Record<string, string> = {};
+        payload.data.ayahs.forEach((ayah: any) => {
+          const surah = ayah?.surah?.number;
+          const number = ayah?.numberInSurah;
+          if (surah && number && typeof ayah.text === "string") texts[`${surah}:${number}`] = ayah.text;
+        });
+        setTajweedTexts(texts);
+        AsyncStorage.setItem(cacheKey, JSON.stringify(texts)).catch(() => {});
+      })
+      .catch(error => console.warn("Unable to load Tajweed markup:", error));
+
+    return () => { cancelled = true; };
+  }, [currentPageNum, quranScript]);
+
+  const renderArabicText = (verse: { surahNumber: number; ayahNumber: number; arabicText: string }) => {
+    const rawTajweedText = tajweedTexts[`${verse.surahNumber}:${verse.ayahNumber}`];
+    if (quranScript !== "tajweed" || !rawTajweedText) return verse.arabicText;
+
+    return parseTajweedText(rawTajweedText).map((segment, index) => (
+      <Text key={`${index}-${segment.text}`} style={{ color: getTajweedColor(segment.rule, mode === "dark", colors.onSurface) }}>
+        {segment.text}
+      </Text>
+    ));
+  };
 
   const pageInfo = useMemo(() => {
     let currentJuz = 1;
@@ -1339,7 +1385,7 @@ export default function QuranPageReader() {
                 return (
                   <Text key={verse.absoluteNumber} onPress={() => handlePlaySingle(verse.surahNumber, verse.ayahNumber, verse.absoluteNumber)}
                     style={isHighlighted ? { color: colors.brand, backgroundColor: colors.brand + "15" } : {}}>
-                    {cleaned}{" "}
+                    {quranScript === "tajweed" ? renderArabicText(verse) : cleaned}{" "}
                     <Text style={[styles.ayahMarker, { color: colors.brand }]}>﴿{verse.ayahNumber}﴾ </Text>
                   </Text>
                 );
@@ -1417,7 +1463,7 @@ export default function QuranPageReader() {
                       ))}
                     </View>
                   ) : (
-                    <Text style={[styles.arabicVbV, { fontSize: fontSizeArabic, color: colors.onSurface }]}>{verse.arabicText}</Text>
+                    <Text style={[styles.arabicVbV, { fontSize: fontSizeArabic, color: colors.onSurface }]}>{renderArabicText(verse)}</Text>
                   )}
 
                   {/* Transliteration */}
