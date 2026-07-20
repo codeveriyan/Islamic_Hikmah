@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Modal, FlatList, Platform, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -37,6 +37,12 @@ const QURAN: LocalSurah[] = quranData as LocalSurah[];
 
 // Single consolidated list of unique Quran reciters.
 // These stream continuous surah audio online and support caching for offline play.
+
+// ── In-Memory RAM Caching for 0ms Latency ──────────────────────────────────
+const tafsirMemoryCache = new Map<string, any>();
+const audioTimingMemoryCache = new Map<string, { url: string; timings: any[] }>();
+const translationMemoryCache = new Map<string, { trans: Ayah[]; translit: Ayah[] }>();
+
 const RECITERS = [
   { qdcId: 7,   name: "Mishari Rashid al-Afasy",         style: "Murattal",  hasWordSegments: true  },
   { qdcId: 3,   name: "Abdur-Rahman as-Sudais",          style: "Murattal",  hasWordSegments: true  },
@@ -50,6 +56,192 @@ const RECITERS = [
 ] as const;
 
 type ReciterQdcId = typeof RECITERS[number]["qdcId"];
+
+
+type AyahItemProps = {
+  a: Ayah;
+  i: number;
+  isHighlighted: boolean;
+  isPlaying: boolean;
+  isFav: boolean;
+  isBookmarked: boolean;
+  activeWordIdx: number | null;
+  audioErr: boolean;
+  fontType: "indopak" | "uthmani" | "naskh";
+  fontSize: number;
+  showTranslation: boolean;
+  showTransliteration: boolean;
+  transText: string;
+  translitText: string;
+  rc: any;
+  colors: any;
+  playAyah: (i: number) => void;
+  toggleAyahBookmark: (num: number) => Promise<void>;
+  saveQuranLastRead: (param: any) => Promise<void>;
+  onFavAyah: (i: number, a: Ayah) => void;
+  openTafsirModal: (ayahNum: number, arabicText: string, transText: string) => void;
+  openGrammarModal: (ayahNum: number, arabicText: string, transText: string) => void;
+  surahId: number;
+  surahName: string;
+  onLayoutY: (i: number, y: number) => void;
+};
+
+const AyahItem = React.memo(
+  ({
+    a,
+    i,
+    isHighlighted,
+    isPlaying,
+    isFav,
+    isBookmarked,
+    activeWordIdx,
+    audioErr,
+    fontType,
+    fontSize,
+    showTranslation,
+    showTransliteration,
+    transText,
+    translitText,
+    rc,
+    colors,
+    playAyah,
+    toggleAyahBookmark,
+    saveQuranLastRead,
+    onFavAyah,
+    openTafsirModal,
+    openGrammarModal,
+    surahId,
+    surahName,
+    onLayoutY,
+  }: AyahItemProps) => {
+    const words = useMemo(() => a.text.trim().split(/\s+/), [a.text]);
+    return (
+      <View
+        onLayout={(e) => onLayoutY(i, e.nativeEvent.layout.y)}
+        style={[
+          styles.ayah,
+          { backgroundColor: isHighlighted ? colors.brand + "22" : rc.card },
+          isHighlighted && { borderWidth: 2, borderColor: colors.brand },
+        ]}
+        testID={`ayah-${a.numberInSurah}`}
+      >
+        <View style={styles.ayahHead}>
+          <View style={[styles.ayahNum, { backgroundColor: isHighlighted ? colors.brand : colors.brand + "22" }]}>
+            <Text style={[styles.ayahNumTxt, { color: isHighlighted ? "#fff" : colors.brand }]}>{a.numberInSurah}</Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 16 }}>
+            <Pressable onPress={() => playAyah(i)} hitSlop={10} disabled={audioErr} testID={`play-${a.numberInSurah}`}>
+              <MaterialCommunityIcons
+                name={isPlaying ? "pause-circle" : "play-circle"}
+                size={28}
+                color={audioErr ? colors.onSurfaceMuted : colors.brand}
+              />
+            </Pressable>
+            <Pressable
+              onPress={async () => {
+                await toggleAyahBookmark(a.numberInSurah);
+                await saveQuranLastRead({ surahNumber: surahId, surahName: surahName, ayahNumber: a.numberInSurah });
+              }}
+              hitSlop={10}
+              testID={`bookmark-ayah-${a.numberInSurah}`}
+            >
+              <MaterialCommunityIcons
+                name={isBookmarked ? "bookmark" : "bookmark-outline"}
+                size={24}
+                color={isBookmarked ? colors.brand : colors.onSurfaceMuted}
+              />
+            </Pressable>
+            <Pressable onPress={() => onFavAyah(i, a)} hitSlop={10} testID={`fav-ayah-${a.numberInSurah}`}>
+              <MaterialCommunityIcons
+                name={isFav ? "heart" : "heart-outline"}
+                size={24}
+                color={isFav ? colors.error : colors.onSurfaceMuted}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => openTafsirModal(a.numberInSurah, a.text, transText)}
+              hitSlop={10}
+              testID={`tafsir-ayah-${a.numberInSurah}`}
+            >
+              <MaterialCommunityIcons
+                name="comment-text-outline"
+                size={24}
+                color={colors.onSurfaceMuted}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => openGrammarModal(a.numberInSurah, a.text, transText)}
+              hitSlop={10}
+              testID={`grammar-ayah-${a.numberInSurah}`}
+            >
+              <MaterialCommunityIcons
+                name="alpha-w-box-outline"
+                size={24}
+                color={colors.brand}
+              />
+            </Pressable>
+          </View>
+        </View>
+        <Text
+          style={[
+            styles.arabic,
+            {
+              color: rc.arabic,
+              fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
+              fontSize: fontSize,
+              lineHeight: fontSize * 1.8,
+            },
+          ]}
+        >
+          {words.map((word: string, wordIndex: number) => {
+            const isWordHighlighted = isHighlighted && activeWordIdx === (wordIndex + 1);
+            return (
+              <Text
+                key={wordIndex}
+                style={[
+                  isWordHighlighted && {
+                    color: colors.brand,
+                    fontWeight: "700",
+                  },
+                ]}
+              >
+                {word}{" "}
+              </Text>
+            );
+          })}
+        </Text>
+        {showTransliteration && (
+          <Text style={[styles.translit, { color: rc.translit }]}>
+            {translitText}
+          </Text>
+        )}
+        {showTranslation && (
+          <Text style={[styles.translation, { color: rc.trans }]}>{transText}</Text>
+        )}
+      </View>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.isHighlighted === next.isHighlighted &&
+      prev.isPlaying === next.isPlaying &&
+      prev.isFav === next.isFav &&
+      prev.isBookmarked === next.isBookmarked &&
+      prev.activeWordIdx === next.activeWordIdx &&
+      prev.audioErr === next.audioErr &&
+      prev.fontSize === next.fontSize &&
+      prev.fontType === next.fontType &&
+      prev.showTranslation === next.showTranslation &&
+      prev.showTransliteration === next.showTransliteration &&
+      prev.transText === next.transText &&
+      prev.translitText === next.translitText &&
+      prev.rc === next.rc &&
+      prev.colors === next.colors &&
+      prev.surahId === next.surahId &&
+      prev.surahName === next.surahName
+    );
+  }
+);
 
 export default function SurahDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -91,6 +283,8 @@ export default function SurahDetail() {
 
   // Scroll progress for lists
   const [scrollProgress, setScrollProgress] = useState(0);
+  const lastScrollProgressRef = useRef(0);
+  const handleLayoutY = useCallback((i: number, y: number) => { ayahYPositions.current[i] = y; }, []);
 
   // Juz modal
   const [showJuzModal, setShowJuzModal] = useState(false);
@@ -263,8 +457,14 @@ export default function SurahDetail() {
 
     try {
       const cacheKey = `hikmah:tafsir:${tafsirId}:${id}:${ayahNum}`;
+      if (tafsirMemoryCache.has(cacheKey)) {
+        setTafsirContent(tafsirMemoryCache.get(cacheKey));
+        setTafsirLoading(false);
+        return;
+      }
       const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
+        tafsirMemoryCache.set(cacheKey, cached);
         setTafsirContent(cached);
         setTafsirLoading(false);
         return;
@@ -275,60 +475,65 @@ export default function SurahDetail() {
 
       if (isLocalTafsir) {
         const isWeb = Platform.OS === 'web' || !FileSystem.documentDirectory;
-        let jsonContent = null;
+        let jsonContent = tafsirMemoryCache.get(`json_${tafsirId}`) || null;
 
-        if (isWeb) {
-          // On Web, first try to fetch from local server's public folder, then fall back to GitHub
-          let response = null;
-          try {
-            const localUrl = window.location.origin + '/tafsirs/' + tafsirId + '.json';
-            console.log("Attempting local fetch:", localUrl);
-            response = await fetch(localUrl);
-          } catch (localErr) {
-            console.warn("Local fetch failed, falling back to GitHub:", localErr);
-          }
-
-          if (!response || !response.ok) {
-            const githubUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-            console.log("Fetching from GitHub:", githubUrl);
-            response = await fetch(githubUrl);
-          }
-
-          if (response && response.ok) {
-            jsonContent = await response.json();
-          } else {
-            throw new Error(`Failed to load Tafsir: ${response ? response.status : 'network error'}`);
-          }
-        } else {
-          // On Native (iOS/Android), read from local file system or download if not exists
-          const localUri = `${FileSystem.documentDirectory}tafsirs/${tafsirId}.json`;
-          const dirUri = `${FileSystem.documentDirectory}tafsirs/`;
-
-          try {
-            const dirInfo = await FileSystem.getInfoAsync(dirUri);
-            if (!dirInfo.exists) {
-              await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
+        if (!jsonContent) {
+          if (isWeb) {
+            // On Web, first try to fetch from local server's public folder, then fall back to GitHub
+            let response = null;
+            try {
+              const localUrl = window.location.origin + '/tafsirs/' + tafsirId + '.json';
+              console.log("Attempting local fetch:", localUrl);
+              response = await fetch(localUrl);
+            } catch (localErr) {
+              console.warn("Local fetch failed, falling back to GitHub:", localErr);
             }
 
-            const fileInfo = await FileSystem.getInfoAsync(localUri);
-            if (fileInfo.exists) {
-              const raw = await FileSystem.readAsStringAsync(localUri);
-              jsonContent = JSON.parse(raw);
+            if (!response || !response.ok) {
+              const githubUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
+              console.log("Fetching from GitHub:", githubUrl);
+              response = await fetch(githubUrl);
             }
-          } catch (fsErr) {
-            console.warn("FS read error:", fsErr);
-          }
 
-          if (!jsonContent) {
-            // Download JSON from raw GitHub
-            const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-            console.log("Downloading Tafsir from:", downloadUrl);
-            const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
-            if (dlResult.status === 200) {
-              const raw = await FileSystem.readAsStringAsync(localUri);
-              jsonContent = JSON.parse(raw);
+            if (response && response.ok) {
+              jsonContent = await response.json();
+              tafsirMemoryCache.set(`json_${tafsirId}`, jsonContent);
             } else {
-              throw new Error(`Download failed with status ${dlResult.status}`);
+              throw new Error(`Failed to load Tafsir: ${response ? response.status : 'network error'}`);
+            }
+          } else {
+            // On Native (iOS/Android), read from local file system or download if not exists
+            const localUri = `${FileSystem.documentDirectory}tafsirs/${tafsirId}.json`;
+            const dirUri = `${FileSystem.documentDirectory}tafsirs/`;
+
+            try {
+              const dirInfo = await FileSystem.getInfoAsync(dirUri);
+              if (!dirInfo.exists) {
+                await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
+              }
+
+              const fileInfo = await FileSystem.getInfoAsync(localUri);
+              if (fileInfo.exists) {
+                const raw = await FileSystem.readAsStringAsync(localUri);
+                jsonContent = JSON.parse(raw);
+                tafsirMemoryCache.set(`json_${tafsirId}`, jsonContent);
+              }
+            } catch (fsErr) {
+              console.warn("FS read error:", fsErr);
+            }
+
+            if (!jsonContent) {
+              // Download JSON from raw GitHub
+              const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
+              console.log("Downloading Tafsir from:", downloadUrl);
+              const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
+              if (dlResult.status === 200) {
+                const raw = await FileSystem.readAsStringAsync(localUri);
+                jsonContent = JSON.parse(raw);
+                tafsirMemoryCache.set(`json_${tafsirId}`, jsonContent);
+              } else {
+                throw new Error(`Download failed with status ${dlResult.status}`);
+              }
             }
           }
         }
@@ -337,6 +542,7 @@ export default function SurahDetail() {
         if (jsonContent && jsonContent[key]) {
           let text = jsonContent[key].text || "";
           text = text.replace(/<\/?[^>]+(>|$)/g, "").trim();
+          tafsirMemoryCache.set(cacheKey, text);
           setTafsirContent(text);
           await AsyncStorage.setItem(cacheKey, text);
         } else {
@@ -349,6 +555,7 @@ export default function SurahDetail() {
         if (data && data.tafsir && data.tafsir.text) {
           let cleanText = data.tafsir.text.replace(/<\/?[^>]+(>|$)/g, "");
           cleanText = cleanText.trim();
+          tafsirMemoryCache.set(cacheKey, cleanText);
           setTafsirContent(cleanText);
           await AsyncStorage.setItem(cacheKey, cleanText);
         } else {
@@ -693,6 +900,38 @@ export default function SurahDetail() {
     const cacheKeyTimings = `hikmah:timings:${reciterId}:${surahId}`;
 
     (async () => {
+      // 0. Check RAM cache FIRST for 0ms instant loading
+      if (audioTimingMemoryCache.has(cacheKeyTimings)) {
+        const cached = audioTimingMemoryCache.get(cacheKeyTimings)!;
+        setAudioUrl(cached.url);
+        setVerseTimings(cached.timings);
+        setAudioLoading(false);
+        setAudioErr(false);
+        return;
+      }
+
+      // Check AsyncStorage cache prior to network fetch
+      try {
+        const cachedTimingsStr = await AsyncStorage.getItem(cacheKeyTimings);
+        if (cachedTimingsStr && active) {
+          const timings = JSON.parse(cachedTimingsStr);
+          if (Array.isArray(timings) && timings.length > 0) {
+            let effectiveUrl = `https://download.quranicaudio.com/qdc/${reciterId}/${surahId}.mp3`;
+            if (!isWeb) {
+              const localInfo = await FileSystem.getInfoAsync(localPath);
+              if (localInfo.exists && (localInfo as any).size > 0) {
+                effectiveUrl = localPath;
+              }
+            }
+            setAudioUrl(effectiveUrl);
+            setVerseTimings(timings);
+            setAudioLoading(false);
+            setAudioErr(false);
+            audioTimingMemoryCache.set(cacheKeyTimings, { url: effectiveUrl, timings });
+          }
+        }
+      } catch {}
+
       // 1. Check if we have a locally downloaded file already (only on native)
       if (!isWeb) {
         try {
@@ -725,9 +964,11 @@ export default function SurahDetail() {
 
           const timings = file.verse_timings || [];
           setVerseTimings(timings);
+          setAudioLoading(false);
           setAudioErr(false);
 
-          // Cache timings for offline use
+          // Cache timings for instant offline & future use
+          audioTimingMemoryCache.set(cacheKeyTimings, { url: effectiveUrl, timings });
           await AsyncStorage.setItem(cacheKeyTimings, JSON.stringify(timings));
         } else {
           setAudioUrl(null);
@@ -1259,12 +1500,16 @@ export default function SurahDetail() {
           removeClippedSubviews={true}
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}
           style={{ backgroundColor: rc.bg }}
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           onScroll={(e) => {
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
             const scrollable = contentSize.height - layoutMeasurement.height;
             if (scrollable > 0) {
-              setScrollProgress(Math.min(1, contentOffset.y / scrollable));
+              const p = Math.min(1, contentOffset.y / scrollable);
+              if (Math.abs(p - lastScrollProgressRef.current) >= 0.02) {
+                lastScrollProgressRef.current = p;
+                setScrollProgress(p);
+              }
             }
           }}
           onScrollToIndexFailed={(info) => {
@@ -1274,118 +1519,41 @@ export default function SurahDetail() {
             });
           }}
           renderItem={({ item: a, index: i }) => {
-            const isPlaying = playingIdx === i && status?.playing;
-            const isHighlighted = playingIdx === i; // highlight even when paused mid-ayah
+            const isHighlighted = playingIdx === i;
+            const isPlaying = playingIdx === i && !!status?.playing;
             const favId = `ayah-${id}-${a.numberInSurah}`;
             const isFav = favIds.has(favId);
+            const isBookmarked = bookmarkedAyahs.has(a.numberInSurah);
+
             return (
-              <View
+              <AyahItem
                 key={a.number}
-                onLayout={(e) => { ayahYPositions.current[i] = e.nativeEvent.layout.y; }}
-                style={[
-                  styles.ayah,
-                  { backgroundColor: isHighlighted ? colors.brand + "22" : rc.card },
-                  isHighlighted && { borderWidth: 2, borderColor: colors.brand },
-                ]}
-                testID={`ayah-${a.numberInSurah}`}
-              >
-                <View style={styles.ayahHead}>
-                  <View style={[styles.ayahNum, { backgroundColor: isHighlighted ? colors.brand : colors.brand + "22" }]}>
-                    <Text style={[styles.ayahNumTxt, { color: isHighlighted ? "#fff" : colors.brand }]}>{a.numberInSurah}</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 16 }}>
-                    <Pressable onPress={() => playAyah(i)} hitSlop={10} disabled={audioErr} testID={`play-${a.numberInSurah}`}>
-                      <MaterialCommunityIcons
-                        name={isPlaying ? "pause-circle" : "play-circle"}
-                        size={28}
-                        color={audioErr ? colors.onSurfaceMuted : colors.brand}
-                      />
-                    </Pressable>
-                    <Pressable
-                      onPress={async () => {
-                        await toggleAyahBookmark(a.numberInSurah);
-                        await saveQuranLastRead({ surahNumber: Number(id), surahName: name, ayahNumber: a.numberInSurah });
-                      }}
-                      hitSlop={10}
-                      testID={`bookmark-ayah-${a.numberInSurah}`}
-                    >
-                      <MaterialCommunityIcons
-                        name={bookmarkedAyahs.has(a.numberInSurah) ? "bookmark" : "bookmark-outline"}
-                        size={24}
-                        color={bookmarkedAyahs.has(a.numberInSurah) ? colors.brand : colors.onSurfaceMuted}
-                      />
-                    </Pressable>
-                    <Pressable onPress={() => onFavAyah(i, a)} hitSlop={10} testID={`fav-ayah-${a.numberInSurah}`}>
-                      <MaterialCommunityIcons
-                        name={isFav ? "heart" : "heart-outline"}
-                        size={24}
-                        color={isFav ? colors.error : colors.onSurfaceMuted}
-                      />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => openTafsirModal(a.numberInSurah, a.text, trans[i]?.text || "")}
-                      hitSlop={10}
-                      testID={`tafsir-ayah-${a.numberInSurah}`}
-                    >
-                      <MaterialCommunityIcons
-                        name="comment-text-outline"
-                        size={24}
-                        color={colors.onSurfaceMuted}
-                      />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => openGrammarModal(a.numberInSurah, a.text, trans[i]?.text || "")}
-                      hitSlop={10}
-                      testID={`grammar-ayah-${a.numberInSurah}`}
-                    >
-                      <MaterialCommunityIcons
-                        name="alpha-w-box-outline"
-                        size={24}
-                        color={colors.brand}
-                      />
-                    </Pressable>
-                  </View>
-                </View>
-                <Text
-                  style={[
-                    styles.arabic,
-                    {
-                      color: rc.arabic,
-                      fontFamily: fontType === "indopak" ? "AmiriBold" : fontType === "uthmani" ? "ScheherazadeNew" : "NotoNaskhArabic",
-                      fontSize: fontSize,
-                      lineHeight: fontSize * 1.8,
-                    },
-                  ]}
-                >
-                  {(() => {
-                    const words = a.text.trim().split(/\s+/);
-                    return words.map((word: string, wordIndex: number) => {
-                      const isWordHighlighted = isHighlighted && activeWordIdx === (wordIndex + 1);
-                      return (
-                        <Text
-                          key={wordIndex}
-                          style={[
-                            isWordHighlighted && {
-                              color: colors.brand,
-                              fontWeight: "700",
-                            },
-                          ]}
-                        >
-                          {word}{" "}
-                        </Text>
-                      );
-                    });
-                  })()}
-                </Text>
-                {showTransliteration && (
-                  <Text style={[styles.translit, { color: rc.translit }]}>
-                    {translit[i]?.text}
-                  </Text>
-                )}
-                {showTranslation && (
-                  <Text style={[styles.translation, { color: rc.trans }]}>{trans[i]?.text}</Text>
-                )}
-              </View>
+                a={a}
+                i={i}
+                isHighlighted={isHighlighted}
+                isPlaying={isPlaying}
+                isFav={isFav}
+                isBookmarked={isBookmarked}
+                activeWordIdx={isHighlighted ? activeWordIdx : null}
+                audioErr={audioErr}
+                fontType={fontType}
+                fontSize={fontSize}
+                showTranslation={showTranslation}
+                showTransliteration={showTransliteration}
+                transText={trans[i]?.text || ""}
+                translitText={translit[i]?.text || ""}
+                rc={rc}
+                colors={colors}
+                playAyah={playAyah}
+                toggleAyahBookmark={toggleAyahBookmark}
+                saveQuranLastRead={saveQuranLastRead}
+                onFavAyah={onFavAyah}
+                openTafsirModal={openTafsirModal}
+                openGrammarModal={openGrammarModal}
+                surahId={Number(id)}
+                surahName={name}
+                onLayoutY={handleLayoutY}
+              />
             );
           }}
         />

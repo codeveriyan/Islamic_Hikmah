@@ -27,6 +27,19 @@ Notifications.setNotificationHandler({
 
     const title = notification.request.content.title || "";
     const isPrayerTime = title.includes("Prayer Time");
+    const isStickyPrayerCard = notification.request.content.data?.notificationKind === "sticky-prayer";
+
+    // The next-prayer card is a quiet, persistent status card. Updating it
+    // while the app is open must never create a banner or play a sound.
+    if (isStickyPrayerCard) {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: true,
+      };
+    }
 
     // If it is a prayer time notification and it has expired, do not show alert or play sound
     if (isPrayerTime && hasExpired) {

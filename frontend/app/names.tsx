@@ -69,7 +69,14 @@ export default function AllahNamesScreen() {
     }
   };
 
-  // Play individual Name audio (raw CDN MP3 files)
+  // Reset playingNumber when playback finishes
+  useEffect(() => {
+    if (playingNumber !== null && !status?.playing && status?.currentTime > 0) {
+      setPlayingNumber(null);
+    }
+  }, [status?.playing, status?.currentTime, playingNumber]);
+
+  // Play individual Name audio (fast jsDelivr CDN)
   const playNameAudio = useCallback(async (item: AllahName) => {
     Haptics.selectionAsync().catch(() => {});
     if (profile?.tier !== "premium" && !profile?.trialActive) {
@@ -81,7 +88,7 @@ export default function AllahNamesScreen() {
     }
     try {
       setPlayingNumber(item.number);
-      const audioUrl = `https://raw.githubusercontent.com/soachishti/Asma-ul-Husna/master/audio/${item.number}.mp3`;
+      const audioUrl = `https://cdn.jsdelivr.net/gh/soachishti/Asma-ul-Husna@master/audio/${item.number}.mp3`;
       player.replace({ uri: audioUrl });
       player.play();
     } catch (err) {

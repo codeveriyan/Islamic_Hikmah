@@ -78,7 +78,7 @@ export async function setSavedLocation(loc: { lat: number; lon: number; city?: s
   await AsyncStorage.setItem(PRAY_LOC, JSON.stringify(loc));
 }
 
-export async function resolveUserLocation(): Promise<{ lat: number; lon: number; city: string }> {
+export async function resolveUserLocation(options: { preferCurrent?: boolean; requireCurrent?: boolean } = {}): Promise<{ lat: number; lon: number; city: string }> {
   let loc: any = null;
   try {
     loc = await getSavedLocation();
@@ -99,7 +99,7 @@ export async function resolveUserLocation(): Promise<{ lat: number; lon: number;
     }
   };
 
-  if (loc && loc.lat && loc.lon) {
+  if (!options.preferCurrent && loc && loc.lat && loc.lon) {
     if (loc.city) {
       return loc as { lat: number; lon: number; city: string };
     }
@@ -133,6 +133,14 @@ export async function resolveUserLocation(): Promise<{ lat: number; lon: number;
       return newLoc;
     }
   } catch {}
+
+  if (options.requireCurrent) {
+    throw new Error("Current location is unavailable. Enable location permission and try again.");
+  }
+
+  if (loc && loc.lat && loc.lon) {
+    return { ...loc, city: loc.city || "Saved location" };
+  }
 
   const defaultLoc = { lat: 21.3891, lon: 39.8579, city: "Mecca" };
   await setSavedLocation(defaultLoc);
@@ -261,6 +269,17 @@ export const cancelPrevPrayerNotifications = async () => {
         await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
       }
     }
+    // Remove alerts created by older app versions too. Those versions did not
+    // always persist every identifier, which is why duplicate Adhan alerts
+    // could survive a refresh or an app relaunch.
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(scheduled
+      .filter(notification => {
+        const title = notification.content.title || "";
+        return notification.content.data?.notificationKind === "prayer-adhan" ||
+          /(Fajr|Dhuhr|Asr|Maghrib|Isha) Prayer Time$/.test(title);
+      })
+      .map(notification => Notifications.cancelScheduledNotificationAsync(notification.identifier).catch(() => {})));
     await AsyncStorage.removeItem(PRAYER_NOTIF_KEY);
   } catch (e) {
     console.error("Error cancelling prayer notifications:", e);
@@ -329,6 +348,7 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
             title: `${p} Prayer Time`,
             body: `It is time for ${p} prayer.`,
             sound: bgAzaanEnabled ? (Platform.OS === "android" ? "azaan" : "azaan.wav") : true,
+            data: { notificationKind: "prayer-adhan", prayer: p },
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -441,6 +461,15 @@ export const updateStickyPrayerNotification = async (timings: Record<string, str
     if (prevId) {
       await Notifications.dismissNotificationAsync(prevId).catch(() => {});
     }
+    // A persistent notification is delivered immediately. Clean up every
+    // previous card, not just the last stored ID, to repair legacy duplicates.
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    await Promise.all(presented
+      .filter(notification =>
+        notification.request.content.data?.notificationKind === "sticky-prayer" ||
+        (notification.request.content.title || "").startsWith("Next Prayer:")
+      )
+      .map(notification => Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => {})));
 
     const notifId = await Notifications.scheduleNotificationAsync({
       content: {
@@ -452,6 +481,7 @@ export const updateStickyPrayerNotification = async (timings: Record<string, str
         priority: 'low',
         color: '#C5A880',
         channelId: 'sticky-prayer',
+        data: { notificationKind: "sticky-prayer" },
       } as any,
       trigger: null,
     });
@@ -630,6 +660,11 @@ export async function scheduleGoalNotifications(
   const newIds: string[] = [];
 
   for (const goalId of activeGoalIds) {
+    // Prayer goals are for tracking completion, not a second alert source.
+    // The dedicated Adhan scheduler above is the single owner of all five
+    // prayer-time notifications.
+    if (PRAYER_MAP[goalId]) continue;
+
     const content = GOAL_NOTIF_CONTENT[goalId];
     if (!content) continue;
 
