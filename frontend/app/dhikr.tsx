@@ -14,7 +14,7 @@ import { useTheme } from '@/src/ThemeContext';
 import { useTranslation } from '@/src/localization';
 import { useAuth } from '@/src/AuthContext';
 import { usePremiumModal } from '@/src/PremiumModalContext';
-import { getDhikrCounts, setDhikrCount } from '@/src/storage';
+import { getDhikrCounts, setDhikrCount, recordDhikrSession, getDhikrStreak, DhikrDay } from '@/src/storage';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { theme } from '@/src/theme';
 import { CATEGORIES, DuaItem } from '@/src/data/duas';
@@ -436,6 +436,7 @@ export default function TasbihScreen() {
     ]).start();
 
     const next = count + 1;
+    recordDhikrSession(1).catch(console.warn);
 
     if (next >= targetCount) {
       // Complete loop: all beads exit left → snap back instantly (they're off-screen)
@@ -798,58 +799,16 @@ export default function TasbihScreen() {
             </View>
           </View>
 
-          {/* ── Select Dhikr ── */}
+          {/* Keep the counter focused; the complete list opens only on request. */}
           <View style={[styles.section, { paddingHorizontal: 16 }]}>
-            <View style={styles.sectionRow}>
-              <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Select Dhikr</Text>
-              <Text style={[{ fontSize: 12, color: colors.onSurfaceMuted }]}>{filteredPhrases.length} dhikr</Text>
-            </View>
-
-            <View style={styles.catRow}>
-              {(['all', 'short', 'medium', 'long'] as const).map(cat => (
-                <Pressable key={cat} onPress={() => setSelectedCategory(cat)}
-                  style={[styles.catBtn, { borderColor: selectedCategory === cat ? colors.brand : colors.border },
-                    selectedCategory === cat && { backgroundColor: colors.brand + '18' }]}>
-                  {cat !== 'all' && <View style={[styles.catDot, { backgroundColor: getCategoryColor(cat) }]} />}
-                  <Text style={[styles.catLabel, { color: selectedCategory === cat ? colors.brand : colors.onSurfaceMuted }]}>
-                    {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16, paddingHorizontal: 16 }}>
-              {filteredPhrases.map(phrase => (
-                <Pressable key={phrase.id} onPress={() => handlePhraseSelect(phrase.id)}
-                  onLongPress={() => { if (phrase.source !== 'builtin') handleRemoveCustomDhikr(phrase.id); }}
-                  style={[styles.phraseCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-                    phraseId === phrase.id && { backgroundColor: colors.brand + '15', borderColor: colors.brand }]}>
-                  {phrase.category && (
-                    <View style={[styles.catBadge, { backgroundColor: getCategoryColor(phrase.category) + '22' }]}>
-                      <View style={[styles.catBadgeDot, { backgroundColor: getCategoryColor(phrase.category) }]} />
-                      <Text style={[styles.catBadgeTxt, { color: getCategoryColor(phrase.category) }]}>{phrase.category}</Text>
-                    </View>
-                  )}
-                  <Text style={[styles.phraseArabic, { color: colors.onSurface }]} numberOfLines={1}>{phrase.arabic}</Text>
-                  <Text style={[styles.phraseTranslit, { color: colors.onSurfaceMuted }]} numberOfLines={1}>{phrase.transliteration}</Text>
-                  {phrase.recommendedCount ? <Text style={[styles.phraseCountBadge, { color: colors.brand }]}>×{phrase.recommendedCount}</Text> : null}
-                  {phrase.source !== 'builtin' && (
-                    <View style={[styles.customTag, { backgroundColor: colors.brand + '22' }]}>
-                      <Text style={[styles.customTagTxt, { color: colors.brand }]}>custom</Text>
-                    </View>
-                  )}
-                </Pressable>
-              ))}
-              <Pressable onPress={() => {
-                if (profile?.tier !== 'premium' && !profile?.trialActive) { showPremiumModal('Add More Dhikr'); return; }
-                setShowPicker(true); setPickerTab('all'); setSearchQuery('');
-              }}
-                style={[styles.addBtn, { backgroundColor: colors.brand + '15', borderColor: colors.brand }]}>
-                <MaterialCommunityIcons name="plus-circle-outline" size={22} color={colors.brand} />
-                <Text style={[styles.addBtnTxt, { color: colors.brand }]}>Add more{'\n'}Dhikr</Text>
-              </Pressable>
-            </ScrollView>
-            <Text style={[styles.hint2, { color: colors.onSurfaceMuted }]}>💡 Long press custom card to remove</Text>
+            <Pressable onPress={() => { setShowPicker(true); setPickerTab('all'); setSearchQuery(''); }}
+              style={[styles.selectDhikrButton, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+              <View>
+                <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Select Dhikr</Text>
+                <Text style={{ fontSize: 12, color: colors.onSurfaceMuted }} numberOfLines={1}>{selectedPhrase?.transliteration ?? 'Choose a dhikr to count'}</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={24} color={colors.brand} />
+            </Pressable>
           </View>
 
           {/* ── Target Count ── */}
@@ -963,7 +922,7 @@ export default function TasbihScreen() {
       <Modal visible={showPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowPicker(false)}>
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.surface }]} edges={['top']}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Add Dhikr</Text>
+            <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Select Dhikr</Text>
             <Pressable onPress={() => setShowPicker(false)} hitSlop={10}>
               <MaterialCommunityIcons name="close" size={26} color={colors.onSurface} />
             </Pressable>
@@ -1155,6 +1114,7 @@ const styles = StyleSheet.create({
   section: { width: '100%', marginBottom: 24 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  selectDhikrButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 14, padding: 14 },
 
   // Category tabs
   catRow: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },

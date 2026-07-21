@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, Alert } from "react-native";
 import { 
   User,
   onAuthStateChanged,
@@ -67,6 +67,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function migrateAuthStorage(uid?: string) {
+  const pairs: [string, string][] = [
+    ["auth_is_guest", "hikmah:auth:guest"],
+    ["auth_guest_name", "hikmah:auth:guest_name"],
+  ];
+  if (uid) {
+    pairs.push(
+      [`ruhani:tier:${uid}`, `hikmah:tier:${uid}`],
+      [`ruhani:trial:${uid}`, `hikmah:trial:${uid}`],
+    );
+  }
+  for (const [legacyKey, newKey] of pairs) {
+    const [legacy, current] = await AsyncStorage.multiGet([legacyKey, newKey]);
+    if (legacy[1] != null && current[1] == null) await AsyncStorage.setItem(newKey, legacy[1]);
+    if (legacy[1] != null) await AsyncStorage.removeItem(legacyKey);
+  }
+}
+
 // Hook to use auth context
 export function useAuth() {
   const context = useContext(AuthContext);
@@ -87,11 +105,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Load and watch Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      await migrateAuthStorage(firebaseUser?.uid);
       if (firebaseUser) {
         setUser(firebaseUser);
         setIsGuest(false);
         // Load tier details from local storage and Firestore
-        let localTier = await AsyncStorage.getItem(`ruhani:tier:${firebaseUser.uid}`);
+        let localTier = await AsyncStorage.getItem(`hikmah:tier:${firebaseUser.uid}`);
         let finalTier: "free" | "premium" = (localTier as "free" | "premium") || "free";
         
         try {
@@ -100,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const data = userDoc.data();
             if (data?.tier === "premium" || data?.tier === "free") {
               finalTier = data.tier;
-              await AsyncStorage.setItem(`ruhani:tier:${firebaseUser.uid}`, finalTier);
+              await AsyncStorage.setItem(`hikmah:tier:${firebaseUser.uid}`, finalTier);
             }
           } else {
             // First time login/signup: create document with default tier
@@ -120,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let trialActive = false;
         let trialDaysLeft = 0;
         try {
-          const trialRaw = await AsyncStorage.getItem(`ruhani:trial:${firebaseUser.uid}`);
+          const trialRaw = await AsyncStorage.getItem(`hikmah:trial:${firebaseUser.uid}`);
           if (trialRaw) {
             trialStartedAt = parseInt(trialRaw, 10);
           } else {
@@ -128,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const userDoc2 = await getDoc(doc(db, "users", firebaseUser.uid));
             if (userDoc2.exists() && userDoc2.data()?.trialStartedAt) {
               trialStartedAt = userDoc2.data().trialStartedAt;
-              await AsyncStorage.setItem(`ruhani:trial:${firebaseUser.uid}`, String(trialStartedAt));
+              await AsyncStorage.setItem(`hikmah:trial:${firebaseUser.uid}`, String(trialStartedAt));
             }
           }
           if (trialStartedAt) {
@@ -157,10 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
         setProfile(userProfile);
       } else {
-        const guestRaw = await AsyncStorage.getItem("auth_is_guest");
+        const guestRaw = await AsyncStorage.getItem("hikmah:auth:guest");
         if (guestRaw === "true") {
           setIsGuest(true);
-          const guestName = await AsyncStorage.getItem("auth_guest_name") || "Guest User";
+          const guestName = await AsyncStorage.getItem("hikmah:auth:guest_name") || "Guest User";
           setProfile({
             uid: "guest-uid",
             name: guestName,
@@ -211,8 +230,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       setIsGuest(false);
-      await AsyncStorage.removeItem("auth_is_guest");
-      await AsyncStorage.removeItem("auth_guest_name");
+      await AsyncStorage.removeItem("hikmah:auth:guest");
+      await AsyncStorage.removeItem("hikmah:auth:guest_name");
       return cred.user;
     } finally {
       setLoading(false);
@@ -225,8 +244,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       setIsGuest(false);
-      await AsyncStorage.removeItem("auth_is_guest");
-      await AsyncStorage.removeItem("auth_guest_name");
+      await AsyncStorage.removeItem("hikmah:auth:guest");
+      await AsyncStorage.removeItem("hikmah:auth:guest_name");
       // Set display name in Firebase
       await firebaseUpdateProfile(cred.user, { displayName: name });
       // Send verification email
@@ -242,8 +261,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       setIsGuest(true);
-      await AsyncStorage.setItem("auth_is_guest", "true");
-      await AsyncStorage.removeItem("auth_guest_name");
+      await AsyncStorage.setItem("hikmah:auth:guest", "true");
+      await AsyncStorage.removeItem("hikmah:auth:guest_name");
       setProfile({
         uid: "guest-uid",
         name: "Guest User",
@@ -269,12 +288,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const cred = await signInWithPopup(auth, provider);
         setUser(cred.user);
         setIsGuest(false);
-        await AsyncStorage.removeItem("auth_is_guest");
-        await AsyncStorage.removeItem("auth_guest_name");
+        await AsyncStorage.removeItem("hikmah:auth:guest");
+        await AsyncStorage.removeItem("hikmah:auth:guest_name");
       } else {
         const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
         if (!webClientId) {
-          alert("Google Sign-In is not configured. Please set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in your .env file, register your SHA-1 in the Firebase console, and rebuild.");
+          Alert.alert(
+          "Google Sign-In Not Configured",
+          "Google Sign-In is not yet set up for this build. Please use email/password login or try again later."
+        );
           setLoading(false);
           return;
         }
@@ -293,14 +315,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         setUser(cred.user);
         setIsGuest(false);
-        await AsyncStorage.removeItem("auth_is_guest");
-        await AsyncStorage.removeItem("auth_guest_name");
+        await AsyncStorage.removeItem("hikmah:auth:guest");
+        await AsyncStorage.removeItem("hikmah:auth:guest_name");
       }
     } catch (err: any) {
       console.error("Google Sign-In Error:", err);
       // Suppress alert if user cancelled the sign-in modal (Google code 12501 or message)
       if (err.code !== "SIGN_IN_CANCELLED" && err.message !== "Sign in action cancelled" && err.code !== "12501") {
-        alert("Failed to sign in with Google: " + err.message);
+        Alert.alert("Sign-In Failed", "Unable to sign in with Google. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -317,8 +339,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       setIsGuest(false);
-      await AsyncStorage.removeItem("auth_is_guest");
-      await AsyncStorage.removeItem("auth_guest_name");
+      await AsyncStorage.removeItem("hikmah:auth:guest");
+      await AsyncStorage.removeItem("hikmah:auth:guest_name");
       try {
         await signOut(auth);
       } catch (err) {
@@ -370,7 +392,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (!user) return;
     const nextTier = profile?.tier === "premium" ? "free" : "premium";
-    await AsyncStorage.setItem(`ruhani:tier:${user.uid}`, nextTier);
+    await AsyncStorage.setItem(`hikmah:tier:${user.uid}`, nextTier);
     
     try {
       await setDoc(doc(db, "users", user.uid), { tier: nextTier }, { merge: true });
@@ -391,7 +413,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user || isGuest) return;
     const now = Date.now();
     const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
-    await AsyncStorage.setItem(`ruhani:trial:${user.uid}`, String(now));
+    await AsyncStorage.setItem(`hikmah:trial:${user.uid}`, String(now));
     try {
       await setDoc(doc(db, "users", user.uid), { trialStartedAt: now }, { merge: true });
     } catch (e) {

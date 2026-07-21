@@ -11,6 +11,7 @@ import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import Svg, { Circle } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { format12Hour } from "@/src/utils/time";
 
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
@@ -28,10 +29,11 @@ import {
   saveActiveGoalIds, getGoalNotifTimes, scheduleGoalNotifications,
 } from "@/src/storage";
 
+import { Image as ExpoImage } from "expo-image";
+
 const { width, height } = Dimensions.get("window");
 const CARD_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md) / 2;
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
-
 
 const CATEGORY_IMAGES: Record<string, any> = {
   ummah: require("@/assets/images/ummah_background.png"),
@@ -76,12 +78,19 @@ const QUICK_ACTIONS = [
   { id: "duas",              label: "Du'as",                   route: "/dua-hub",               emoji: "🤲" },
   { id: "namesOfAllah",      label: "Asma Al-Husna",          route: "/names",                  emoji: "🕌" },
   { id: "qiblaFinder",       label: "Qibla Finder",            route: "/qibla",                  emoji: "🕋" },
+  { id: "qadhaTracker",      label: "Qadha Tracker",           route: "/qadha",                  emoji: "📝" },
+  { id: "ramadanCompanion",  label: "Ramadan Mode",            route: "/ramadan",                emoji: "✨" },
   { id: "hijriCalendar",     label: "Islamic Calendar",        route: "/hijri-calendar",         emoji: "📅" },
   { id: "tasbihCounter",     label: "Tasbih Counter",          route: "/dhikr",                  emoji: "📿" },
   { id: "mosqueFinder",      label: "Masjid Finder",           route: "/finder?type=mosque",     image: require("@/assets/images/masjid_finder_icon.png") },
   { id: "halalFoodFinder",   label: "Halal Food Finder",       route: "/finder?type=halal",      emoji: "🍽️", premium: true },
   { id: "halalFoodScanner",  label: "Halal Product Scanner",   route: "/halal-scanner",          emoji: "🔎",  premium: true },
 ];
+
+// Keep Asma Al-Husna available from the Du'as hub, and surface Zakat here.
+const HOME_QUICK_ACTIONS = QUICK_ACTIONS.map((action) => action.id === "namesOfAllah"
+  ? { id: "zakat", label: "Zakat Calculator", route: "/zakat-calculator", emoji: "💰" }
+  : action);
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -93,19 +102,8 @@ function getGreeting() {
   return { salaam: "Assalamu Alaikum", sub: "Good evening, may your night be peaceful" };
 }
 
-function format12Hour(timeStr: string): string {
-  if (!timeStr) return "";
-  const clean = timeStr.split(" ")[0];
-  const parts = clean.split(":");
-  if (parts.length < 2) return timeStr;
-  let h = parseInt(parts[0], 10);
-  const m = parts[1].substring(0, 2);
-  if (isNaN(h)) return timeStr;
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12;
-  h = h ? h : 12;
-  return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
-}
+// format12Hour imported from @/src/utils/time
+
 
 function getHijriDate() {
   try {
@@ -1025,7 +1023,7 @@ export default function HomeScreen() {
 
         {/* Quick Actions */}
         <View style={styles.quickRow}>
-          {QUICK_ACTIONS.map((a) => (
+          {HOME_QUICK_ACTIONS.map((a) => (
             <Pressable key={a.id} onPress={() => handleQuickAction(a)}
               style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7 }]}>
               <View style={styles.quickIconOnly}>
@@ -1460,7 +1458,7 @@ export default function HomeScreen() {
                 سبحان الله!
               </Text>
               <Text style={{ fontSize: 24, color: "#FFFFFF", fontWeight: "800", textAlign: "center", lineHeight: 34 }}>
-                You've completed{"\n"}all your goals for today.
+                You&apos;ve completed{"\n"}all your goals for today.
               </Text>
             </View>
           </View>

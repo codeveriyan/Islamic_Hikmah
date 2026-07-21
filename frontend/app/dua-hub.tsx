@@ -74,21 +74,6 @@ export default function DuaHubScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Intro Hero banner */}
-        <View style={[styles.heroCard, { backgroundColor: colors.surfaceSecondary }]}>
-          <View style={[styles.heroIconWrap, { backgroundColor: "#06B6D422" }]}>
-            <MaterialCommunityIcons name="hands-pray" size={32} color="#06B6D4" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.heroTitle, { color: colors.onSurface }]}>
-              {t("duas") || "Du'as"}
-            </Text>
-            <Text style={[styles.heroSub, { color: colors.onSurfaceMuted }]}>
-              Explore supplications and dhikr for your daily life
-            </Text>
-          </View>
-        </View>
-
         <Pressable
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
@@ -106,6 +91,24 @@ export default function DuaHubScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[styles.fortressTitle, { color: colors.onSurface }]}>Fortress of the Muslim</Text>
             <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>132 chapters · 267 authentic du&apos;as</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={26} color={colors.onSurfaceMuted} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => router.push("/names" as any)}
+          style={({ pressed }) => [
+            styles.fortressCard,
+            { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+            pressed && { opacity: 0.9, transform: [{ scale: 0.985 }] },
+          ]}
+        >
+          <LinearGradient colors={["#7C3AED", "#A855F7"]} style={styles.fortressIcon}>
+            <MaterialCommunityIcons name="mosque-outline" size={32} color="#FFFFFF" />
+          </LinearGradient>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.fortressTitle, { color: colors.onSurface }]}>Asma Al-Husna</Text>
+            <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>Learn the 99 beautiful Names of Allah</Text>
           </View>
           <MaterialCommunityIcons name="chevron-right" size={26} color={colors.onSurfaceMuted} />
         </Pressable>

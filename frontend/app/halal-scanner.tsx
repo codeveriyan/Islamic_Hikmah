@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
@@ -24,7 +24,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
 
-type IngredientStatus = "halal" | "mushbooh" | "haram";
+type IngredientStatus = "unknown" | "mushbooh" | "haram";
 type VerifyMode = "photo" | "barcode" | "text";
 
 type IngredientRule = {
@@ -41,6 +41,8 @@ type ScanResult = {
   verdict: IngredientStatus;
   matched: IngredientRule[];
   date: string;
+  source?: string;
+  confidence?: "low" | "medium";
 };
 
 const HISTORY_KEY = "hikmah:halal-scanner:history:v1";
@@ -74,29 +76,57 @@ const RULES: IngredientRule[] = [
 const CERTIFIED_TERMS = ["halal certified", "certified halal", "halal", "hfa", "ifanca", "muis", "jakim"];
 
 const STATUS_META: Record<IngredientStatus, { label: string; color: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = {
-  halal: { label: "Likely Halal", color: "#16A34A", icon: "check-decagram" },
+  unknown: { label: "Needs Verification", color: "#64748B", icon: "help-circle" },
   mushbooh: { label: "Questionable", color: "#F59E0B", icon: "alert-circle" },
-  haram: { label: "Not Halal", color: "#DC2626", icon: "close-octagon" },
+  haram: { label: "Concerning Ingredient Found", color: "#DC2626", icon: "alert-circle" },
 };
 
 function normalize(text: string) {
   return text.toLowerCase().replace(/[()_,.;:/\\-]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** Match a term using word boundaries so "alcohol" doesn't match inside "isopropyl alcohol" wrongly */
+function matchesTerm(text: string, term: string): boolean {
+  // Escape special regex chars in the term
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(?<![a-z])${escaped}(?![a-z])`, "i");
+  return regex.test(text);
+}
+
+// Non-consumable alcohol terms — should NOT be flagged as haram
+const NON_FOOD_ALCOHOL_TERMS = [
+  "isopropyl alcohol",
+  "denatured alcohol",
+  "rubbing alcohol",
+  "cetyl alcohol",      // fatty alcohol in cosmetics
+  "stearyl alcohol",
+  "cetearyl alcohol",
+  "benzyl alcohol",     // preservative, not intoxicating
+];
+
 function analyzeIngredients(ingredients: string) {
   const normalized = normalize(ingredients);
-  const matched = RULES.filter(rule => normalized.includes(rule.term));
-  const hasCertified = CERTIFIED_TERMS.some(term => normalized.includes(term));
 
-  let verdict: IngredientStatus = "halal";
+  // Pre-filter: strip known non-food alcohol phrases so they don't trigger the "alcohol" rule
+  let filteredText = normalized;
+  for (const nonFood of NON_FOOD_ALCOHOL_TERMS) {
+    filteredText = filteredText.split(nonFood).join("");
+  }
+
+  const matched = RULES.filter(rule => matchesTerm(filteredText, rule.term));
+  const hasCertified = CERTIFIED_TERMS.some(term => matchesTerm(normalized, term));
+
+  let verdict: IngredientStatus = "unknown";
   if (matched.some(item => item.status === "haram")) verdict = "haram";
-  else if (matched.some(item => item.status === "mushbooh")) verdict = hasCertified ? "halal" : "mushbooh";
+  else if (matched.some(item => item.status === "mushbooh")) verdict = "mushbooh";
 
-  return { verdict, matched, hasCertified };
+  return { verdict, matched, hasCertified, confidence: matched.length ? "medium" as const : "low" as const };
 }
 
 export default function HalalScannerScreen() {
   const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: VerifyMode }>();
+  const detailMode = mode === "photo" || mode === "barcode" || mode === "text" ? mode : null;
   const { colors } = useTheme();
   const { profile } = useAuth();
   const { showPremiumModal } = usePremiumModal();
@@ -118,6 +148,10 @@ export default function HalalScannerScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
+
+  useEffect(() => {
+    if (detailMode) setVerifyMode(detailMode);
+  }, [detailMode]);
 
   useEffect(() => {
     AsyncStorage.getItem(HISTORY_KEY)
@@ -144,6 +178,8 @@ export default function HalalScannerScreen() {
       verdict: analysis.verdict,
       matched: analysis.matched,
       date: new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      source: barcode ? "Barcode record / supplied ingredient text" : "Supplied ingredient text",
+      confidence: analysis.confidence,
     };
     const next = [item, ...history].slice(0, 12);
     setHistory(next);
@@ -335,14 +371,14 @@ export default function HalalScannerScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Halal Food Scanner</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{detailMode ? `${detailMode.charAt(0).toUpperCase()}${detailMode.slice(1)} verification` : "Halal Food Scanner"}</Text>
         <Pressable onPress={() => router.push("/finder?type=halal" as any)} hitSlop={10}>
           <MaterialCommunityIcons name="map-marker-radius-outline" size={24} color={colors.brand} />
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <LinearGradient
+        {!detailMode && <LinearGradient
           colors={["#052e22", "#0f766e", "#d4af37"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -355,9 +391,9 @@ export default function HalalScannerScreen() {
             <Text style={styles.heroTitle}>Check ingredients instantly</Text>
             <Text style={styles.heroSub}>Paste the label or enter a barcode, then review halal, haram, and mushbooh flags.</Text>
           </View>
-        </LinearGradient>
+        </LinearGradient>}
 
-        <View>
+        {!detailMode && <View>
           <Text style={[styles.verifyHeading, { color: colors.onSurface }]}>Multiple Ways to Verify</Text>
           <View style={styles.verifyGrid}>
             {verifyCards.map(card => {
@@ -365,7 +401,7 @@ export default function HalalScannerScreen() {
               return (
                 <Pressable
                   key={card.id}
-                  onPress={() => setVerifyMode(card.id)}
+                  onPress={() => router.push({ pathname: "/halal-scanner", params: { mode: card.id } } as any)}
                   style={[
                     styles.verifyCard,
                     {
@@ -386,7 +422,7 @@ export default function HalalScannerScreen() {
               );
             })}
           </View>
-        </View>
+        </View>}
 
         <View style={[styles.panel, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Product Details</Text>
@@ -458,9 +494,11 @@ export default function HalalScannerScreen() {
             <Text style={[styles.resultLabel, { color: meta.color }]}>{meta.label}</Text>
             <Text style={[styles.resultCopy, { color: colors.onSurfaceMuted }]}>
               {analysis.matched.length === 0
-                ? "No common haram or questionable ingredients were detected. Confirm certification for full assurance."
+                ? "No common concern was detected. Confirm the source and certification before relying on a product."
                 : `${analysis.matched.length} ingredient flag${analysis.matched.length === 1 ? "" : "s"} found.`}
             </Text>
+            <Text style={[styles.resultCopy, { color: colors.onSurfaceMuted, marginTop: 4 }]}>Ingredient assessment only ({analysis.confidence} confidence), not a halal certification or religious ruling.</Text>
+            <Text style={[styles.resultCopy, { color: colors.onSurfaceMuted, marginTop: 4 }]}>Source: {analysis.source ?? "supplied product text"}. Certification claims are not independently verified.</Text>
           </View>
         </View>
 

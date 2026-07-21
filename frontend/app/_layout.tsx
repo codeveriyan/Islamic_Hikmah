@@ -1,6 +1,6 @@
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import React, { useEffect, Component } from "react";
 import { AppState, LogBox, Pressable, Text, View, Image, StyleSheet, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -8,13 +8,16 @@ import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ThemeProvider, useTheme } from "@/src/ThemeContext";
-import { AuthProvider } from "@/src/AuthContext";
+import { AuthProvider, useAuth } from "@/src/AuthContext";
+import { db } from "@/src/firebase";
+import { doc, setDoc } from "firebase/firestore";
 import { PremiumModalProvider } from "@/src/PremiumModalContext";
 import PremiumModal from "@/src/components/PremiumModal";
 
@@ -62,7 +65,69 @@ Notifications.setNotificationHandler({
   },
 });
 
-LogBox.ignoreAllLogs(true);
+// Only suppress known noisy-but-harmless warnings in dev; never silence all logs in production
+if (__DEV__) {
+  LogBox.ignoreLogs([
+    'Possible Unhandled Promise Rejection',
+    'Non-serializable values were found in the navigation state',
+  ]);
+}
+
+// ─── React Error Boundary ─────────────────────────────────────────────────────
+interface ErrorBoundaryState { hasError: boolean; error: Error | null }
+class ErrorBoundary extends Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ErrorBoundary] Uncaught error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#0B141A' }}>
+          <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 12 }}>Something went wrong</Text>
+          <Text style={{ color: '#8696A0', fontSize: 13, textAlign: 'center', marginBottom: 24 }}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </Text>
+          <Pressable
+            onPress={() => this.setState({ hasError: false, error: null })}
+            style={{ backgroundColor: '#00A884', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 99 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Try Again</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function PushTokenRegistrar() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (Platform.OS === "web" || !user?.uid) return;
+    const register = async () => {
+      const permissions = await Notifications.getPermissionsAsync();
+      if (permissions.status !== "granted") return;
+      const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
+      if (!projectId) return;
+      const token = await Notifications.getExpoPushTokenAsync({ projectId });
+      await setDoc(doc(db, "pushTokens", user.uid), {
+        token: token.data,
+        updatedAt: Date.now(),
+        platform: Platform.OS,
+        projectId,
+      }, { merge: true });
+    };
+    register().catch(error => console.warn("Failed to register push token:", error));
+  }, [user?.uid]);
+  return null;
+}
 
 SplashScreen.preventAutoHideAsync();
 
@@ -122,7 +187,7 @@ export default function RootLayout() {
   const playerStatus = useAudioPlayerStatus(player);
   const router = useRouter();
   useEffect(() => {
-    // Request notification permissions on app startup
+    // Request notification permissions and register push token to Firestore
     const requestPermissions = async () => {
       if (Platform.OS === 'web') return;
       try {
@@ -229,17 +294,20 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <PremiumModalProvider>
-              <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
-              <PremiumModal />
-            </PremiumModalProvider>
-          </AuthProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <PushTokenRegistrar />
+              <PremiumModalProvider>
+                <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
+                <PremiumModal />
+              </PremiumModalProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
