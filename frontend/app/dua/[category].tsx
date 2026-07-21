@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ImageBackground, Platform, Share, Dimensions, FlatList, Vibration } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ImageBackground, Platform, Share, Dimensions, FlatList, Vibration, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -465,7 +465,7 @@ export default function DuaCategoryScreen() {
     return (
       <View style={{ width: SCREEN_WIDTH, padding: theme.spacing.lg }}>
         <ScrollView contentContainerStyle={styles.readerCardScroll} showsVerticalScrollIndicator={false}>
-          <View style={[styles.readerCard, { backgroundColor: colors.surfaceSecondary }]}>
+          <View style={styles.readerContent}>
             <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight(), fontFamily: arabicFontFamily }]}>
               {item.arabic}
             </Text>
@@ -640,47 +640,47 @@ export default function DuaCategoryScreen() {
             </Pressable>
           </View>
 
-          {/* Info Modal/Drawer */}
-          {showInfo && (
-            <View style={[styles.infoDrawer, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-              <View style={styles.infoDrawerHead}>
-                <Text style={[styles.infoDrawerTitle, { color: colors.onSurface }]}>Dua Reference & Virtue</Text>
-                <Pressable onPress={() => setShowInfo(false)} hitSlop={10}>
-                  <MaterialCommunityIcons name="close" size={20} color={colors.onSurfaceMuted} />
+          <Modal visible={showInfo} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowInfo(false)}>
+            <SafeAreaView style={[styles.infoScreen, { backgroundColor: colors.surface }]} edges={["top", "bottom"]}>
+              <View style={[styles.infoScreenHead, { borderBottomColor: colors.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.infoDrawerTitle, { color: colors.onSurface }]}>Dua Reference & Virtue</Text>
+                  <Text style={[styles.infoScreenSub, { color: colors.onSurfaceMuted }]}>{activeItem.title}</Text>
+                </View>
+                <Pressable onPress={() => setShowInfo(false)} hitSlop={12} style={[styles.infoClose, { backgroundColor: colors.surfaceSecondary }]}>
+                  <MaterialCommunityIcons name="close" size={22} color={colors.onSurface} />
                 </Pressable>
               </View>
-              <ScrollView style={styles.infoDrawerScroll} showsVerticalScrollIndicator={false}>
+              <ScrollView contentContainerStyle={styles.infoScreenContent} showsVerticalScrollIndicator={false}>
                 {activeItem.reference ? (
-                  <Text style={[styles.infoDrawerRef, { color: colors.onSurfaceMuted, marginBottom: 8 }]}>
-                    📖 Reference: {activeItem.reference}
-                  </Text>
+                  <View style={[styles.infoReferenceCard, { backgroundColor: colors.brand + "12" }]}>
+                    <MaterialCommunityIcons name="book-open-variant" size={20} color={colors.brand} />
+                    <Text style={[styles.infoDrawerRef, { color: colors.onSurface }]}>{activeItem.reference}</Text>
+                  </View>
                 ) : null}
-                
                 {activeItem.virtue ? (
-                  <View style={{ marginBottom: 12 }}>
-                    <Text style={{ fontWeight: "700", color: colors.brand, marginBottom: 4, fontSize: 13 }}>Virtue:</Text>
+                  <View style={styles.infoSection}>
+                    <Text style={[styles.infoSectionTitle, { color: colors.brand }]}>Virtue</Text>
                     <Text style={[styles.infoDrawerText, { color: colors.onSurface }]}>{activeItem.virtue}</Text>
                   </View>
                 ) : null}
-
                 {activeItem.explanation ? (
-                  <View style={{ marginBottom: 12 }}>
-                    <Text style={{ fontWeight: "700", color: colors.brand, marginBottom: 4, fontSize: 13 }}>Explanation:</Text>
+                  <View style={styles.infoSection}>
+                    <Text style={[styles.infoSectionTitle, { color: colors.brand }]}>Explanation</Text>
                     <Text style={[styles.infoDrawerText, { color: colors.onSurface }]}>{activeItem.explanation}</Text>
                   </View>
                 ) : null}
-
                 {!activeItem.virtue && !activeItem.explanation && (
                   <Text style={[styles.infoDrawerText, { color: colors.onSurface }]}>
                     This supplication is taken from authentic collections. Consistently reciting it brings immense rewards and spiritual protection.
                   </Text>
                 )}
               </ScrollView>
-            </View>
-          )}
+            </SafeAreaView>
+          </Modal>
 
-          {/* Bottom Audio Control Bar */}
-          <View style={styles.audioControlBar}>
+          {/* Expanded controls appear only after the user starts this du'a. */}
+          {playingId === activeItem.id && <View style={styles.audioControlBar}>
             {/* Seek Bar */}
             <View style={styles.progressBarRow}>
               <Text style={[styles.progressTimeText, { color: colors.onSurfaceMuted }]}>{formatTime(currentTime)}</Text>
@@ -766,7 +766,7 @@ export default function DuaCategoryScreen() {
                 <Text style={[styles.speedSelectorText, { color: colors.onSurface }]}>{playbackSpeed}x</Text>
               </Pressable>
             </View>
-          </View>
+          </View>}
         </SafeAreaView>
       </View>
     );
@@ -947,8 +947,8 @@ const styles = StyleSheet.create({
   pageIndicator: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   pageIndicatorText: { fontSize: 13, fontWeight: "700" },
   
-  readerCardScroll: { flexGrow: 1, justifyContent: "center" },
-  readerCard: { borderRadius: theme.radius.lg, padding: theme.spacing.lg, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 2 },
+  readerCardScroll: { flexGrow: 1, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
+  readerContent: { paddingHorizontal: theme.spacing.sm, paddingBottom: theme.spacing.xl },
   arabic: { fontFamily: "NotoNaskhArabic", textAlign: "right", marginTop: theme.spacing.md },
   translit: { fontStyle: "italic", marginTop: theme.spacing.md, lineHeight: 21 },
   translation: { marginTop: theme.spacing.sm, lineHeight: 22 },
@@ -964,13 +964,18 @@ const styles = StyleSheet.create({
   actionIconBtn: { alignItems: "center", gap: 4, width: 60 },
   actionIconLabel: { fontSize: 11, fontWeight: "600" },
   
-  // Info Drawer
-  infoDrawer: { position: "absolute", bottom: 150, left: 16, right: 16, padding: 16, borderRadius: 16, borderWidth: 1, maxHeight: 180, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
-  infoDrawerHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  // Full-screen reference reader
+  infoScreen: { flex: 1 },
+  infoScreenHead: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  infoScreenSub: { fontSize: 13, marginTop: 3 },
+  infoClose: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  infoScreenContent: { padding: 20, paddingBottom: 48 },
+  infoReferenceCard: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 12, padding: 14, marginBottom: 24 },
+  infoSection: { marginBottom: 26 },
+  infoSectionTitle: { fontSize: 16, fontWeight: "800", marginBottom: 8 },
   infoDrawerTitle: { fontSize: 15, fontWeight: "700" },
-  infoDrawerScroll: { flex: 1 },
-  infoDrawerRef: { fontSize: 13, fontWeight: "600", marginBottom: 6 },
-  infoDrawerText: { fontSize: 14, lineHeight: 20 },
+  infoDrawerRef: { fontSize: 14, fontWeight: "700", flex: 1 },
+  infoDrawerText: { fontSize: 17, lineHeight: 28 },
   
   // Audio Control Bar
   audioControlBar: { paddingHorizontal: 20, paddingBottom: 16, paddingTop: 8 },

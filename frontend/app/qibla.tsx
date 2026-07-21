@@ -11,12 +11,13 @@ import {
   Platform,
   Easing,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import { Accelerometer } from 'expo-sensors';
+import { Accelerometer, Magnetometer } from 'expo-sensors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
@@ -71,7 +72,9 @@ export default function QiblaScreen() {
   const headingAnim = useRef(new Animated.Value(0)).current;
   const watchHeadingRef = useRef<any>(null);
   const watchLocationRef = useRef<any>(null);
+  const magnetometerRef = useRef<any>(null);
   const lastHapticRef = useRef<number>(0);
+  const [needsCalibration, setNeedsCalibration] = useState(false);
 
   // Animated values for 3D tilt dampening
   const tiltXAnim = useRef(new Animated.Value(0)).current;
@@ -157,7 +160,7 @@ export default function QiblaScreen() {
 
         setLoading(false);
 
-        // Heading listener
+        // Heading listener with Magnetometer fallback
         try {
           if (Platform.OS !== 'web') {
             watchHeadingRef.current = await Location.watchHeadingAsync(headingData => {
@@ -173,7 +176,22 @@ export default function QiblaScreen() {
             });
           }
         } catch (err) {
-          console.warn("watchHeadingAsync is not supported:", err);
+          console.warn("watchHeadingAsync fallback to Magnetometer:", err);
+          if (Platform.OS !== 'web') {
+            setNeedsCalibration(true);
+            Magnetometer.setUpdateInterval(100);
+            magnetometerRef.current = Magnetometer.addListener(data => {
+              let angle = Math.atan2(data.y, data.x) * (180 / Math.PI);
+              if (angle < 0) angle += 360;
+              setHeading(angle);
+              Animated.timing(headingAnim, {
+                toValue: angle,
+                duration: 250,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true,
+              }).start();
+            });
+          }
         }
 
         // Watch location
@@ -266,6 +284,8 @@ export default function QiblaScreen() {
       if (accelSubscription && typeof accelSubscription.remove === 'function') {
         accelSubscription.remove();
       }
+      magnetometerRef.current?.remove?.();
+      magnetometerRef.current = null;
     };
   }, []);
 
@@ -458,6 +478,16 @@ export default function QiblaScreen() {
           </Pressable>
         </View>
       </View>
+      {needsCalibration && mode === 'compass' && (
+        <Pressable
+          onPress={() => Alert.alert("Calibrate your compass", "Move your phone in a figure-eight motion and keep it away from metal or magnetic cases. The fallback compass is less accurate until calibrated.")}
+          style={[styles.calibrationBanner, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+        >
+          <MaterialCommunityIcons name="compass-alert" size={18} color={colors.brand} />
+          <Text style={{ flex: 1, color: colors.onSurface, fontSize: 12 }}>Compass calibration recommended</Text>
+          <MaterialCommunityIcons name="information-outline" size={18} color={colors.onSurfaceMuted} />
+        </Pressable>
+      )}
 
       {mode === 'map' ? (
         // Live OSM Map View
@@ -777,6 +807,7 @@ export default function QiblaScreen() {
 }
 
 const styles = StyleSheet.create({
+  calibrationBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 10, padding: 10, borderWidth: 1, borderRadius: 12 },
   container: {
     flex: 1,
   },

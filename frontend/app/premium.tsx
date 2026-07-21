@@ -176,6 +176,7 @@ export default function PremiumScreen() {
   };
 
   const handleDevBypass = async () => {
+    if (!__DEV__) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     await togglePremiumTier();
     const isNowPremium = profile?.tier !== "premium"; // due to state batching, check inverse
@@ -190,7 +191,14 @@ export default function PremiumScreen() {
 
   const handleRestore = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    Alert.alert("Purchase Restored", "Your subscription purchases have been successfully restored.");
+    if (profile?.tier === "premium" || profile?.trialActive) {
+      Alert.alert("Subscription Restored", "Your active Pro subscription has been verified and restored.");
+    } else {
+      Alert.alert(
+        "No Subscription Found",
+        "We could not locate an active Pro subscription for your account. If you believe this is an error, please try logging in with your registered email."
+      );
+    }
   };
 
   return (
@@ -386,12 +394,16 @@ export default function PremiumScreen() {
             <Pressable onPress={handleRestore} style={styles.linkBtn}>
               <Text style={[styles.linkBtnTxt, { color: colors.onSurfaceMuted }]}>Restore Purchase</Text>
             </Pressable>
-            <View style={[styles.linkDot, { backgroundColor: colors.border }]} />
-            <Pressable onPress={handleDevBypass} style={styles.linkBtn}>
-              <Text style={[styles.linkBtnTxt, { color: colors.brand, fontWeight: "700" }]}>
-                {profile?.tier === "premium" ? "Dev: Lock App" : "Dev: Unlock Free Premium"}
-              </Text>
-            </Pressable>
+            {__DEV__ && (
+              <>
+                <View style={[styles.linkDot, { backgroundColor: colors.border }]} />
+                <Pressable onPress={handleDevBypass} style={styles.linkBtn}>
+                  <Text style={[styles.linkBtnTxt, { color: colors.brand, fontWeight: "700" }]}>
+                    {profile?.tier === "premium" ? "Dev: Lock App" : "Dev: Unlock Free Premium"}
+                  </Text>
+                </Pressable>
+              </>
+            )}
           </View>
 
         </View>

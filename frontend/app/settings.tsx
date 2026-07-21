@@ -646,6 +646,27 @@ export default function SettingsScreen() {
                 trackColor={{ true: colors.brand }}
               />
             </Pressable>
+
+            <View style={{
+              flexBasis: "100%", backgroundColor: colors.surfaceSecondary, padding: 12,
+              borderRadius: theme.radius.md, borderWidth: 1, borderColor: colors.border,
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <MaterialCommunityIcons name="format-size" size={20} color={colors.brand} />
+                <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Reading size</Text>
+                <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginLeft: "auto" }}>Qur&apos;an, Du&apos;as, Hadith & Seerah</Text>
+              </View>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <Pressable key={size} onPress={() => setFontSize(size)}
+                    style={{ flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 10,
+                      backgroundColor: fontSize === size ? colors.brand : colors.surface,
+                      borderWidth: 1, borderColor: fontSize === size ? colors.brand : colors.border }}>
+                    <Text style={{ color: fontSize === size ? colors.onBrandPrimary : colors.onSurface, fontWeight: "700", textTransform: "capitalize" }}>{size}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
           </View>
         </View>
 

@@ -3,10 +3,45 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 
-const FAV_KEY = 'ruhani:favourites:v1';
-const DHIKR_KEY = 'ruhani:dhikr-counts:v1';
-const REMIND_KEY = 'ruhani:reminders:v1';
-const PRAY_LOC = 'ruhani:prayer-location:v1';
+const FAV_KEY = 'hikmah:favourites:v1';
+const DHIKR_KEY = 'hikmah:dhikr-counts:v1';
+const REMIND_KEY = 'hikmah:reminders:v1';
+const PRAY_LOC = 'hikmah:prayer-location:v1';
+const DHIKR_HISTORY_KEY = 'hikmah:dhikr-history:v1';
+const PRAYER_TIMINGS_CACHE_KEY = 'hikmah:prayer-timings-cache:v2';
+
+export const localDateKey = (date = new Date()) => {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+};
+
+export type PrayerTimingsCache = {
+  timings: Record<string, string>;
+  date: string;
+  latitude: number;
+  longitude: number;
+  method: number;
+  juristic: number;
+  source: 'remote' | 'calculated';
+  savedAt: number;
+};
+
+export async function savePrayerTimingsCache(cache: PrayerTimingsCache) {
+  await AsyncStorage.multiSet([
+    [PRAYER_TIMINGS_CACHE_KEY, JSON.stringify(cache)],
+    // Kept for existing goal and notification settings readers during migration.
+    ['last_fetched_timings', JSON.stringify(cache.timings)],
+  ]);
+}
+
+export async function getPrayerTimingsCache(): Promise<PrayerTimingsCache | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PRAYER_TIMINGS_CACHE_KEY);
+    return raw ? JSON.parse(raw) as PrayerTimingsCache : null;
+  } catch {
+    return null;
+  }
+}
 
 export type Favourite = {
   id: string;
@@ -52,13 +87,50 @@ export async function setDhikrCount(id: string, count: number) {
   await AsyncStorage.setItem(DHIKR_KEY, JSON.stringify(all));
 }
 
-export type Reminder = {
-  id: string;
-  title: string;
-  hour: number;
-  minute: number;
-  enabled: boolean;
-};
+// --- Dhikr Daily History & Streak -------------------------------------------
+export type DhikrDay = { date: string; total: number };
+
+export async function getDhikrHistory(): Promise<DhikrDay[]> {
+  const raw = await AsyncStorage.getItem(DHIKR_HISTORY_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function recordDhikrSession(count: number): Promise<void> {
+  if (count <= 0) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const history = await getDhikrHistory();
+  const idx = history.findIndex(d => d.date === today);
+  if (idx >= 0) { history[idx].total += count; }
+  else { history.unshift({ date: today, total: count }); }
+  await AsyncStorage.setItem(DHIKR_HISTORY_KEY, JSON.stringify(history.slice(0, 90)));
+}
+
+export async function getDhikrStreak(): Promise<{ streak: number; todayTotal: number; weekHistory: DhikrDay[] }> {
+  const history = await getDhikrHistory();
+  const today = new Date().toISOString().slice(0, 10);
+  const weekHistory: DhikrDay[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const found = history.find(h => h.date === dateStr);
+    weekHistory.push({ date: dateStr, total: found?.total ?? 0 });
+  }
+  const todayTotal = weekHistory[6]?.total ?? 0;
+  const active = history.filter(d => d.total > 0).sort((a, b) => b.date.localeCompare(a.date));
+  if (!active.length) return { streak: 0, todayTotal, weekHistory };
+  const latest = active[0].date;
+  const yd = new Date(); yd.setDate(yd.getDate() - 1);
+  const ydStr = yd.toISOString().slice(0, 10);
+  if (latest !== today && latest !== ydStr) return { streak: 0, todayTotal, weekHistory };
+  let streak = 0; let check = new Date(latest);
+  for (const entry of active) {
+    const diff = Math.round((check.getTime() - new Date(entry.date).getTime()) / 86400000);
+    if (diff > 1) break; streak++; check = new Date(entry.date);
+  }
+  return { streak, todayTotal, weekHistory };
+}
+
+export type Reminder = { id: string; title: string; hour: number; minute: number; enabled: boolean };
 
 export async function getReminders(): Promise<Reminder[]> {
   const raw = await AsyncStorage.getItem(REMIND_KEY);
@@ -77,7 +149,6 @@ export async function getSavedLocation(): Promise<{ lat: number; lon: number; ci
 export async function setSavedLocation(loc: { lat: number; lon: number; city?: string }) {
   await AsyncStorage.setItem(PRAY_LOC, JSON.stringify(loc));
 }
-
 export async function resolveUserLocation(options: { preferCurrent?: boolean; requireCurrent?: boolean } = {}): Promise<{ lat: number; lon: number; city: string }> {
   let loc: any = null;
   try {
@@ -147,13 +218,13 @@ export async function resolveUserLocation(options: { preferCurrent?: boolean; re
   return defaultLoc;
 }
 
-// ── Goals Storage ──────────────────────────────────────────
+// â”€â”€ Goals Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const GOALS_KEY = 'hikmah:goals-completed:v1';
 const GOALS_CONFIG_KEY = 'hikmah:goals-config:v1';
 
 function todayKey() {
   const d = new Date();
-  // ⏰ Day window: goals belong to the previous calendar day until 4:00 AM.
+  // â° Day window: goals belong to the previous calendar day until 4:00 AM.
   // This gives users overnight time to check off yesterday's goals.
   if (d.getHours() < 4) {
     d.setDate(d.getDate() - 1);
@@ -226,7 +297,7 @@ export async function getRecentGoalHistory(days: number): Promise<{ date: Date; 
   return history;
 }
 
-// ── Prayer Settings Storage ────────────────────────────────
+// â”€â”€ Prayer Settings Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PRAYER_SETTINGS_KEY = 'hikmah:prayer-settings:v1';
 
 export type PrayerSettings = {
@@ -257,7 +328,7 @@ export async function savePrayerSettings(s: PrayerSettings) {
   await AsyncStorage.setItem(PRAYER_SETTINGS_KEY, JSON.stringify(s));
 }
 
-// ── Shared Notification Helpers ─────────────────────────────
+// â”€â”€ Shared Notification Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PRAYER_NOTIF_KEY = 'scheduled_prayer_notifications';
 
 export const cancelPrevPrayerNotifications = async () => {
@@ -494,9 +565,9 @@ export const updateStickyPrayerNotification = async (timings: Record<string, str
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Goal Notifications
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const GOAL_NOTIF_KEY = 'hikmah:goal-notif-ids:v1';
 const GOAL_NOTIF_TIMES_KEY = 'hikmah:goal-notif-times:v1';
@@ -563,21 +634,21 @@ export async function cancelGoalNotifications(): Promise<void> {
 type PrayerTimings = Record<string, string>;
 
 const GOAL_NOTIF_CONTENT: Record<string, { title: string; body: string }> = {
-  'fajr':           { title: '🌅 Fajr Prayer Time',         body: 'It\'s time for Fajr. Rise and pray.' },
-  'dhuhr':          { title: '☀️ Dhuhr Prayer Time',        body: 'Dhuhr time has come. Take a moment to pray.' },
-  'asr':            { title: '🌤 Asr Prayer Time',           body: 'Don\'t delay your Asr prayer.' },
-  'maghrib':        { title: '🌇 Maghrib Prayer Time',       body: 'Maghrib time is here. Pray before it ends.' },
-  'isha':           { title: '🌙 Isha Prayer Time',          body: 'Isha time has arrived. End your day with prayer.' },
-  'tahajjud':       { title: '✨ Tahajjud Time',             body: 'Rise for Tahajjud — the best night prayer.' },
-  'nafl':           { title: '🤲 Nafl Prayer Reminder',      body: 'Earn extra reward with a Nafl prayer today.' },
-  'quran-5min':     { title: '📖 Quran Reading Time',        body: 'Read Quran for just 5 minutes — even a little goes far.' },
-  'surah-mulk':     { title: '🌙 Recite Surah Al-Mulk',     body: 'Recite Surah Al-Mulk before you sleep tonight.' },
-  'surah-kahaf':    { title: '📗 Jumu\'ah: Surah Al-Kahf',  body: 'Today is Friday — recite Surah Al-Kahf.' },
-  'morning-adhkar': { title: '🌄 Morning Adhkar Time',       body: 'Start your day with the morning remembrances.' },
-  'evening-adhkar': { title: '🌆 Evening Adhkar Time',       body: 'Take a moment for the evening adhkar now.' },
-  'sleep-adhkar':   { title: '😴 Sleep Adhkar Reminder',     body: 'Read your sleep adhkar before you rest.' },
-  'fast-monday':    { title: '🌙 Sunnah Fast Tomorrow (Mon)',body: 'Prepare your intention — Monday fast starts at Fajr.' },
-  'fast-thursday':  { title: '🌙 Sunnah Fast Tomorrow (Thu)',body: 'Prepare your intention — Thursday fast starts at Fajr.' },
+  'fajr':           { title: 'ðŸŒ… Fajr Prayer Time',         body: 'It\'s time for Fajr. Rise and pray.' },
+  'dhuhr':          { title: 'â˜€ï¸ Dhuhr Prayer Time',        body: 'Dhuhr time has come. Take a moment to pray.' },
+  'asr':            { title: 'ðŸŒ¤ Asr Prayer Time',           body: 'Don\'t delay your Asr prayer.' },
+  'maghrib':        { title: 'ðŸŒ‡ Maghrib Prayer Time',       body: 'Maghrib time is here. Pray before it ends.' },
+  'isha':           { title: 'ðŸŒ™ Isha Prayer Time',          body: 'Isha time has arrived. End your day with prayer.' },
+  'tahajjud':       { title: 'âœ¨ Tahajjud Time',             body: 'Rise for Tahajjud â€” the best night prayer.' },
+  'nafl':           { title: 'ðŸ¤² Nafl Prayer Reminder',      body: 'Earn extra reward with a Nafl prayer today.' },
+  'quran-5min':     { title: 'ðŸ“– Quran Reading Time',        body: 'Read Quran for just 5 minutes â€” even a little goes far.' },
+  'surah-mulk':     { title: 'ðŸŒ™ Recite Surah Al-Mulk',     body: 'Recite Surah Al-Mulk before you sleep tonight.' },
+  'surah-kahaf':    { title: 'ðŸ“— Jumu\'ah: Surah Al-Kahf',  body: 'Today is Friday â€” recite Surah Al-Kahf.' },
+  'morning-adhkar': { title: 'ðŸŒ„ Morning Adhkar Time',       body: 'Start your day with the morning remembrances.' },
+  'evening-adhkar': { title: 'ðŸŒ† Evening Adhkar Time',       body: 'Take a moment for the evening adhkar now.' },
+  'sleep-adhkar':   { title: 'ðŸ˜´ Sleep Adhkar Reminder',     body: 'Read your sleep adhkar before you rest.' },
+  'fast-monday':    { title: 'ðŸŒ™ Sunnah Fast Tomorrow (Mon)',body: 'Prepare your intention â€” Monday fast starts at Fajr.' },
+  'fast-thursday':  { title: 'ðŸŒ™ Sunnah Fast Tomorrow (Thu)',body: 'Prepare your intention â€” Thursday fast starts at Fajr.' },
 };
 
 /**
@@ -684,7 +755,7 @@ export async function scheduleGoalNotifications(
     }
 
     try {
-      // ── Prayer goals: use actual prayer timing ───────────────────────────
+      // â”€â”€ Prayer goals: use actual prayer timing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (PRAYER_MAP[goalId]) {
         const prayerKey = PRAYER_MAP[goalId];
         const timeStr = prayerTimings[prayerKey];
@@ -720,7 +791,7 @@ export async function scheduleGoalNotifications(
         continue;
       }
 
-      // ── Tahajjud/Nafl: use configured times (daily) ──────────────────────
+      // â”€â”€ Tahajjud/Nafl: use configured times (daily) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (goalId === 'tahajjud' || goalId === 'nafl') {
         const t = times[goalId as keyof GoalNotifTimes];
         const id = await Notifications.scheduleNotificationAsync({
@@ -736,7 +807,7 @@ export async function scheduleGoalNotifications(
         continue;
       }
 
-      // ── Weekly goals ─────────────────────────────────────────────────────
+      // â”€â”€ Weekly goals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (WEEKLY_MAP[goalId]) {
         const { dayOfWeek, timeKey } = WEEKLY_MAP[goalId];
         const t = times[timeKey];
@@ -744,7 +815,7 @@ export async function scheduleGoalNotifications(
           content: { ...content, sound: undefined },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-            weekday: dayOfWeek + 1, // expo-notifications: 1=Sun … 7=Sat
+            weekday: dayOfWeek + 1, // expo-notifications: 1=Sun â€¦ 7=Sat
             hour: t.hour,
             minute: t.minute,
             channelId: 'goal-reminders',
@@ -754,7 +825,7 @@ export async function scheduleGoalNotifications(
         continue;
       }
 
-      // ── Daily non-prayer goals ────────────────────────────────────────────
+      // â”€â”€ Daily non-prayer goals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const timeKey = goalId as keyof GoalNotifTimes;
       if (times[timeKey]) {
         const t = times[timeKey];
@@ -776,13 +847,13 @@ export async function scheduleGoalNotifications(
 
   await AsyncStorage.setItem(GOAL_NOTIF_KEY, JSON.stringify(newIds));
 
-  // ── Day-transition notifications ────────────────────────────────────────
-  // 3:45 AM — gentle nudge to finish yesterday's goals before cutoff
+  // â”€â”€ Day-transition notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // 3:45 AM â€” gentle nudge to finish yesterday's goals before cutoff
   try {
     const nudgeId = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '⏰ Last chance for yesterday\'s goals!',
-        body: 'It\'s 3:45 AM — you have 15 minutes to update yesterday\'s goals before the new day starts.',
+        title: 'â° Last chance for yesterday\'s goals!',
+        body: 'It\'s 3:45 AM â€” you have 15 minutes to update yesterday\'s goals before the new day starts.',
         sound: undefined,
       },
       trigger: {
@@ -797,12 +868,12 @@ export async function scheduleGoalNotifications(
     console.warn('Failed to schedule 3:45 AM nudge notification:', e);
   }
 
-  // 4:00 AM — new day starts, goals reset
+  // 4:00 AM â€” new day starts, goals reset
   try {
     const newDayId = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🌅 New day has begun!',
-        body: 'Bismillah! Yesterday\'s goals have been saved. Start your new day with intention. 🤲',
+        title: 'ðŸŒ… New day has begun!',
+        body: 'Bismillah! Yesterday\'s goals have been saved. Start your new day with intention. ðŸ¤²',
         sound: undefined,
       },
       trigger: {
@@ -827,9 +898,9 @@ export async function scheduleGoalNotifications(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Quran Bookmarks & Last Read Position
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const QURAN_BOOKMARKS_KEY = 'hikmah:quran-bookmarks:v1';
 const QURAN_LAST_READ_KEY = 'hikmah:quran-last-read:v1';
@@ -901,7 +972,7 @@ export async function saveQuranLastRead(lr: Omit<QuranLastRead, 'readAt'>): Prom
   await AsyncStorage.setItem(QURAN_LAST_READ_KEY, JSON.stringify({ ...lr, readAt: Date.now() }));
 }
 
-// ── Menstrual Mode & Calendar Settings Storage ──────────────────
+// â”€â”€ Menstrual Mode & Calendar Settings Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MENSTRUAL_MODE_KEY = 'hikmah:menstrual-mode:v1';
 const CALENDAR_CONNECTED_KEY = 'hikmah:calendar-connected:v1';
 const CALENDAR_DISMISSED_KEY = 'hikmah:calendar-dismissed:v1';
@@ -1075,3 +1146,65 @@ export async function isDhikrBookmarked(id: string): Promise<boolean> {
   return list.some((b) => b.id === id);
 }
 
+// ─── Qadha Prayer Tracker Storage ─────────────────────────────────────────────
+const QADHA_KEY = 'hikmah:qadha:v1';
+
+export type QadhaCounts = {
+  Fajr: number;
+  Dhuhr: number;
+  Asr: number;
+  Maghrib: number;
+  Isha: number;
+  Witr: number;
+};
+
+const DEFAULT_QADHA: QadhaCounts = {
+  Fajr: 0,
+  Dhuhr: 0,
+  Asr: 0,
+  Maghrib: 0,
+  Isha: 0,
+  Witr: 0,
+};
+
+export async function getQadhaCounts(): Promise<QadhaCounts> {
+  try {
+    const raw = await AsyncStorage.getItem(QADHA_KEY);
+    return raw ? { ...DEFAULT_QADHA, ...JSON.parse(raw) } : DEFAULT_QADHA;
+  } catch {
+    return DEFAULT_QADHA;
+  }
+}
+
+export async function saveQadhaCounts(counts: QadhaCounts): Promise<void> {
+  await AsyncStorage.setItem(QADHA_KEY, JSON.stringify(counts));
+}
+
+// ─── Ramadan Fasting Tracker Storage ───────────────────────────────────────────
+const RAMADAN_KEY = 'hikmah:ramadan:v1';
+
+export type FastingLog = {
+  date: string;
+  fasted: boolean;
+  notes?: string;
+};
+
+export async function getRamadanLogs(): Promise<FastingLog[]> {
+  try {
+    const raw = await AsyncStorage.getItem(RAMADAN_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveRamadanLog(date: string, fasted: boolean, notes?: string): Promise<void> {
+  const logs = await getRamadanLogs();
+  const idx = logs.findIndex(l => l.date === date);
+  if (idx >= 0) {
+    logs[idx] = { date, fasted, notes };
+  } else {
+    logs.unshift({ date, fasted, notes });
+  }
+  await AsyncStorage.setItem(RAMADAN_KEY, JSON.stringify(logs));
+}

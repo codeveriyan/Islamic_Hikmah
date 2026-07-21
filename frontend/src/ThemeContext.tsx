@@ -2,9 +2,6 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LangCode } from "@/src/data/quran/translationLanguages";
 
-const MODE_KEY = "islamic-hikmah:theme:v1";
-const PALETTE_KEY = "islamic-hikmah:palette:v1";
-
 export type Mode = "light" | "dark";
 type FontSize = "small" | "medium" | "large";
 type FontColor = "default" | "gold" | "green" | "sepia";
@@ -111,6 +108,31 @@ const ThemeCtx = createContext<Ctx>({
   arabicFont: "indopak", setArabicFont: () => {},
 });
 
+const MODE_KEY = "hikmah:theme:mode:v1";
+const PALETTE_KEY = "hikmah:theme:palette:v1";
+const LANG_KEY = "hikmah:theme:language:v1";
+const FONT_SIZE_KEY = "hikmah:theme:font_size:v1";
+const FONT_COLOR_KEY = "hikmah:theme:font_color:v1";
+const ARABIC_FONT_KEY = "hikmah:theme:arabic_font:v1";
+
+const getItemWithFallback = async (key: string, legacyKeys: string[]) => {
+  try {
+    let val = await AsyncStorage.getItem(key);
+    if (!val) {
+      for (const legacyKey of legacyKeys) {
+        val = await AsyncStorage.getItem(legacyKey);
+        if (val) {
+          await AsyncStorage.setItem(key, val);
+          break;
+        }
+      }
+    }
+    return val;
+  } catch {
+    return null;
+  }
+};
+
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setModeState] = useState<Mode>("dark");
   const [themeId, setThemeIdState] = useState<AppThemeId>("classic");
@@ -118,23 +140,46 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [fontSize, setFontSizeState] = useState<FontSize>("medium");
   const [fontColor, setFontColorState] = useState<FontColor>("default");
   const [arabicFont, setArabicFontState] = useState<ArabicFontType>("indopak");
+  // Prevent rendering children until prefs are loaded — eliminates the dark→user-theme flash
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(MODE_KEY).then((value) => { if (value === "light" || value === "dark") setModeState(value); });
-    AsyncStorage.getItem(PALETTE_KEY).then((value) => { if (value && value in APP_THEMES) setThemeIdState(value as AppThemeId); });
-    AsyncStorage.getItem("islamic_hikmah:language_preference").then((value) => { if (value) setLanguageState(value as LangCode); });
-    AsyncStorage.getItem("islamic_hikmah:font_size_pref").then((value) => { if (value) setFontSizeState(value as FontSize); });
-    AsyncStorage.getItem("islamic_hikmah:font_color_pref").then((value) => { if (value) setFontColorState(value as FontColor); });
-    AsyncStorage.getItem("islamic_hikmah:quran_font_type").then((value) => { if (value) setArabicFontState(value as ArabicFontType); });
+    // Load all preferences with legacy fallback in one parallel batch before first paint
+    Promise.all([
+      getItemWithFallback(MODE_KEY, ["islamic-hikmah:theme:v1"]),
+      getItemWithFallback(PALETTE_KEY, ["islamic-hikmah:palette:v1"]),
+      getItemWithFallback(LANG_KEY, ["islamic_hikmah:language_preference", "islamic-hikmah:language"]),
+      getItemWithFallback(FONT_SIZE_KEY, ["islamic_hikmah:font_size_pref"]),
+      getItemWithFallback(FONT_COLOR_KEY, ["islamic_hikmah:font_color_pref"]),
+      getItemWithFallback(ARABIC_FONT_KEY, ["islamic_hikmah:quran_font_type"]),
+    ]).then(([modeVal, paletteVal, langVal, fontSizeVal, fontColorVal, arabicFontVal]) => {
+      if (modeVal === "light" || modeVal === "dark") setModeState(modeVal);
+      if (paletteVal && paletteVal in APP_THEMES) setThemeIdState(paletteVal as AppThemeId);
+      if (langVal) setLanguageState(langVal as LangCode);
+      if (fontSizeVal) setFontSizeState(fontSizeVal as FontSize);
+      if (fontColorVal) setFontColorState(fontColorVal as FontColor);
+      if (arabicFontVal) setArabicFontState(arabicFontVal as ArabicFontType);
+    }).catch(() => {
+      // If AsyncStorage fails, render with defaults
+    }).finally(() => {
+      setPrefsLoaded(true);
+    });
   }, []);
 
   const setMode = (value: Mode) => { setModeState(value); AsyncStorage.setItem(MODE_KEY, value); };
   const setThemeId = (value: AppThemeId) => { setThemeIdState(value); AsyncStorage.setItem(PALETTE_KEY, value); };
-  const setLanguage = (value: LangCode) => { setLanguageState(value); AsyncStorage.setItem("islamic_hikmah:language_preference", value); AsyncStorage.setItem("islamic_hikmah:quran_translation_lang", value); };
-  const setFontSize = (value: FontSize) => { setFontSizeState(value); AsyncStorage.setItem("islamic_hikmah:font_size_pref", value); };
-  const setFontColor = (value: FontColor) => { setFontColorState(value); AsyncStorage.setItem("islamic_hikmah:font_color_pref", value); };
-  const setArabicFont = (value: ArabicFontType) => { setArabicFontState(value); AsyncStorage.setItem("islamic_hikmah:quran_font_type", value); };
+  const setLanguage = (value: LangCode) => { 
+    setLanguageState(value); 
+    AsyncStorage.setItem(LANG_KEY, value); 
+    AsyncStorage.setItem("hikmah:quran_translation_lang", value); 
+  };
+  const setFontSize = (value: FontSize) => { setFontSizeState(value); AsyncStorage.setItem(FONT_SIZE_KEY, value); };
+  const setFontColor = (value: FontColor) => { setFontColorState(value); AsyncStorage.setItem(FONT_COLOR_KEY, value); };
+  const setArabicFont = (value: ArabicFontType) => { setArabicFontState(value); AsyncStorage.setItem(ARABIC_FONT_KEY, value); };
   const colors = useMemo(() => APP_THEMES[themeId].colors[mode], [themeId, mode]);
+
+  // Render nothing until prefs load — splash screen is already visible during this gap
+  if (!prefsLoaded) return null;
 
   return (
     <ThemeCtx.Provider value={{ mode, colors, setMode, themeId, setThemeId, language, setLanguage, fontSize, setFontSize, fontColor, setFontColor, arabicFont, setArabicFont }}>

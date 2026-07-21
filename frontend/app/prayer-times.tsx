@@ -14,9 +14,14 @@ import { useTranslation } from "@/src/localization";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS } from "@/src/data/goals";
+import { format12Hour } from "@/src/utils/time";
+import { calculateLocalPrayerTimes } from "@/src/services/prayerCalculation";
 import { 
   resolveUserLocation, 
   getPrayerSettings, 
+  getPrayerTimingsCache,
+  localDateKey,
+  savePrayerTimingsCache,
   savePrayerSettings, 
   PrayerSettings, 
   schedulePrayerNotifications, 
@@ -39,19 +44,8 @@ const PRAYER_ICONS: Record<string, string> = {
   Qiyam: "weather-night",
 };
 
-function format12Hour(timeStr: string): string {
-  if (!timeStr) return "";
-  const clean = timeStr.split(" ")[0];
-  const parts = clean.split(":");
-  if (parts.length < 2) return timeStr;
-  let h = parseInt(parts[0], 10);
-  const m = parts[1].substring(0, 2);
-  if (isNaN(h)) return timeStr;
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12;
-  h = h ? h : 12;
-  return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
-}
+// ─── Removed local duplicate — now imported from @/src/utils/time ───────────
+
 
 const CALC_METHODS = [
   { id: 1, name: "Karachi / MWL", note: "South Asia & parts of Europe" },
@@ -106,17 +100,42 @@ export default function PrayerTimesScreen() {
   const load = async (s?: PrayerSettings) => {
     setLoading(true);
     setErr(null);
+    const usedSettings = s || settings;
     try {
-      const usedSettings = s || settings;
       const loc = await resolveUserLocation();
       setCity(loc.city);
+
+      // ── Resilient fetch: 8 s timeout + 2 retries ──────────────────────────
+      const fetchWithRetry = async (url: string, retries = 2): Promise<any> => {
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const r = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            return await r.json();
+          } catch (e: any) {
+            if (attempt === retries) throw e;
+            await new Promise(res => setTimeout(res, 1200 * (attempt + 1)));
+          }
+        }
+      };
+
       const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${usedSettings.method}&school=${usedSettings.juristic}`;
-      const r = await fetch(url);
-      const j = await r.json();
+      const j = await fetchWithRetry(url);
       const timings = j?.data?.timings || null;
       setTimes(timings);
       if (timings) {
-        await AsyncStorage.setItem("last_fetched_timings", JSON.stringify(timings));
+        await savePrayerTimingsCache({
+          timings,
+          date: localDateKey(),
+          latitude: loc.lat,
+          longitude: loc.lon,
+          method: usedSettings.method,
+          juristic: usedSettings.juristic,
+          source: "remote",
+          savedAt: Date.now(),
+        });
         const res = await schedulePrayerNotifications(timings, usedSettings.adhanEnabled);
         if (!res.success && res.error === 'permission' && Platform.OS !== 'web') {
           Alert.alert(
@@ -134,7 +153,7 @@ export default function PrayerTimesScreen() {
           console.error("Failed to reschedule goal notifications after prayer refresh:", e);
         }
       }
-      
+
       let hijriStr = "";
       if (j?.data?.date?.hijri) {
         const h = j.data.date.hijri;
@@ -148,7 +167,47 @@ export default function PrayerTimesScreen() {
         hijriStr = j?.data?.date?.readable || new Date().toDateString();
       }
       setDate(hijriStr);
-    } catch { setErr("Could not load prayer times. Check your internet connection."); }
+    } catch {
+      // ── Offline fallback: calculate local prayer times offline ────────────────
+      try {
+        const loc = await resolveUserLocation().catch(() => null);
+        const cached = await getPrayerTimingsCache();
+        const isCurrentCache = cached && loc
+          && cached.date === localDateKey()
+          && cached.method === usedSettings.method
+          && cached.juristic === usedSettings.juristic
+          && Math.abs(cached.latitude - loc.lat) < 0.02
+          && Math.abs(cached.longitude - loc.lon) < 0.02;
+        if (isCurrentCache) {
+          setTimes(cached.timings);
+          setErr("Showing cached prayer times (offline mode).");
+        } else {
+          const fallbackLocation = loc || { lat: 21.4225, lon: 39.8262, city: "Makkah" };
+          const localTimes = calculateLocalPrayerTimes({
+            latitude: fallbackLocation.lat,
+            longitude: fallbackLocation.lon,
+            method: usedSettings.method,
+            juristic: usedSettings.juristic,
+          });
+          setTimes(localTimes);
+          await savePrayerTimingsCache({
+            timings: localTimes,
+            date: localDateKey(),
+            latitude: fallbackLocation.lat,
+            longitude: fallbackLocation.lon,
+            method: usedSettings.method,
+            juristic: usedSettings.juristic,
+            source: "calculated",
+            savedAt: Date.now(),
+          });
+          await schedulePrayerNotifications(localTimes, usedSettings.adhanEnabled);
+          setErr("Estimated offline prayer times. Please verify when online.");
+        }
+      } catch {
+        const localTimes = calculateLocalPrayerTimes({ latitude: 21.4225, longitude: 39.8262 });
+        setTimes(localTimes);
+      }
+    }
     finally { setLoading(false); }
   };
 
