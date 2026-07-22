@@ -490,7 +490,7 @@ export default function QuranPageReader() {
     if (quranScript !== "tajweed" || !rawTajweedText) return verse.arabicText;
 
     return parseTajweedText(rawTajweedText).map((segment, index) => (
-      <Text key={`${index}-${segment.text}`} style={{ color: getTajweedColor(segment.rule, mode === "dark", colors.onSurface) }}>
+      <Text key={`${index}-${segment.text}`} style={{ color: getTajweedColor(segment.rule, mode === "dark", colors.onSurface), fontFamily: "NotoNaskhArabic", letterSpacing: 0, includeFontPadding: false }}>
         {segment.text}
       </Text>
     ));
@@ -1377,7 +1377,7 @@ export default function QuranPageReader() {
         {/* ═══ Arabic Reading Mode ═══ */}
         {readingMode === "arabic" && (
           <View style={styles.arabicFlowBox}>
-            <Text style={[styles.arabicFlowText, { fontSize: fontSizeArabic, lineHeight: fontSizeArabic * 1.8, color: colors.onSurface, textAlign: "right" }]}>
+            <Text style={[styles.arabicFlowText, { fontFamily: quranScript === "tajweed" ? "NotoNaskhArabic" : styles.arabicFlowText.fontFamily, fontSize: fontSizeArabic, lineHeight: fontSizeArabic * 1.9, color: colors.onSurface, textAlign: "right", letterSpacing: 0, includeFontPadding: false }]}>
               {pageVerses.map(verse => {
                 const isHighlighted = playingAyah?.absolute === verse.absoluteNumber && highlightActive;
                 const cleaned = verse.ayahNumber === 1 && verse.surahNumber !== 1 && verse.surahNumber !== 9

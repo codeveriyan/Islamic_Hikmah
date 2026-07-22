@@ -376,7 +376,7 @@ export default function HadithDetailScreen() {
     const isBookmarked = bookmarkedIds.has(`hadith-${book}-${item.hadithnumber}`);
 
     return (
-      <View style={[styles.hadithCard, { backgroundColor: colors.surfaceSecondary }]}>
+      <View style={[styles.hadithCard, { borderBottomColor: colors.border }]}>
         <View style={styles.cardHeader}>
           <View style={[styles.badge, { backgroundColor: colors.brand + "18" }]}>
             <Text style={[styles.badgeTxt, { color: colors.brand }]}>Hadith #{item.hadithnumber}</Text>
@@ -690,9 +690,10 @@ const styles = StyleSheet.create({
   chapterChipText: { fontSize: 13, fontWeight: "800", maxWidth: 190 },
   chapterRange: { fontSize: 11, fontWeight: "700" },
   hadithCard: {
-    padding: theme.spacing.lg,
-    borderRadius: theme.radius.lg,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
     gap: theme.spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   cardHeader: {
     flexDirection: "row",

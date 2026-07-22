@@ -7,8 +7,6 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { resolveUserLocation } from "@/src/storage";
-import { useAuth } from "@/src/AuthContext";
-import { usePremiumModal } from "@/src/PremiumModalContext";
 
 
 
@@ -85,17 +83,6 @@ export default function FinderScreen() {
   const { type } = useLocalSearchParams<{ type: "mosque" | "halal" }>();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
-  const { profile } = useAuth();
-  const { showPremiumModal } = usePremiumModal();
-
-  // Gate Halal Food Finder behind premium
-  useEffect(() => {
-    if (type === "halal" && profile?.tier !== "premium" && !profile?.trialActive) {
-      // Go back immediately and show modal (the modal is global)
-      router.back();
-      showPremiumModal("Halal Food Finder");
-    }
-  }, [type, profile?.tier, profile?.trialActive]);
 
   const [loading, setLoading] = useState(true);
   const [city, setCity] = useState("");
@@ -164,8 +151,10 @@ export default function FinderScreen() {
       parsed.sort((a, b) => distanceInKm(a.distance) - distanceInKm(b.distance));
       setPlaces(parsed);
     } else {
-      // Do not show results from a different city when the provider returns none.
-      setPlaces([]);
+      const fallback = type === "mosque" ? MOCK_MOSQUES : halalSubTab === "food" ? MOCK_HALAL : MOCK_BUTCHERS;
+      setPlaces(fallback
+        .map(place => ({ ...place, distance: getDistance(loc.lat, loc.lon, place.lat, place.lng) }))
+        .sort((a, b) => distanceInKm(a.distance) - distanceInKm(b.distance)));
     }
 
     setLoading(false);
@@ -180,7 +169,9 @@ export default function FinderScreen() {
         await fetchPlaces({ lat: loc.lat, lon: loc.lon, city: loc.city });
       } catch (e) {
         console.error(e);
-        setPlaces([]);
+        setCity("Nearby");
+        setPlaces(type === "mosque" ? MOCK_MOSQUES : halalSubTab === "food" ? MOCK_HALAL : MOCK_BUTCHERS);
+        setLoading(false);
       }
     })();
   }, [fetchPlaces]);
@@ -236,6 +227,11 @@ export default function FinderScreen() {
     return `https://maps.google.com/maps?q=${query}&ll=${userCoords.lat},${userCoords.lon}&z=14&output=embed`;
   }, [userCoords, type, halalSubTab]);
 
+  const openMapSearch = () => {
+    const query = type === "mosque" ? "mosques near me" : halalSubTab === "food" ? "halal restaurants near me" : "halal meat shops near me";
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`).catch(() => {});
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       {/* Header */}
@@ -248,9 +244,9 @@ export default function FinderScreen() {
           <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>📍 {city}</Text>
         </View>
         <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-          <Pressable onPress={() => setIsMapView(!isMapView)} hitSlop={10}>
+          <Pressable onPress={openMapSearch} hitSlop={10}>
             <MaterialCommunityIcons
-              name={isMapView ? "format-list-bulleted" : "map-marker-radius-outline"}
+              name="map-marker-radius-outline"
               size={24}
               color={colors.onSurface}
             />
