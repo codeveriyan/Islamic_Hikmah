@@ -293,6 +293,17 @@ export default function HomeScreen() {
   // Custom Daily Adhkars selection modal states
   const [dhikrModalVisible, setDhikrModalVisible] = useState(false);
   const [selectedAdhkarCount, setSelectedAdhkarCount] = useState(3);
+  const [quickActionOrder, setQuickActionOrder] = useState<string[]>(HOME_QUICK_ACTIONS.map(action => action.id));
+  const [reorderFrom, setReorderFrom] = useState<string | null>(null);
+  const orderedQuickActions = useMemo(() => {
+    const actionsById = new Map(HOME_QUICK_ACTIONS.map(action => [action.id, action]));
+    const saved = quickActionOrder.map(id => actionsById.get(id)).filter(Boolean) as any[];
+    return [...saved, ...HOME_QUICK_ACTIONS.filter(action => !quickActionOrder.includes(action.id))];
+  }, [quickActionOrder]);
+  const quickActionPages = useMemo(() => Array.from(
+    { length: Math.ceil(orderedQuickActions.length / 9) },
+    (_, page) => orderedQuickActions.slice(page * 9, page * 9 + 9),
+  ), [orderedQuickActions]);
 
   // Action sheet for 3 dots goal menu
   const [activeActionGoal, setActiveActionGoal] = useState<Goal | null>(null);
@@ -301,6 +312,16 @@ export default function HomeScreen() {
   const [showAddCustomModal, setShowAddCustomModal] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState("");
   const [newGoalCategory, setNewGoalCategory] = useState<"prayer" | "quran" | "dhikr" | "other">("other");
+
+  useEffect(() => {
+    AsyncStorage.getItem("hikmah:home-quick-action-order:v1").then(raw => {
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw);
+        if (Array.isArray(saved)) setQuickActionOrder(saved.filter((id): id is string => typeof id === "string"));
+      } catch {}
+    }).catch(() => {});
+  }, []);
 
   // Confetti particles for completion celebration
   const [allCompletedModalVisible, setAllCompletedModalVisible] = useState(false);
@@ -942,6 +963,27 @@ export default function HomeScreen() {
     router.push(a.route as any);
   }, [router, profile, showPremiumModal]);
 
+  const handleQuickActionPress = (action: any) => {
+    if (!reorderFrom) {
+      handleQuickAction(action);
+      return;
+    }
+    if (reorderFrom === action.id) {
+      setReorderFrom(null);
+      return;
+    }
+    setQuickActionOrder(current => {
+      const from = current.indexOf(reorderFrom);
+      const to = current.indexOf(action.id);
+      if (from < 0 || to < 0) return current;
+      const next = [...current];
+      [next[from], next[to]] = [next[to], next[from]];
+      AsyncStorage.setItem("hikmah:home-quick-action-order:v1", JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+    setReorderFrom(null);
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       <LinearGradient
@@ -1022,10 +1064,12 @@ export default function HomeScreen() {
         )}
 
         {/* Quick Actions */}
-        <View style={styles.quickRow}>
-          {HOME_QUICK_ACTIONS.map((a) => (
-            <Pressable key={a.id} onPress={() => handleQuickAction(a)}
-              style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7 }]}>
+        <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.quickPager} contentContainerStyle={styles.quickPagerContent}>
+          {quickActionPages.map((page, pageIndex) => (
+            <View key={`quick-page-${pageIndex}`} style={styles.quickPage}>
+              {page.map((a) => (
+            <Pressable key={a.id} onPress={() => handleQuickActionPress(a)} onLongPress={() => setReorderFrom(a.id)} delayLongPress={350}
+              style={({ pressed }) => [styles.quickBtn, reorderFrom === a.id && { opacity: 0.45, transform: [{ scale: 0.9 }] }, pressed && { opacity: 0.7 }]}>
               <View style={styles.quickIconOnly}>
                 {"image" in a && a.image ? (
                   <Image 
@@ -1047,8 +1091,11 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{a.label}</Text>
             </Pressable>
+              ))}
+            </View>
           ))}
-        </View>
+        </ScrollView>
+        <Text style={[styles.quickHint, { color: colors.onSurfaceMuted }]}>{reorderFrom ? "Tap another icon to swap its position" : "Swipe for more shortcuts · Hold an icon to rearrange"}</Text>
 
         {/* Connection & Daily Goals Section */}
         
@@ -1535,8 +1582,11 @@ const styles = StyleSheet.create({
   countdown: { fontSize: 11, fontWeight: "800", marginTop: 2 },
 
   // Quick actions
-  quickRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
+  quickPager: { marginBottom: 2 },
+  quickPagerContent: { alignItems: "flex-start" },
+  quickPage: { width, flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg },
   quickBtn: { alignItems: "center", width: "30%", marginBottom: 16 },
+  quickHint: { fontSize: 11, textAlign: "center", marginBottom: theme.spacing.md },
   quickIconOnly: {
     width: 64,
     height: 64,

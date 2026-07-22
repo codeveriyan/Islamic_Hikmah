@@ -1,4 +1,5 @@
 import { Tabs } from "expo-router";
+import { StyleSheet } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
@@ -14,22 +15,16 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.brandSecondary,
         tabBarInactiveTintColor: colors.onSurfaceMuted,
         tabBarStyle: {
-          position: "absolute",
-          left: 14,
-          right: 14,
-          bottom: 16,
+          position: "relative",
           backgroundColor: colors.mode === "dark" ? "rgba(15,36,31,0.96)" : "rgba(255,255,255,0.96)",
           borderColor: colors.mode === "dark" ? "rgba(212,175,55,0.22)" : "rgba(16,128,105,0.16)",
-          borderWidth: 1,
-          height: 68,
+          borderWidth: 0,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          height: 64,
           paddingTop: 8,
           paddingBottom: 8,
-          borderRadius: 24,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.18,
-          shadowRadius: 18,
-          elevation: 12,
+          borderRadius: 0,
+          elevation: 0,
         },
         tabBarLabelStyle: { fontSize: 10, fontWeight: "800" },
       }}
