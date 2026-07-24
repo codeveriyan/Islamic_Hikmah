@@ -6,7 +6,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import uuid
 from datetime import datetime, timedelta
 import bcrypt
@@ -249,8 +249,9 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
 app = FastAPI(title="Islamic Hikmah Authentication Backend")
 api_router = APIRouter(prefix="/api")
 
-SUNNAH_API_BASE_URL = "https://api.sunnah.com/v1"
+SUNNAH_API_BASE_URL = os.environ.get("SUNNAH_API_BASE_URL", "https://api.sunnah.com/v1").rstrip("/")
 SUNNAH_API_KEY = os.environ.get("SUNNAH_API_KEY")
+SUNNAH_CACHE_DIR = Path(os.environ.get("SUNNAH_CACHE_DIR", ROOT_DIR / "data" / "sunnah_cache"))
 
 # These collection names are the identifiers exposed by the official Sunnah.com
 # API. Keeping this mapping on the server prevents the mobile client from
@@ -263,30 +264,39 @@ SUNNAH_COLLECTIONS = {
     "daraqutni", "bayhaqi", "nasai-kubra",
 }
 
-@api_router.get("/")
-async def root():
-    return {"message": "Welcome to Islamic Hikmah Authentication API!"}
+def sunnah_cache_path(collection: str, page: int, limit: int) -> Path:
+    safe_collection = "".join(ch for ch in collection if ch.isalnum() or ch in {"-", "_"})
+    return SUNNAH_CACHE_DIR / safe_collection / f"page-{page}-limit-{limit}.json"
 
-@api_router.get("/hadith/{collection}/hadiths")
-def get_sunnah_hadiths(
-    collection: str,
-    page: int = Query(1, ge=1),
-    limit: int = Query(100, ge=1, le=100),
-):
-    """Return a page of verified hadith directly from Sunnah.com's API.
 
-    The API key is deliberately read only on the server, never bundled into
-    the Expo application. The response is passed through without changing
-    hadith text, grades, chapter data, or official numbering.
-    """
-    if collection not in SUNNAH_COLLECTIONS:
-        raise HTTPException(status_code=404, detail="This collection is not available from Sunnah.com.")
+def read_sunnah_cache(collection: str, page: int, limit: int) -> Optional[Dict[str, Any]]:
+    cache_file = sunnah_cache_path(collection, page, limit)
+    if not cache_file.exists():
+        return None
+    try:
+        import json
+        return json.loads(cache_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Failed to read Sunnah.com cache %s: %s", cache_file, exc)
+        return None
+
+
+def write_sunnah_cache(collection: str, page: int, limit: int, payload: Dict[str, Any]) -> None:
+    cache_file = sunnah_cache_path(collection, page, limit)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import json
+        cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except Exception as exc:
+        logger.warning("Failed to write Sunnah.com cache %s: %s", cache_file, exc)
+
+
+def fetch_sunnah_page(collection: str, page: int, limit: int) -> Dict[str, Any]:
     if not SUNNAH_API_KEY:
         raise HTTPException(
             status_code=503,
             detail="Sunnah.com integration is not configured. Set SUNNAH_API_KEY on the server.",
         )
-
     try:
         response = requests.get(
             f"{SUNNAH_API_BASE_URL}/hadiths",
@@ -302,7 +312,73 @@ def get_sunnah_hadiths(
         logger.warning("Sunnah.com API returned %s for collection %s", response.status_code, collection)
         raise HTTPException(status_code=response.status_code, detail="Sunnah.com could not return this collection.")
 
-    return response.json()
+    payload = response.json()
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise HTTPException(status_code=502, detail="Sunnah.com returned an invalid hadith response.")
+    return payload
+
+@api_router.get("/")
+async def root():
+    return {"message": "Welcome to Islamic Hikmah Authentication API!"}
+
+@api_router.get("/hadith/{collection}/hadiths")
+def get_sunnah_hadiths(
+    collection: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(100, ge=1, le=100),
+    refresh: bool = Query(False),
+):
+    """Return a page of verified hadith directly from Sunnah.com's API.
+
+    The API key is deliberately read only on the server, never bundled into
+    the Expo application. The response is passed through without changing
+    hadith text, grades, chapter data, or official numbering.
+    """
+    if collection not in SUNNAH_COLLECTIONS:
+        raise HTTPException(status_code=404, detail="This collection is not available from Sunnah.com.")
+
+    cached = None if refresh else read_sunnah_cache(collection, page, limit)
+    if cached:
+        cached["_source"] = "sunnah-cache"
+        return cached
+
+    try:
+        payload = fetch_sunnah_page(collection, page, limit)
+        write_sunnah_cache(collection, page, limit, payload)
+        payload["_source"] = "sunnah-api"
+        return payload
+    except HTTPException:
+        stale = read_sunnah_cache(collection, page, limit)
+        if stale:
+            stale["_source"] = "sunnah-cache-stale"
+            return stale
+        raise
+
+@api_router.post("/hadith/{collection}/backfill")
+def backfill_sunnah_collection(
+    collection: str,
+    limit: int = Query(100, ge=1, le=100),
+):
+    """Download every available page for one Sunnah.com collection into disk cache."""
+    if collection not in SUNNAH_COLLECTIONS:
+        raise HTTPException(status_code=404, detail="This collection is not available from Sunnah.com.")
+
+    page = 1
+    total_pages = 0
+    total_hadith = 0
+    while page:
+        payload = fetch_sunnah_page(collection, page, limit)
+        write_sunnah_cache(collection, page, limit, payload)
+        total_pages += 1
+        total_hadith += len(payload.get("data", []))
+        page = payload.get("next") or 0
+
+    return {
+        "collection": collection,
+        "pages_cached": total_pages,
+        "hadith_cached": total_hadith,
+        "cache_dir": str(SUNNAH_CACHE_DIR),
+    }
 
 # POST /signup
 @api_router.post("/signup", response_model=TokenResponse)

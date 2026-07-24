@@ -120,7 +120,13 @@ function analyzeIngredients(ingredients: string) {
   if (matched.some(item => item.status === "haram")) verdict = "haram";
   else if (matched.some(item => item.status === "mushbooh")) verdict = "mushbooh";
 
-  return { verdict, matched, hasCertified, confidence: matched.length ? "medium" as const : "low" as const };
+  return {
+    verdict,
+    matched,
+    hasCertified,
+    confidence: matched.length ? "medium" as const : "low" as const,
+    source: "supplied product text",
+  };
 }
 
 export default function HalalScannerScreen() {

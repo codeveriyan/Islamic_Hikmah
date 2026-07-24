@@ -26,6 +26,7 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     more: "More",
     savePreferences: "Save Preferences",
     search: "Search...",
+    searchPlaceholder: "Search Hadith or Hadith #...",
     resume: "Resume",
     cancel: "Cancel",
     save: "Save",

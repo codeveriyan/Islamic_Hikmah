@@ -483,7 +483,7 @@ export default function QiblaScreen() {
           onPress={() => Alert.alert("Calibrate your compass", "Move your phone in a figure-eight motion and keep it away from metal or magnetic cases. The fallback compass is less accurate until calibrated.")}
           style={[styles.calibrationBanner, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
         >
-          <MaterialCommunityIcons name="compass-alert" size={18} color={colors.brand} />
+          <MaterialCommunityIcons name="compass-outline" size={18} color={colors.brand} />
           <Text style={{ flex: 1, color: colors.onSurface, fontSize: 12 }}>Compass calibration recommended</Text>
           <MaterialCommunityIcons name="information-outline" size={18} color={colors.onSurfaceMuted} />
         </Pressable>

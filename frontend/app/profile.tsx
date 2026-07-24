@@ -31,6 +31,12 @@ export default function ProfileScreen() {
   const [photoURL, setPhotoURL] = useState(profile?.photoURL || "");
   const [updating, setUpdating] = useState(false);
 
+  const openProfileEditor = () => {
+    setName(profile?.name || "");
+    setPhotoURL(profile?.photoURL || "");
+    setEditModalVisible(true);
+  };
+
   const chooseProfilePhoto = async (source: "camera" | "gallery") => {
     try {
       const permission = source === "camera"
@@ -154,11 +160,7 @@ export default function ProfileScreen() {
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.onSurface }]}>User Profile</Text>
         <Pressable 
-          onPress={() => {
-            setName(profile?.name || "");
-            setPhotoURL(profile?.photoURL || "");
-            setEditModalVisible(true);
-          }}
+          onPress={openProfileEditor}
           style={[styles.editIconBtn, { backgroundColor: colors.surfaceSecondary }]}
         >
           <MaterialCommunityIcons name="pencil-outline" size={20} color={colors.brand} />
@@ -168,7 +170,12 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* User Card */}
         <View style={styles.profileCard}>
-          <View style={[styles.avatarWrap, { borderColor: colors.brand }]}>
+          <Pressable
+            onPress={openProfileEditor}
+            accessibilityRole="button"
+            accessibilityLabel="Edit profile picture and name"
+            style={({ pressed }) => [styles.avatarWrap, { borderColor: colors.brand }, pressed && { opacity: 0.8 }]}
+          >
             {profile?.photoURL ? (
               <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
             ) : (
@@ -178,8 +185,18 @@ export default function ProfileScreen() {
                 </Text>
               </View>
             )}
-          </View>
-          <Text style={[styles.profileName, { color: colors.onSurface }]}>{profile?.name || "Islamic Hikmah User"}</Text>
+            <View style={[styles.avatarEditBadge, { backgroundColor: colors.brand, borderColor: colors.surface }]}>
+              <MaterialCommunityIcons name="camera-outline" size={15} color={colors.onBrandPrimary} />
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={openProfileEditor}
+            accessibilityRole="button"
+            accessibilityLabel="Edit profile name"
+            hitSlop={6}
+          >
+            <Text style={[styles.profileName, { color: colors.onSurface }]}>{profile?.name || "Islamic Hikmah User"}</Text>
+          </Pressable>
           <Text style={[styles.profileEmail, { color: colors.onSurfaceSecondary }]}>{profile?.email}</Text>
           <View style={[styles.badge, { backgroundColor: colors.brand + "15" }]}>
             <Text style={[styles.badgeTxt, { color: colors.brand }]}>
@@ -236,8 +253,12 @@ export default function ProfileScreen() {
         }]}>
           {profile?.tier === 'premium' ? (
             // ─── PREMIUM user ────────────────────────────────────────────────
-            <>
-              <View style={styles.subscriptionRow}>
+            <Pressable
+              onPress={() => router.push('/premium')}
+              accessibilityRole="button"
+              accessibilityLabel="Open premium access page"
+              style={({ pressed }) => [styles.subscriptionRow, pressed && { opacity: 0.75 }]}
+            >
                 <Text style={styles.subscriptionCrown}>👑</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.subscriptionTitle, { color: '#d4af37' }]}>Premium Member</Text>
@@ -246,8 +267,7 @@ export default function ProfileScreen() {
                 <View style={[styles.subscriptionBadge, { backgroundColor: '#d4af37' }]}>
                   <Text style={styles.subscriptionBadgeTxt}>PREMIUM</Text>
                 </View>
-              </View>
-            </>
+            </Pressable>
           ) : profile?.trialActive && trialCountdown ? (
             // ─── TRIAL user ──────────────────────────────────────────────────
             <>
@@ -428,6 +448,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     padding: 3,
     marginBottom: 8,
+    position: "relative",
   },
   avatar: {
     width: "100%",
@@ -444,6 +465,17 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 36,
     fontWeight: "800",
+  },
+  avatarEditBadge: {
+    position: "absolute",
+    right: -4,
+    bottom: -4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 3,
+    alignItems: "center",
+    justifyContent: "center",
   },
   profileName: {
     fontSize: 22,

@@ -425,7 +425,7 @@ export default function PremiumScreen() {
               <MaterialCommunityIcons name="crown" size={32} color="#FFD700" />
               <Text style={[styles.modalTitle, { color: colors.onSurface }]}>UPI Payment Checkout</Text>
               <Text style={[styles.modalSubtitle, { color: colors.onSurfaceMuted }]}>
-                No platform commissions. 100% of your support goes to the application's servers.
+                No platform commissions. 100% of your support goes to the application&apos;s servers.
               </Text>
             </View>
 

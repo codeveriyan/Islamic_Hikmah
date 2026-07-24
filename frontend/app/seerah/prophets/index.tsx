@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, FlatList, Pressable, StatusBar } from "react-native";
+import { useState } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, StatusBar, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -10,6 +11,12 @@ import { prophetStories } from "@/src/data/prophets";
 export default function ProphetsIndexScreen() {
   const router = useRouter();
   const { colors, mode } = useTheme();
+  const [search, setSearch] = useState("");
+
+  const filteredProphets = prophetStories.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.title.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
@@ -22,7 +29,7 @@ export default function ProphetsIndexScreen() {
         </Pressable>
         <View style={{ flex: 1, alignItems: "center" }}>
           <Text style={[styles.headerTitle, { color: colors.onSurface }]}>Stories of the Prophets</Text>
-          <Text style={[styles.headerSub, { color: colors.brand }]}>قصص الأنبياء</Text>
+          <Text style={[styles.headerSub, { color: colors.brand }]}>قصص الأنبياء • Ibn Kathir</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
@@ -30,7 +37,7 @@ export default function ProphetsIndexScreen() {
       {/* Hero Banner */}
       <View style={[styles.heroBanner, { backgroundColor: colors.surfaceSecondary }]}>
         <View style={styles.heroLeft}>
-          <Text style={[styles.heroTitle, { color: colors.onSurface }]}>The Best of Stories</Text>
+          <Text style={[styles.heroTitle, { color: colors.onSurface }]}>Stories of the Prophets by Ibn Kathir</Text>
           <Text style={[styles.heroSub, { color: colors.onSurfaceMuted }]}>
             {"\"We relate to you, [O Muhammad], the best of stories in what We have revealed to you of this Qur'an...\""}
           </Text>
@@ -40,11 +47,30 @@ export default function ProphetsIndexScreen() {
         </View>
       </View>
 
+      {/* Search Input */}
+      <View style={{ paddingHorizontal: theme.spacing.lg, marginBottom: 12 }}>
+        <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search 29 Prophets (e.g. Musa, Yusuf, Ibrahim...)"
+            placeholderTextColor={colors.onSurfaceMuted}
+            style={[styles.searchInput, { color: colors.onSurface }]}
+          />
+          {search.length > 0 && (
+            <Pressable onPress={() => setSearch("")}>
+              <MaterialCommunityIcons name="close-circle" size={18} color={colors.onSurfaceMuted} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+
       {/* List */}
       <FlatList
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        data={prophetStories}
+        data={filteredProphets}
         keyExtractor={(item) => item.id}
         renderItem={({ item: story, index }) => (
           <Pressable
@@ -144,5 +170,18 @@ const styles = StyleSheet.create({
   },
   storyTitle: {
     fontSize: 14,
+  },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
   },
 });

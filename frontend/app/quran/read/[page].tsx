@@ -19,6 +19,7 @@ import { JUZ_DATA } from "@/src/data/juzData";
 import { SURAH_LIST, SurahMeta } from "@/src/data/surahList";
 import surahInfoDetailed from "@/src/data/quran/surahInfoDetailed.json";
 import transliterationWbw from "@/src/data/quran/transliterationWbw.json";
+import transliterationTajweedData from "@/src/data/quran/transliterationTajweed.json";
 import naqaaReciters from "@/src/data/quran/naqaaReciters.json";
 import {
   addQuranBookmark, removeQuranBookmark, getQuranBookmarks, QuranBookmark,
@@ -31,7 +32,9 @@ type LocalSurah = { number: number; name: string; englishName: string; arabicNam
 type MappedAyah = { surah: number; ayah: number };
 type PageMap = { page: number; ayahs: MappedAyah[] };
 type WbwWord = { position: number; text_uthmani: string; translation: { text: string }; transliteration: { text: string }; char_type_name: string };
+type VerseTiming = { verse_key: string; timestamp_from: number; timestamp_to: number };
 type TafsirSource = { id: number; name: string; author_name: string; slug: string; language_name: string };
+type ReciterCategory = "Recitations" | "Haramain Taraweeh" | "Non-Hafs Recitations" | "Recitations with Translations";
 type ApiReciter = {
   id: number;
   reciter_name: string;
@@ -40,6 +43,8 @@ type ApiReciter = {
   audio_type?: "ayah" | "chapter";
   url_type?: "api" | "everyayah" | "quranicaudio" | "naqaastudio";
   path?: string;
+  category?: ReciterCategory;
+  categoryGroup?: string;
 };
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -47,6 +52,190 @@ const QURAN: LocalSurah[] = quranData as LocalSurah[];
 const PAGE_MAPPING: PageMap[] = pageMappingData as PageMap[];
 const TOTAL_PAGES = 604;
 const WBW_DATA: Record<string, string> = transliterationWbw as any;
+
+function getArabicFontFamily(script: string): string {
+  switch (script) {
+    case "king_fahad":
+      return "AmiriBold";
+    case "indopak":
+      return "NotoNaskhArabic";
+    case "tajweed":
+      return "NotoNaskhArabic";
+    case "uthmani":
+    default:
+      return "ScheherazadeNew";
+  }
+}
+
+/** QuranicAudio offers complete chapter files, which also makes these recitations
+ * available for the reader's chapter download option. Entries already supplied by
+ * the app's existing reciter sources are intentionally omitted. */
+const QURANICAUDIO_CHAPTER_RECITERS: ApiReciter[] = [
+  [1, "Abdullah Awad al-Juhani", "abdullaah_3awwaad_al-juhaynee"],
+  [2, "Abdullah Basfar", "abdullaah_basfar"],
+  [8, "Ali Abdur-Rahman al-Huthaify", "huthayfi"],
+  [11, "AbdulMuhsin al-Qasim", "abdul_muhsin_alqasim"],
+  [15, "AbdulBari ath-Thubaity", "thubaity"],
+  [21, "AbdulAzeez al-Ahmad", "abdulazeez_al-ahmad"],
+  [40, "AbdulWadud Haneef", "abdulwadood_haneef"],
+  [125, "AbdulWadood Haneef", "abdul_wadood_haneef_rare", "Rare"],
+  [44, "Aziz Alili", "aziz_alili"],
+  [55, "Al-Hussayni Al-'Azazy (with Children)", "alhusaynee_al3azazee_with_children", "With Children"],
+  [68, "Abdur-Razaq bin Abtan al-Dulaimi", "abdulrazaq_bin_abtan_al_dulaimi", "Mujawwad"],
+  [72, "Abdullah Khayat", "khayat"],
+  [81, "Adel Kalbani", "adel_kalbani"],
+  [106, "AbdulKareem Al Hazmi", "abdulkareem_al_hazmi"],
+  [108, "Abdul-Mun'im Abdul-Mubdi'", "abdulmun3im_abdulmubdi2"],
+  [109, "Abdur-Rashid Sufi", "abdurrashid_sufi"],
+  [113, "Ahmad al-Huthaify", "ahmad_alhuthayfi"],
+  [115, "Abu Bakr al-Shatri", "abu_bakr_ash-shatri_tarawee7", "Taraweeh"],
+  [124, "Abdullah Matroud", "abdullah_matroud"],
+  [126, "Ahmad Nauina", "ahmad_nauina"],
+  [127, "Akram Al-Alaqmi", "akram_al_alaqmi"],
+  [128, "Ali Hajjaj Alsouasi", "ali_hajjaj_alsouasi"],
+  [135, "Asim Abdul Aleem", "asim_abdulaleem"],
+  [136, "Abdallah Abdal", "abdallah_abdal"],
+  [162, "Abdulrahman al-Shahat", "abdulrahman_al_shahat"],
+  [163, "Abdulaziz bin Saleh al-Zahrani", "abdulaziz_bin_saleh_alzahrani"],
+  [166, "Alijon Qari", "alijon_qari/mp3"],
+  [167, "Badr Al Turki", "badr_al_turki/mp3"],
+  [74, "Dr. Shawqy Hamed", "dr.shawqy_7amed/murattal"],
+  [14, "Fares Abbad", "fares"],
+  [170, "Farman Shawani", "farman_shawani/mp3"],
+  [64, "Hamad Sinan", "hamad_sinan"],
+  [85, "Hatem Farid", "hatem_farid/collection"],
+  [28, "Ibrahim Al-Jibrin", "jibreen"],
+  [93, "Imad Zuhair Hafez", "imad_zuhair_hafez"],
+  [103, "Ibrahim Al Akhdar", "ibrahim_al_akhdar"],
+  [116, "Idrees Abkar", "idrees_abkar"],
+  [9, "Khalid al-Qahtani", "khaalid_al-qahtaanee"],
+  // QuranicAudio publishes this as a selection of surahs rather than a complete Quran.
+  [105, "Khalid Al Ghamdi", "khalid_alghamdi", "Selected Surahs"],
+  [41, "Muhammad Siddiq al-Minshawi", "minshawi_mujawwad", "Mujawwad"],
+  [12, "Muhammad Jibreel", "muhammad_jibreel/complete"],
+  [26, "Muhammad al-Mehysni", "mehysni"],
+  [53, "Muhammad al-Luhaidan", "muhammad_alhaidan"],
+  [70, "Muhammad Abdul-Kareem", "muhammad_abdulkareem"],
+  [71, "Mustafa al-'Azawi", "mustafa_al3azzawi"],
+  [79, "Muhammad Hassan", "mu7ammad_7assan"],
+  [88, "Mostafa Ismaeel", "mostafa_ismaeel"],
+  [90, "Muhammad Sulaiman Patel", "muhammad_patel"],
+  [91, "Mohammad Al-Tablawi", "mohammad_altablawi"],
+  [92, "Mohammad Ismaeel Al-Muqaddim", "mohammad_ismaeel_almuqaddim"],
+  [107, "Muhammad Ayyoob", "muhammad_ayyoob_hq", "Taraweeh"],
+  [118, "Masjid Quba Taraweeh 1434", "masjid_quba_1434", "Taraweeh"],
+  [119, "Muhammad Khaleel", "muhammad_khaleel"],
+  [129, "Mahmood Ali Al-Bana", "mahmood_ali_albana"],
+  [164, "Mahmoud Khaleel Al-Husary", "generated/husary_mujawwad", "Mujawwad"],
+  [10, "Nabil ar-Rifai", "nabil_rifa3i"],
+  [104, "Nasser Al Qatami", "nasser_bin_ali_alqatami"],
+  [169, "Peshawa Qadir al-Kurdi", "peshawa_qadir_al-kurdi/mp3"],
+  [168, "Raad Mohammad al-Kurdi", "raad_mohammad_al_kurdi/mp3"],
+  [17, "Sahl Yasin", "sahl_yaaseen"],
+  [18, "Salah Bukhatir", "salaah_bukhaatir"],
+  [20, "Sudais and Shuraym", "sodais_and_shuraim"],
+  [35, "Saleh al Taleb", "saleh_al_taleb"],
+  [43, "Salah al-Budair", "salahbudair"],
+  [61, "Sadaqat `Ali", "sadaqat_ali"],
+  [80, "Salah Al-Hashim", "salah_alhashim"],
+  [23, "Tawfeeq ibn Sa`id as-Sawa'igh", "tawfeeq_bin_saeed-as-sawaaigh"],
+  [130, "Wadee Hammadi Al Yamani", "wadee_hammadi_al-yamani"],
+].map(([catalogId, reciter_name, folder, style = "Murattal"]) => ({
+  id: 4000 + (catalogId as number),
+  reciter_name: reciter_name as string,
+  style: style as string,
+  translated_name: { name: reciter_name as string },
+  audio_type: "chapter" as const,
+  url_type: "quranicaudio" as const,
+  path: `https://download.quranicaudio.com/quran/${folder}/`,
+  category: "Recitations" as const,
+}));
+
+// The Haramain collection is organised by the mosque and Hijri year on QuranicAudio.
+const HARAMAIN_TARAWEEH_RECITERS: ApiReciter[] = [
+  [29, "Makkah", 1426], [34, "Makkah", 1427], [45, "Makkah", 1425], [59, "Makkah", 1428],
+  [63, "Makkah", 1424], [77, "Makkah", 1429], [82, "Makkah", 1430], [83, "Makkah", 1431],
+  [94, "Makkah", 1432], [98, "Makkah", 1433], [120, "Makkah", 1434], [131, "Makkah", 1435],
+  [132, "Makkah", 1436], [133, "Makkah", 1437], [150, "Makkah", 1438], [151, "Makkah", 1439],
+  [152, "Makkah", 1440], [153, "Makkah", 1441], [154, "Makkah", 1442], [175, "Makkah", 1443],
+  [176, "Makkah", 1444], [177, "Makkah", 1445], [178, "Makkah", 1446], [179, "Makkah", 1447],
+  [25, "Madinah", 1419], [30, "Madinah", 1426], [33, "Madinah", 1427], [46, "Madinah", 1423],
+  [73, "Madinah", 1428], [84, "Madinah", 1431], [99, "Madinah", 1429], [100, "Madinah", 1430],
+  [101, "Madinah", 1432], [102, "Madinah", 1433], [123, "Madinah", 1435], [143, "Madinah", 1434],
+  [144, "Madinah", 1436], [145, "Madinah", 1437], [146, "Madinah", 1439], [147, "Madinah", 1440],
+  [148, "Madinah", 1441], [149, "Madinah", 1442], [171, "Madinah", 1443], [172, "Madinah", 1444],
+  [173, "Madinah", 1445], [174, "Madinah", 1446], [180, "Madinah", 1447],
+].map(([catalogId, mosque, year]) => {
+  const folder = `${String(mosque).toLowerCase()}_${year}${Number(year) >= 1443 ? "/mp3" : ""}`;
+  return {
+    id: 5000 + (catalogId as number),
+    reciter_name: `${mosque} Taraweeh ${year}`,
+    style: "Taraweeh",
+    translated_name: { name: `${mosque} Taraweeh ${year}` },
+    audio_type: "chapter" as const,
+    url_type: "quranicaudio" as const,
+    path: `https://download.quranicaudio.com/quran/${folder}/`,
+    category: "Haramain Taraweeh" as const,
+    categoryGroup: mosque as string,
+  };
+});
+
+const NON_HAFS_RECITERS: ApiReciter[] = [
+  [54, "AbdulBaset AbdulSamad", "abdulbaset_warsh", "Warsh"],
+  [60, "Abdur-Rashid Sufi", "abdurrashid_sufi_soosi_rec", "Soosi"],
+  [62, "Abdur-Rashid Sufi", "abdurrashid_sufi_-_khalaf_3an_7amza_recitation", "Khalaf"],
+  [110, "Abdur-Rashid Sufi", "abdurrashid_sufi_abi_al7arith", "Abi al-Haarith an al-Kasaa'ee"],
+  [111, "Abdur-Rashid Sufi", "abdurrashid_sufi_doori", "ad-Doori an Abi Amr"],
+  [112, "Abdur-Rashid Sufi", "abdurrashid_sufi_shu3ba", "Shu'bah an Asim"],
+  [114, "Ali al-Huthaify", "huthayfi_qaloon", "Qaloon"],
+  [137, "Abdur-Rashid Sufi", "abdurrashid_sufi_soosi_2020", "Soosi (2020)"],
+  [78, "Mahmoud Khalil Al-Husary", "mahmood_khaleel_al-husaree_doori", "Doori"],
+  [155, "Noreen Siddiq", "noreen_siddiq", "ad-Doori an Abi Amr"],
+].map(([catalogId, reciter_name, folder, style]) => ({
+  id: 6000 + (catalogId as number),
+  reciter_name: reciter_name as string,
+  style: style as string,
+  translated_name: { name: reciter_name as string },
+  audio_type: "chapter" as const,
+  url_type: "quranicaudio" as const,
+  path: `https://download.quranicaudio.com/quran/${folder}/`,
+  category: "Non-Hafs Recitations" as const,
+  categoryGroup: style as string,
+}));
+
+const TRANSLATION_RECITERS: ApiReciter[] = [
+  [47, "AbdulBaset AbdulSamad with Naeem Sultan", "abdulbaset_with_naeem_sultan_pickthall", "Pickthall Translation"],
+  [57, "AbdulBaset AbdulSamad with Ibrahim Walk", "abdulbasit_w_ibrahim_walk_si", "Saheeh Intl Translation"],
+  [66, "Abdullah Basfar with Ibrahim Walk", "abdullah_basfar_w_ibrahim_walk_si", "Saheeh Intl Translation"],
+  [165, "Ibrahim Walk", "ibrahim_walk", "English Translation"],
+  [39, "Muhammad Ayyub with Mikaal Waters", "muhammad_ayub_and_mikaal_waters", "Muhsin Khan Translation"],
+  [49, "Mishari ibn Rashid al-`Afasy with Saabir", "mishaari_with_saabir_mkhan", "Muhsin Khan Translation"],
+  [58, "Mishari ibn Rashid al-`Afasy with Ibrahim Walk", "mishaari_w_ibrahim_walk_si", "Saheeh Intl Translation"],
+  [36, "Sudais and Shuraym with Aslam Athar", "sudais_shuraim_and_english", "Pickthall Translation"],
+  [42, "Shakir Qasami with Aslam Athar", "shakir_qasami_with_english", "Pickthall Translation"],
+  [48, "Sudais and Shuraym with Naeem Sultan", "sudais_shuraim_with_naeem_sultan_pickthall", "Pickthall Translation"],
+  [67, "Sudais and Shuraym", "sudais_and_shuraim_with_urdu", "Urdu Translation"],
+].map(([catalogId, reciter_name, folder, style]) => ({
+  id: 7000 + (catalogId as number),
+  reciter_name: reciter_name as string,
+  style: style as string,
+  translated_name: { name: reciter_name as string },
+  audio_type: "chapter" as const,
+  url_type: "quranicaudio" as const,
+  path: `https://download.quranicaudio.com/quran/${folder}/`,
+  category: "Recitations with Translations" as const,
+  categoryGroup: style as string,
+}));
+
+const reciterIdentity = (reciter: Pick<ApiReciter, "reciter_name" | "style">) =>
+  `${reciter.reciter_name.toLowerCase().replace(/[^a-z0-9]/g, "")}:${(reciter.style || "Murattal").toLowerCase()}`;
+
+const RECITER_CATEGORIES: ReciterCategory[] = [
+  "Recitations",
+  "Haramain Taraweeh",
+  "Non-Hafs Recitations",
+  "Recitations with Translations",
+];
 
 // Build surah→first page lookup once
 const SURAH_FIRST_PAGE: Record<number, number> = {};
@@ -58,6 +247,10 @@ PAGE_MAPPING.forEach(p => {
 
 // ─── Fallback reciters (if API fails) ────────────────────────────────────────
 const FALLBACK_RECITERS: ApiReciter[] = [
+  ...QURANICAUDIO_CHAPTER_RECITERS,
+  ...HARAMAIN_TARAWEEH_RECITERS,
+  ...NON_HAFS_RECITERS,
+  ...TRANSLATION_RECITERS,
   {
     id: 601,
     reciter_name: "Sheikh Noreen Mohammed Siddiq",
@@ -324,11 +517,9 @@ export default function QuranPageReader() {
   const fontSizeTrans = useMemo(() => 10 + fontSizeTransScale * 1.5, [fontSizeTransScale]);
 
   // ─── Quran.com settings options (Screenshot settings incorporated) ───────
-  const [quranScript, setQuranScript] = useState<"uthmani" | "indopak" | "tajweed">("uthmani");
+  const [quranScript, setQuranScript] = useState<"uthmani" | "king_fahad" | "indopak" | "tajweed">("uthmani");
   const [tajweedTexts, setTajweedTexts] = useState<Record<string, string>>({});
-  const [fontStyle, setFontStyle] = useState<"King Fahad Complex" | "Madani" | "IndoPak">("King Fahad Complex");
   const [copyAsGlyphs, setCopyAsGlyphs] = useState(false);
-  const [showFontStyleDropdown, setShowFontStyleDropdown] = useState(false);
 
   // ─── Surah Selector (Feature 1) ───────────────────────────────────────────
   const [showSurahSelector, setShowSurahSelector] = useState(false);
@@ -385,11 +576,16 @@ export default function QuranPageReader() {
   const [highlightActive, setHighlightActive] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const remainingRepeats = useRef(0);
+  const handledCompletion = useRef<string | null>(null);
+  const sourceChangePending = useRef(false);
+  const verseOffsets = useRef<Record<number, number>>({});
 
   // ─── Reciters (Feature 6) ─────────────────────────────────────────────────
   const [allReciters, setAllReciters] = useState<ApiReciter[]>(FALLBACK_RECITERS);
   const [selectedReciter, setSelectedReciter] = useState<ApiReciter>(FALLBACK_RECITERS[0]);
+  const [reciterCategory, setReciterCategory] = useState<ReciterCategory | "All">("All");
   const [audioUrlCache, setAudioUrlCache] = useState<Record<string, string>>({});
+  const [chapterVerseTimings, setChapterVerseTimings] = useState<VerseTiming[]>([]);
 
   // ─── Options Menu ─────────────────────────────────────────────────────────
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
@@ -429,6 +625,14 @@ export default function QuranPageReader() {
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
 
+  const getTimingReciterId = (reciter: ApiReciter) => {
+    if (reciter.url_type === "api" && reciter.path && /^\d+$/.test(reciter.path)) return Number(reciter.path);
+    // These legacy IDs are Quran.com QDC IDs. Other imported chapter recordings
+    // use the QDC Alafasy timing model, scaled to their actual duration.
+    if (reciter.id > 0 && reciter.id < 200) return reciter.id;
+    return 7;
+  };
+
   // ─── Data: Page Verses ─────────────────────────────────────────────────────
   const getAbsoluteAyahNumber = (surahNum: number, ayahNum: number) => {
     let count = 0;
@@ -442,11 +646,15 @@ export default function QuranPageReader() {
     return mapping.ayahs.map(a => {
       const surah = QURAN.find(s => s.number === a.surah);
       const ayah = surah?.ayahs.find(ay => ay.numberInSurah === a.ayah);
+      const key = `${a.surah}:${a.ayah}`;
+      const highQualityTranslit = (transliterationTajweedData as Record<string, string>)[key] || ayah?.transliteration || "";
+      const fullSurahName = surah?.name || SURAH_LIST.find(s => s.number === a.surah)?.englishName || `Surah ${a.surah}`;
+
       return {
         surahNumber: a.surah, ayahNumber: a.ayah,
-        surahName: surah?.englishName || "", surahArabicName: surah?.arabicName || "",
+        surahName: fullSurahName, surahArabicName: surah?.arabicName || "",
         surahType: surah?.type || "Meccan", arabicText: ayah?.arabic || "",
-        translationText: ayah?.translation || "", transliterationText: ayah?.transliteration || "",
+        translationText: ayah?.translation || "", transliterationText: highQualityTranslit,
         absoluteNumber: getAbsoluteAyahNumber(a.surah, a.ayah), surahObj: surah,
       };
     });
@@ -489,8 +697,18 @@ export default function QuranPageReader() {
     const rawTajweedText = tajweedTexts[`${verse.surahNumber}:${verse.ayahNumber}`];
     if (quranScript !== "tajweed" || !rawTajweedText) return verse.arabicText;
 
+    const fontFam = getArabicFontFamily(quranScript);
     return parseTajweedText(rawTajweedText).map((segment, index) => (
-      <Text key={`${index}-${segment.text}`} style={{ color: getTajweedColor(segment.rule, mode === "dark", colors.onSurface), fontFamily: "NotoNaskhArabic", letterSpacing: 0, includeFontPadding: false }}>
+      <Text
+        key={`${index}-${segment.text}`}
+        style={{
+          color: getTajweedColor(segment.rule, mode === "dark", colors.onSurface),
+          fontFamily: fontFam,
+          fontSize: fontSizeArabic,
+          lineHeight: fontSizeArabic * 2.3,
+          letterSpacing: 0,
+        }}
+      >
         {segment.text}
       </Text>
     ));
@@ -531,18 +749,23 @@ export default function QuranPageReader() {
             translated_name: { name: item.name },
             audio_type: "ayah",
             url_type: "everyayah",
-            path: item.subfolder
+            path: item.subfolder,
+            category: "Recitations",
           });
         });
         
         if (dynamicList.length > 0) {
-          const chapterFallbacks = FALLBACK_RECITERS.filter(r => r.audio_type === "chapter");
-          setAllReciters([...dynamicList, ...chapterFallbacks]);
+          const dynamicReciterIds = new Set(dynamicList.map(reciterIdentity));
+          const chapterFallbacks = FALLBACK_RECITERS.filter(
+            r => r.audio_type === "chapter" && !dynamicReciterIds.has(reciterIdentity(r)),
+          );
+          const availableReciters = [...dynamicList, ...chapterFallbacks];
+          setAllReciters(availableReciters);
 
           const savedRecVal = await AsyncStorage.getItem("quran_selected_reciter_v2");
           if (savedRecVal) {
             const savedRec = JSON.parse(savedRecVal);
-            const found = dynamicList.find(r => r.reciter_name === savedRec.reciter_name && r.style === savedRec.style);
+            const found = availableReciters.find(r => reciterIdentity(r) === reciterIdentity(savedRec));
             if (found) setSelectedReciter(found);
           }
         }
@@ -567,8 +790,6 @@ export default function QuranPageReader() {
 
         const scriptVal = await AsyncStorage.getItem("quran_script");
         if (scriptVal) setQuranScript(scriptVal as any);
-        const fStyleVal = await AsyncStorage.getItem("quran_font_style");
-        if (fStyleVal) setFontStyle(fStyleVal as any);
         const glyphsVal = await AsyncStorage.getItem("quran_copy_glyphs");
         if (glyphsVal) setCopyAsGlyphs(glyphsVal === "true");
 
@@ -580,6 +801,19 @@ export default function QuranPageReader() {
 
         const spd = await AsyncStorage.getItem("quran_playback_speed");
         if (spd) setPlaybackSpeed(parseFloat(spd));
+
+        const savedRepeatCount = await AsyncStorage.getItem("quran_repeat_count");
+        if (savedRepeatCount) {
+          const count = Math.max(0, Math.min(3, parseInt(savedRepeatCount, 10) || 0));
+          setRepeatCount(count);
+          remainingRepeats.current = count;
+        }
+        const savedLoopSurah = await AsyncStorage.getItem("quran_loop_surah");
+        if (savedLoopSurah) setLoopSurah(savedLoopSurah === "true");
+        const savedHighlight = await AsyncStorage.getItem("quran_highlight_active_verses");
+        if (savedHighlight) setHighlightActive(savedHighlight === "true");
+        const savedAutoScroll = await AsyncStorage.getItem("quran_auto_scroll_to_verse");
+        if (savedAutoScroll) setAutoScroll(savedAutoScroll === "true");
 
         const transId = await AsyncStorage.getItem("quran_selected_translation_id");
         if (transId) setSelectedTranslationId(parseInt(transId, 10));
@@ -609,6 +843,20 @@ export default function QuranPageReader() {
       } catch (e) { console.warn("Settings load failed:", e); }
     })();
   }, [currentPageNum]);
+
+  // Auto-switch to a translation reciter when in translation reading mode
+  useEffect(() => {
+    if (readingMode === "translation") {
+      const isTranslationReciter =
+        selectedReciter.category === "Recitations with Translations" ||
+        selectedReciter.reciter_name.toLowerCase().includes("translation") ||
+        (selectedReciter.style && selectedReciter.style.toLowerCase().includes("translation"));
+      if (!isTranslationReciter) {
+        const transRec = allReciters.find(r => r.category === "Recitations with Translations") || TRANSLATION_RECITERS[0];
+        if (transRec) selectReciter(transRec);
+      }
+    }
+  }, [readingMode, allReciters]);
 
   // ─── Fetch: Translations list, Tafsir sources, Reciters ───────────────────
   useEffect(() => {
@@ -641,6 +889,7 @@ export default function QuranPageReader() {
                 audio_type: "ayah",
                 url_type: "api",
                 path: String(apiRec.id),
+                category: "Recitations",
               });
             }
           });
@@ -888,8 +1137,74 @@ export default function QuranPageReader() {
     }
   };
 
+  // QuranicAudio recordings are whole-surah files. Load per-ayah timing metadata
+  // so Read Quran can still follow the active verse while those files play.
+  useEffect(() => {
+    const surah = playingAyah?.surah || pageVerses[0]?.surahNumber;
+    if (selectedReciter.audio_type !== "chapter" || !surah) {
+      setChapterVerseTimings([]);
+      return;
+    }
+
+    let active = true;
+    const timingReciterId = getTimingReciterId(selectedReciter);
+    const cacheKey = `hikmah:read-verse-timings:${timingReciterId}:${surah}`;
+
+    (async () => {
+      try {
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached) {
+          const timings = JSON.parse(cached);
+          if (Array.isArray(timings) && timings.length > 0 && active) {
+            setChapterVerseTimings(timings);
+            return;
+          }
+        }
+
+        const response = await fetch(`https://api.qurancdn.com/api/qdc/audio/reciters/${timingReciterId}/audio_files?chapter=${surah}&segments=true`);
+        if (!response.ok) throw new Error("Unable to load verse timings");
+        const data = await response.json();
+        const timings = data.audio_files?.[0]?.verse_timings || [];
+        if (active) setChapterVerseTimings(timings);
+        if (Array.isArray(timings) && timings.length > 0) {
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(timings));
+        }
+      } catch {
+        if (active) setChapterVerseTimings([]);
+      }
+    })();
+
+    return () => { active = false; };
+  }, [selectedReciter, playingAyah?.surah, pageVerses]);
+
+  useEffect(() => {
+    if (
+      selectedReciter.audio_type !== "chapter" ||
+      !status.playing ||
+      !playingAyah ||
+      chapterVerseTimings.length === 0 ||
+      status.duration <= 0
+    ) return;
+
+    const firstTimestamp = chapterVerseTimings[0].timestamp_from || 0;
+    const lastTimestamp = chapterVerseTimings[chapterVerseTimings.length - 1].timestamp_to || 0;
+    const referencePosition = firstTimestamp + ((status.currentTime / status.duration) * (lastTimestamp - firstTimestamp));
+    const timing = chapterVerseTimings.find(item => referencePosition >= item.timestamp_from && referencePosition < item.timestamp_to)
+      || chapterVerseTimings[chapterVerseTimings.length - 1];
+    const [surahValue, ayahValue] = String(timing.verse_key || "").split(":").map(Number);
+    if (!surahValue || !ayahValue || surahValue !== playingAyah.surah || ayahValue === playingAyah.ayah) return;
+
+    setPlayingAyah({
+      surah: surahValue,
+      ayah: ayahValue,
+      absolute: getAbsoluteAyahNumber(surahValue, ayahValue),
+    });
+  }, [status.currentTime, status.duration, status.playing, selectedReciter.audio_type, chapterVerseTimings, playingAyah]);
+
   // Modular helper to play verse audio check offline Cache
   const playVerseAudio = async (surah: number, ayah: number, absolute: number) => {
+    handledCompletion.current = null;
+    sourceChangePending.current = true;
     let localUri = "";
     if (selectedReciter.audio_type === "chapter") {
       localUri = `${(FileSystem as any).documentDirectory}chapter_${selectedReciter.id}_${surah}.mp3`;
@@ -903,10 +1218,18 @@ export default function QuranPageReader() {
         player.replace({ uri: localUri });
       } else {
         const url = getReciterAudioUrl(selectedReciter, surah, ayah, absolute);
+        if (!url) {
+          Alert.alert("Audio unavailable", "This recording is not available for the selected surah.");
+          return;
+        }
         player.replace({ uri: url });
       }
     } catch {
       const url = getReciterAudioUrl(selectedReciter, surah, ayah, absolute);
+      if (!url) {
+        Alert.alert("Audio unavailable", "This recording is not available for the selected surah.");
+        return;
+      }
       player.replace({ uri: url });
     }
     
@@ -944,21 +1267,25 @@ export default function QuranPageReader() {
   const handleNextAyah = () => {
     Haptics.selectionAsync().catch(() => {});
     if (!playingAyah) return;
-    const idx = pageVerses.findIndex(v => v.absoluteNumber === playingAyah.absolute);
-    if (idx !== -1 && idx < pageVerses.length - 1) {
-      const n = pageVerses[idx + 1];
-      handlePlayAyah(n.surahNumber, n.ayahNumber, n.absoluteNumber);
-    } else {
-      if (loopSurah) {
-        const firstV = pageVerses[0];
-        handlePlayAyah(firstV.surahNumber, firstV.ayahNumber, firstV.absoluteNumber);
-      } else if (currentPageNum < TOTAL_PAGES) {
-        router.replace(`/quran/read/${currentPageNum + 1}`);
-      } else {
-        player.pause();
-        setPlayingAyah(null);
-      }
+    const surahAyahs = QURAN[playingAyah.surah - 1]?.ayahs || [];
+    const nextAyah = surahAyahs[playingAyah.ayah];
+    const next = nextAyah
+      ? { surah: playingAyah.surah, ayah: nextAyah.numberInSurah, absolute: getAbsoluteAyahNumber(playingAyah.surah, nextAyah.numberInSurah) }
+      : loopSurah
+        ? { surah: playingAyah.surah, ayah: 1, absolute: getAbsoluteAyahNumber(playingAyah.surah, 1) }
+        : null;
+
+    if (!next) {
+      player.pause();
+      setPlayingAyah(null);
+      return;
     }
+
+    const targetPage = PAGE_MAPPING.find(p => p.ayahs.some(a => a.surah === next.surah && a.ayah === next.ayah))?.page;
+    if (targetPage && targetPage !== currentPageNum) router.replace(`/quran/read/${targetPage}`);
+    setPlayingAyah(next);
+    remainingRepeats.current = repeatCount;
+    playVerseAudio(next.surah, next.ayah, next.absolute);
   };
 
   const handlePrevAyah = () => {
@@ -973,29 +1300,53 @@ export default function QuranPageReader() {
     }
   };
 
-  // Auto-advance / stop on verse end (respecting repeat settings)
-  const [lastTriggered, setLastTriggered] = useState<number | null>(null);
+  // Full-chapter recordings should repeat/loop as a chapter. Ayah recordings can
+  // continue verse-by-verse when "Listen" starts surah playback.
   useEffect(() => {
-    if (playingAyah && status.duration > 0 && status.currentTime >= status.duration - 0.5) {
-      if (lastTriggered === playingAyah.absolute && Math.abs(status.currentTime - status.duration) > 1.0) {
-        return; 
-      }
-      setLastTriggered(playingAyah.absolute);
+    if (!playingAyah || status.duration <= 0 || status.currentTime < status.duration - 0.15) return;
 
-      if (remainingRepeats.current > 0) {
-        remainingRepeats.current -= 1;
+    // Ignore the terminal status snapshot emitted while a replacement source is loading.
+    if (sourceChangePending.current) return;
+
+    const completionKey = `${playingAyah.absolute}:${status.duration}`;
+    if (handledCompletion.current === completionKey) return;
+    handledCompletion.current = completionKey;
+
+    if (remainingRepeats.current > 0) {
+      remainingRepeats.current -= 1;
+      playVerseAudio(playingAyah.surah, playingAyah.ayah, playingAyah.absolute);
+      return;
+    }
+
+    remainingRepeats.current = repeatCount;
+    if (selectedReciter.audio_type === "chapter") {
+      if (loopSurah) {
         playVerseAudio(playingAyah.surah, playingAyah.ayah, playingAyah.absolute);
       } else {
-        remainingRepeats.current = repeatCount;
-        if (playMode === "surah") {
-          handleNextAyah();
-        } else {
-          player.pause();
-          setPlayingAyah(null);
-        }
+        player.pause();
+        setPlayingAyah(null);
       }
+    } else if (playMode === "surah") {
+      handleNextAyah();
+    } else if (loopSurah) {
+      playVerseAudio(playingAyah.surah, playingAyah.ayah, playingAyah.absolute);
+    } else {
+      player.pause();
+      setPlayingAyah(null);
     }
-  }, [status.currentTime, status.duration, playingAyah, playMode, repeatCount]);
+  }, [status.currentTime, status.duration, playingAyah, playMode, repeatCount, loopSurah, selectedReciter.audio_type]);
+
+  useEffect(() => {
+    if (status.duration > 0 && status.currentTime < status.duration - 0.5) sourceChangePending.current = false;
+  }, [status.currentTime, status.duration]);
+
+  useEffect(() => {
+    if (!autoScroll || readingMode !== "verseByVerse" || !playingAyah) return;
+    const y = verseOffsets.current[playingAyah.absolute];
+    if (y === undefined) return;
+    const timer = setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, y - 84), animated: true }), 80);
+    return () => clearTimeout(timer);
+  }, [autoScroll, playingAyah, readingMode]);
 
   // ─── Page / Verse Bookmarks ────────────────────────────────────────────────
   const togglePageBookmark = async () => {
@@ -1091,7 +1442,45 @@ export default function QuranPageReader() {
     setActiveSubMenu("none"); setShowOptionsMenu(false);
     if (playingAyah) {
       const url = getReciterAudioUrl(rec, playingAyah.surah, playingAyah.ayah, playingAyah.absolute);
-      player.replace({ uri: url }); player.play();
+      if (!url) {
+        Alert.alert("Audio unavailable", "This recording is not available for the selected surah.");
+        return;
+      }
+      handledCompletion.current = null;
+      player.replace({ uri: url });
+      try {
+        (player as any).playbackRate = playbackSpeed;
+        (player as any).muted = isMuted;
+      } catch {}
+      player.play();
+    }
+  };
+
+  const selectRepeatCount = async (count: number) => {
+    Haptics.selectionAsync().catch(() => {});
+    setRepeatCount(count);
+    remainingRepeats.current = count;
+    await AsyncStorage.setItem("quran_repeat_count", String(count));
+    setActiveSubMenu("none");
+  };
+
+  const toggleLoopSurah = async () => {
+    Haptics.selectionAsync().catch(() => {});
+    const next = !loopSurah;
+    setLoopSurah(next);
+    await AsyncStorage.setItem("quran_loop_surah", String(next));
+  };
+
+  const toggleExperienceOption = async (option: "highlight" | "autoScroll") => {
+    Haptics.selectionAsync().catch(() => {});
+    if (option === "highlight") {
+      const next = !highlightActive;
+      setHighlightActive(next);
+      await AsyncStorage.setItem("quran_highlight_active_verses", String(next));
+    } else {
+      const next = !autoScroll;
+      setAutoScroll(next);
+      await AsyncStorage.setItem("quran_auto_scroll_to_verse", String(next));
     }
   };
 
@@ -1125,16 +1514,32 @@ export default function QuranPageReader() {
     return groups;
   }, [allTranslations, searchTransQuery]);
 
-  // Grouped reciters by style
+  // Group reciters by the selected QuranicAudio category, then by its source grouping.
   const groupedReciters = useMemo(() => {
     const groups: Record<string, ApiReciter[]> = {};
-    allReciters.forEach(r => {
-      const style = r.style || "Other";
-      if (!groups[style]) groups[style] = [];
-      groups[style].push(r);
+    const isTranslationMode = readingMode === "translation";
+
+    allReciters
+      .filter(r => {
+        if (isTranslationMode) {
+          return (
+            r.category === "Recitations with Translations" ||
+            r.reciter_name.toLowerCase().includes("translation") ||
+            (r.style && r.style.toLowerCase().includes("translation")) ||
+            (r.categoryGroup && r.categoryGroup.toLowerCase().includes("translation"))
+          );
+        }
+        return reciterCategory === "All" || (r.category || "Recitations") === reciterCategory;
+      })
+      .forEach(r => {
+        const group = isTranslationMode
+          ? (r.categoryGroup || r.style || "Recitations with Translations")
+          : (reciterCategory === "All" ? (r.category || "Recitations") : (r.categoryGroup || r.style || "Other"));
+        if (!groups[group]) groups[group] = [];
+        groups[group].push(r);
     });
     return groups;
-  }, [allReciters]);
+  }, [allReciters, reciterCategory, readingMode]);
 
   // Surah search filter
   const filteredSurahs = useMemo(() => {
@@ -1164,20 +1569,17 @@ export default function QuranPageReader() {
 
     try {
       if (selectedReciter.audio_type === "chapter") {
-        const surahNum = pageVerses[0].surahNumber;
-        const surahName = pageVerses[0].surahName;
-        setDownloadProgress(`Downloading Surah Al-${surahName} recitation...`);
-        
-        const url = getReciterAudioUrl(selectedReciter, surahNum, 1, 1);
-        const filename = `chapter_${selectedReciter.id}_${surahNum}.mp3`;
-        const localUri = `${(FileSystem as any).documentDirectory}${filename}`;
-        
-        const fileInfo = await FileSystem.getInfoAsync(localUri);
-        if (!fileInfo.exists) {
-          await FileSystem.downloadAsync(url, localUri);
+        const chapterSurahs = [...new Map(pageVerses.map(v => [v.surahNumber, v.surahName])).entries()];
+        for (const [surahNum, surahName] of chapterSurahs) {
+          setDownloadProgress(`Downloading Surah Al-${surahName} recitation...`);
+          const url = getReciterAudioUrl(selectedReciter, surahNum, 1, 1);
+          if (!url) throw new Error(`Audio unavailable for surah ${surahNum}`);
+          const filename = `chapter_${selectedReciter.id}_${surahNum}.mp3`;
+          const localUri = `${(FileSystem as any).documentDirectory}${filename}`;
+          const fileInfo = await FileSystem.getInfoAsync(localUri);
+          if (!fileInfo.exists) await FileSystem.downloadAsync(url, localUri);
         }
-        
-        Alert.alert("Success", `Surah Al-${surahName} recitation successfully cached for offline use.`);
+        Alert.alert("Success", `${chapterSurahs.length === 1 ? "Surah" : "Surahs"} recitation successfully cached for offline use.`);
       } else {
         const total = pageVerses.length;
         let count = 0;
@@ -1187,6 +1589,7 @@ export default function QuranPageReader() {
           setDownloadProgress(`Downloading verse ${count} of ${total}...`);
           
           const url = getReciterAudioUrl(selectedReciter, v.surahNumber, v.ayahNumber, v.absoluteNumber);
+          if (!url) throw new Error(`Audio unavailable for ${v.surahNumber}:${v.ayahNumber}`);
           const filename = `everyayah_${selectedReciter.id}_${v.surahNumber}_${v.ayahNumber}.mp3`;
           const localUri = `${(FileSystem as any).documentDirectory}${filename}`;
           
@@ -1299,7 +1702,7 @@ export default function QuranPageReader() {
                 <View style={styles.cardTitleWithIcon}>
                   <MaterialCommunityIcons name="book-open-variant" size={24} color={colors.brand} />
                   <Text style={[styles.cardTitle, { color: colors.onSurface }]}>
-                    {verse.surahNumber}. Al-{verse.surahName}
+                    {verse.surahNumber}. {/^(Al|An|Ar|As|At|Az|Ash|Ad|Ath|Aash)-/i.test(verse.surahName) ? verse.surahName : `Al-${verse.surahName}`}
                   </Text>
                 </View>
                 <Text style={[styles.cardSubtitle, { color: colors.onSurfaceMuted }]}>
@@ -1377,14 +1780,19 @@ export default function QuranPageReader() {
         {/* ═══ Arabic Reading Mode ═══ */}
         {readingMode === "arabic" && (
           <View style={styles.arabicFlowBox}>
-            <Text style={[styles.arabicFlowText, { fontFamily: quranScript === "tajweed" ? "NotoNaskhArabic" : styles.arabicFlowText.fontFamily, fontSize: fontSizeArabic, lineHeight: fontSizeArabic * 1.9, color: colors.onSurface, textAlign: "right", letterSpacing: 0, includeFontPadding: false }]}>
+            <Text style={[styles.arabicFlowText, { fontFamily: getArabicFontFamily(quranScript), fontSize: fontSizeArabic, lineHeight: fontSizeArabic * 2.3, color: colors.onSurface, textAlign: "right", letterSpacing: 0 }]}>
               {pageVerses.map(verse => {
                 const isHighlighted = playingAyah?.absolute === verse.absoluteNumber && highlightActive;
+                const highlightStyle = isHighlighted
+                  ? quranScript === "tajweed"
+                    ? { backgroundColor: colors.brand + "18", borderRadius: 5 }
+                    : { color: colors.brand, backgroundColor: colors.brand + "15", borderRadius: 5 }
+                  : {};
                 const cleaned = verse.ayahNumber === 1 && verse.surahNumber !== 1 && verse.surahNumber !== 9
                   ? verse.arabicText.replace(/^(بِسْمِ ٱللَّهِ ٱلرَّحْمَٰনِ ٱلرَّحِيمِ|بِسْمِ اللَّهِ الرَّحْمَٰনِ الرَّحِيمِ)/, "") : verse.arabicText;
                 return (
                   <Text key={verse.absoluteNumber} onPress={() => handlePlaySingle(verse.surahNumber, verse.ayahNumber, verse.absoluteNumber)}
-                    style={isHighlighted ? { color: colors.brand, backgroundColor: colors.brand + "15" } : {}}>
+                    style={highlightStyle}>
                     {quranScript === "tajweed" ? renderArabicText(verse) : cleaned}{" "}
                     <Text style={[styles.ayahMarker, { color: colors.brand }]}>﴿{verse.ayahNumber}﴾ </Text>
                   </Text>
@@ -1406,8 +1814,13 @@ export default function QuranPageReader() {
 
               return (
                 <View key={verse.absoluteNumber}
+                  onLayout={(event) => { verseOffsets.current[verse.absoluteNumber] = event.nativeEvent.layout.y; }}
                   style={[styles.verseCard, { borderBottomColor: colors.border },
-                    isPlaying && highlightActive && { backgroundColor: colors.brand + "08" }]}>
+                    isPlaying && highlightActive && {
+                      backgroundColor: colors.brand + (quranScript === "tajweed" ? "12" : "0D"),
+                      borderLeftWidth: 3,
+                      borderLeftColor: colors.brand,
+                    }]}>
 
                   {/* Header Row */}
                   <View style={styles.verseHeaderRow}>
@@ -1463,7 +1876,7 @@ export default function QuranPageReader() {
                       ))}
                     </View>
                   ) : (
-                    <Text style={[styles.arabicVbV, { fontSize: fontSizeArabic, color: colors.onSurface }]}>{renderArabicText(verse)}</Text>
+                    <Text style={[styles.arabicVbV, { fontFamily: getArabicFontFamily(quranScript), fontSize: fontSizeArabic, lineHeight: fontSizeArabic * 2.3, color: colors.onSurface }]}>{renderArabicText(verse)}</Text>
                   )}
 
                   {/* Transliteration */}
@@ -1678,41 +2091,44 @@ export default function QuranPageReader() {
                   {/* Preview Box */}
                   <View style={[styles.previewBox, { borderColor: colors.border }]}>
                     <Text style={{ fontSize: 10, alignSelf: "flex-start", color: colors.onSurfaceMuted, marginBottom: 4 }}>Preview:</Text>
-                    <Text style={[styles.previewArabic, { fontSize: fontSizeArabic, color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَٰনِ الرَّহِيمِ</Text>
+                    <Text style={[styles.previewArabic, { fontFamily: getArabicFontFamily(quranScript), fontSize: fontSizeArabic, lineHeight: fontSizeArabic * 2.3, color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
                     <Text style={[styles.previewTrans, { fontSize: fontSizeTrans, color: colors.onSurfaceMuted }]}>In the Name of Allah — the Most Compassionate, Most Merciful</Text>
                   </View>
 
-                  {/* Quran Script pills toggle */}
-                  <Text style={[styles.settingLabel, { color: colors.onSurface, marginTop: 8 }]}>Quran Script</Text>
-                  <View style={[styles.stepperRow, { marginBottom: 16 }]}>
-                    {(["uthmani", "indopak", "tajweed"] as const).map(script => (
-                      <Pressable key={script} onPress={async () => { setQuranScript(script); await AsyncStorage.setItem("quran_script", script); }}
-                        style={[styles.wbwModeBtn, { borderColor: colors.border, flex: 1, alignItems: "center" }, quranScript === script && { backgroundColor: colors.brand, borderColor: colors.brand }]}>
-                        <Text style={{ fontSize: 11, fontWeight: "700", color: quranScript === script ? "#fff" : colors.onSurface }}>
-                          {script.charAt(0).toUpperCase() + script.slice(1)}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  {/* Font style dropdown selector */}
-                  <Text style={[styles.settingLabel, { color: colors.onSurface }]}>Font style</Text>
-                  <Pressable onPress={() => setShowFontStyleDropdown(!showFontStyleDropdown)}
-                    style={[styles.reciterRow, { borderColor: colors.border, marginBottom: 16 }]}>
-                    <Text style={[styles.reciterRowText, { color: colors.onSurface }]}>{fontStyle}</Text>
-                    <MaterialCommunityIcons name={showFontStyleDropdown ? "chevron-up" : "chevron-down"} size={20} color={colors.onSurfaceMuted} />
-                  </Pressable>
-                  {showFontStyleDropdown && (
-                    <View style={[styles.dropdownBoxInline, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, marginBottom: 16 }]}>
-                      {(["King Fahad Complex", "Madani", "IndoPak"] as const).map(style => (
-                        <Pressable key={style} onPress={async () => { setFontStyle(style); setShowFontStyleDropdown(false); await AsyncStorage.setItem("quran_font_style", style); }}
-                          style={styles.dropdownInlineItem}>
-                          <Text style={{ color: colors.onSurface, fontWeight: fontStyle === style ? "700" : "500" }}>{style}</Text>
-                          {fontStyle === style && <MaterialCommunityIcons name="check" size={16} color={colors.brand} />}
+                  {/* Unified Quran Script & Font Selector */}
+                  <Text style={[styles.settingLabel, { color: colors.onSurface, marginTop: 12, marginBottom: 8 }]}>Quran Script & Font</Text>
+                  <View style={{ gap: 8, marginBottom: 16 }}>
+                    {[
+                      { id: "uthmani", label: "Uthmani (Madani)", sub: "Classical Uthmani typography", font: "ScheherazadeNew" },
+                      { id: "king_fahad", label: "King Fahad Complex", sub: "King Fahd Complex Mushaf typography", font: "AmiriBold" },
+                      { id: "indopak", label: "IndoPak", sub: "Asian / Subcontinent Naskh typography", font: "NotoNaskhArabic" },
+                      { id: "tajweed", label: "Tajweed (Color-Coded)", sub: "Color-coded Tajweed rules typography", font: "NotoNaskhArabic" },
+                    ].map((opt) => {
+                      const isSelected = quranScript === opt.id;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          onPress={async () => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                            setQuranScript(opt.id as any);
+                            await AsyncStorage.setItem("quran_script", opt.id);
+                          }}
+                          style={[
+                            styles.reciterRow,
+                            { borderColor: isSelected ? colors.brand : colors.border, backgroundColor: isSelected ? colors.brand + "10" : colors.surfaceSecondary }
+                          ]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.reciterRowText, { color: isSelected ? colors.brand : colors.onSurface, fontWeight: isSelected ? "700" : "500" }]}>
+                              {opt.label}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>{opt.sub}</Text>
+                          </View>
+                          {isSelected && <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />}
                         </Pressable>
-                      ))}
-                    </View>
-                  )}
+                      );
+                    })}
+                  </View>
 
                   {/* Copy verse as glyphs toggle switch */}
                   <View style={[styles.toggleRow, { borderBottomColor: colors.border, marginBottom: 16 }]}>
@@ -1741,7 +2157,7 @@ export default function QuranPageReader() {
                     <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
                   </Pressable>
 
-                  <Pressable onPress={async () => { setFontSizeArabicScale(4); setQuranScript("uthmani"); setFontStyle("King Fahad Complex"); setCopyAsGlyphs(false); await AsyncStorage.setItem("quran_font_size_arabic_scale", "4"); }}
+                  <Pressable onPress={async () => { setFontSizeArabicScale(4); setQuranScript("uthmani"); setCopyAsGlyphs(false); await AsyncStorage.setItem("quran_font_size_arabic_scale", "4"); await AsyncStorage.setItem("quran_script", "uthmani"); }}
                     style={[styles.resetBtn, { borderColor: colors.border, marginTop: 16 }]}>
                     <Text style={[styles.resetBtnText, { color: colors.onSurfaceMuted }]}>Reset</Text>
                   </Pressable>
@@ -1962,12 +2378,12 @@ export default function QuranPageReader() {
                   </Pressable>
                 </View>
                 {[0, 1, 2, 3].map(r => (
-                  <Pressable key={r} onPress={() => { setRepeatCount(r); remainingRepeats.current = r; setShowOptionsMenu(false); }} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.menuItemText, { color: colors.onSurface }]}>{r === 0 ? "No Repeat" : `Repeat ${r}x`}</Text>
+                  <Pressable key={r} onPress={() => selectRepeatCount(r)} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
+                    <Text style={[styles.menuItemText, { color: colors.onSurface }]}>{r === 0 ? "No Repeat" : `Repeat ${r} time${r > 1 ? "s" : ""}`}</Text>
                     {repeatCount === r && <MaterialCommunityIcons name="check" size={20} color={colors.brand} />}
                   </Pressable>
                 ))}
-                <Pressable onPress={() => setLoopSurah(!loopSurah)} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
+                <Pressable onPress={toggleLoopSurah} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
                   <Text style={[styles.menuItemText, { color: colors.onSurface }]}>Loop Surah</Text>
                   <MaterialCommunityIcons name={loopSurah ? "checkbox-marked" : "checkbox-blank-outline"} size={22} color={colors.brand} />
                 </Pressable>
@@ -1981,8 +2397,8 @@ export default function QuranPageReader() {
                     <Text style={[styles.sheetTitle, { color: colors.onSurface, marginLeft: 4 }]}>Experience</Text>
                   </Pressable>
                 </View>
-                {([["Highlight Active Verses", highlightActive, setHighlightActive], ["Auto Scroll to Verse", autoScroll, setAutoScroll]] as const).map(([label, val, setter]: any) => (
-                  <Pressable key={label} onPress={() => setter(!val)} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
+                {([["Highlight Active Verses", highlightActive, "highlight"], ["Auto Scroll to Active Verse", autoScroll, "autoScroll"]] as const).map(([label, val, option]) => (
+                  <Pressable key={label} onPress={() => toggleExperienceOption(option)} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
                     <Text style={[styles.menuItemText, { color: colors.onSurface }]}>{label}</Text>
                     <MaterialCommunityIcons name={val ? "checkbox-marked" : "checkbox-blank-outline"} size={22} color={colors.brand} />
                   </Pressable>
@@ -2010,16 +2426,42 @@ export default function QuranPageReader() {
                 <View style={styles.sheetHeader}>
                   <Pressable onPress={() => setActiveSubMenu("none")} style={{ flexDirection: "row", alignItems: "center" }}>
                     <MaterialCommunityIcons name="chevron-left" size={24} color={colors.onSurface} />
-                    <Text style={[styles.sheetTitle, { color: colors.onSurface, marginLeft: 4 }]}>Select Reciter</Text>
+                    <Text style={[styles.sheetTitle, { color: colors.onSurface, marginLeft: 4 }]}>
+                      {readingMode === "translation" ? "Recitations with Translations" : "Select Reciter"}
+                    </Text>
                   </Pressable>
                 </View>
+                {readingMode !== "translation" && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reciterCategoryTabs}>
+                    {(["All", ...RECITER_CATEGORIES] as const).map(category => {
+                      const isSelected = reciterCategory === category;
+                      return (
+                        <Pressable
+                          key={category}
+                          onPress={() => setReciterCategory(category)}
+                          style={[styles.reciterCategoryTab, { borderColor: colors.brand }, isSelected && { backgroundColor: colors.brand }]}
+                        >
+                          <Text style={[styles.reciterCategoryTabText, { color: isSelected ? colors.onBrandPrimary : colors.brand }]}>{category}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                )}
                 <ScrollView style={{ maxHeight: 350 }}>
-                  {Object.keys(groupedReciters).sort().map(style => (
-                    <View key={style}>
-                      <Text style={[styles.langGroupHeader, { color: colors.brand, paddingHorizontal: 16 }]}>{style}</Text>
-                      {groupedReciters[style].map(rec => (
+                  {Object.keys(groupedReciters).sort((a, b) => {
+                    if (readingMode === "translation" || reciterCategory !== "All") return a.localeCompare(b);
+                    return RECITER_CATEGORIES.indexOf(a as ReciterCategory) - RECITER_CATEGORIES.indexOf(b as ReciterCategory);
+                  }).map(group => (
+                    <View key={group}>
+                      <Text style={[styles.langGroupHeader, { color: colors.brand, paddingHorizontal: 16 }]}>{group}</Text>
+                      {groupedReciters[group].map(rec => (
                         <Pressable key={rec.id} onPress={() => selectReciter(rec)} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
-                          <Text style={[styles.menuItemText, { color: colors.onSurface }]}>{rec.reciter_name}</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.menuItemText, { color: colors.onSurface }]}>{rec.reciter_name}</Text>
+                            {(readingMode === "translation" || reciterCategory !== "All") && rec.categoryGroup && rec.categoryGroup !== rec.reciter_name && (
+                              <Text style={[styles.reciterCategoryDetail, { color: colors.onSurfaceMuted }]}>{rec.style || rec.categoryGroup}</Text>
+                            )}
+                          </View>
                           {selectedReciter.id === rec.id && <MaterialCommunityIcons name="check" size={20} color={colors.brand} />}
                         </Pressable>
                       ))}
@@ -2576,7 +3018,7 @@ const styles = StyleSheet.create({
   bismillahEn: { fontSize: 11 },
   // Arabic Flow
   arabicFlowBox: { paddingVertical: 10 },
-  arabicFlowText: { fontFamily: Platform.OS === "ios" ? "Amiri" : "serif" },
+  arabicFlowText: { fontFamily: "ScheherazadeNew" },
   ayahMarker: { fontSize: 14, fontWeight: "700" },
   pageNum: { textAlign: "center", fontSize: 12, marginTop: 16, fontWeight: "700" },
   // Verse Cards
@@ -2586,7 +3028,7 @@ const styles = StyleSheet.create({
   verseHeaderRight: { flexDirection: "row", alignItems: "center", gap: 12 },
   verseBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   verseBadgeText: { fontSize: 12, fontWeight: "700" },
-  arabicVbV: { textAlign: "right", lineHeight: 46, fontFamily: Platform.OS === "ios" ? "Amiri" : "serif", marginBottom: 8 },
+  arabicVbV: { textAlign: "right", lineHeight: 46, fontFamily: "ScheherazadeNew", marginBottom: 8 },
   translitVbV: { lineHeight: 20, fontWeight: "600", marginBottom: 6 },
   transVbV: { lineHeight: 20 },
   transAuthorLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 2 },
@@ -2617,12 +3059,16 @@ const styles = StyleSheet.create({
   bottomSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: theme.spacing.lg, paddingBottom: 16 },
   sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   sheetTitle: { fontSize: 16, fontWeight: "700" },
+  reciterCategoryTabs: { gap: 8, paddingBottom: 14, paddingHorizontal: 2 },
+  reciterCategoryTab: { borderWidth: 1, borderRadius: 18, paddingVertical: 7, paddingHorizontal: 12 },
+  reciterCategoryTabText: { fontSize: 12, fontWeight: "700" },
+  reciterCategoryDetail: { fontSize: 11, marginTop: 2 },
   // Settings Tabs
   tabRow: { flexDirection: "row", borderBottomWidth: 1, marginBottom: 0 },
   tabBtn: { flex: 1, paddingVertical: 12, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabBtnText: { fontSize: 13, fontWeight: "600" },
   previewBox: { borderWidth: 1, borderRadius: 12, padding: 16, alignItems: "center", marginBottom: 16 },
-  previewArabic: { fontFamily: Platform.OS === "ios" ? "Amiri" : "serif", textAlign: "center", marginBottom: 8 },
+  previewArabic: { fontFamily: "ScheherazadeNew", textAlign: "center", marginBottom: 8 },
   previewTrans: { textAlign: "center" },
   settingLabel: { fontSize: 13, fontWeight: "700", marginBottom: 8 },
   stepperRow: { flexDirection: "row", alignItems: "center", gap: 12 },

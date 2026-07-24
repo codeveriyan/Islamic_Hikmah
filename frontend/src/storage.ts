@@ -218,22 +218,18 @@ export async function resolveUserLocation(options: { preferCurrent?: boolean; re
   return defaultLoc;
 }
 
-// â”€â”€ Goals Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Goals Storage
 const GOALS_KEY = 'hikmah:goals-completed:v1';
 const GOALS_CONFIG_KEY = 'hikmah:goals-config:v1';
 
 function todayKey() {
   const d = new Date();
-  // â° Day window: goals belong to the previous calendar day until 4:00 AM.
-  // This gives users overnight time to check off yesterday's goals.
   if (d.getHours() < 4) {
     d.setDate(d.getDate() - 1);
   }
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-// Returns the effective "today" date respecting the 4 AM cutoff.
-// Export this so the home screen can show the correct day label.
 export function getEffectiveDate(): Date {
   const d = new Date();
   if (d.getHours() < 4) {
@@ -258,9 +254,17 @@ export async function toggleGoal(id: string): Promise<boolean> {
 
 export async function getActiveGoalIds(): Promise<string[]> {
   const raw = await AsyncStorage.getItem(GOALS_CONFIG_KEY);
-  if (raw) return JSON.parse(raw);
-  // Default: first 10 goals active
-  return ['fajr','dhuhr','asr','maghrib','isha','quran-5min','morning-adhkar','evening-adhkar','sleep-adhkar','fast-monday'];
+  if (raw) {
+    try {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length > 0) return list;
+    } catch {}
+  }
+  return [
+    'fajr', 'dhuhr', 'asr', 'maghrib', 'isha',
+    'quran-5min', 'surah-mulk',
+    'morning-adhkar', 'evening-adhkar', 'sleep-adhkar', 'dhikr-after-salah', 'istighfar-100'
+  ];
 }
 
 export async function saveActiveGoalIds(ids: string[]) {
@@ -281,7 +285,27 @@ export async function getRecentGoalHistory(days: number): Promise<{ date: Date; 
   for (let i = 1; i <= days; i++) {
     const key = getDateKeyForOffset(i);
     const raw = await AsyncStorage.getItem(`${GOALS_KEY}:${key}`);
-    const completedIds = raw ? JSON.parse(raw) : [];
+    const completedIds: string[] = raw ? JSON.parse(raw) : [];
+
+    // Also merge prayer completions if stored separately
+    try {
+      const rawPrayerComp = await AsyncStorage.getItem(`hikmah:prayer-completions:v1:${key}`);
+      if (rawPrayerComp) {
+        const pComp = JSON.parse(rawPrayerComp);
+        const prayerMap: Record<string, string> = {
+          Fajr: "fajr",
+          Dhuhr: "dhuhr",
+          Asr: "asr",
+          Maghrib: "maghrib",
+          Isha: "isha",
+        };
+        Object.entries(pComp).forEach(([pName, done]) => {
+          if (done && prayerMap[pName] && !completedIds.includes(prayerMap[pName])) {
+            completedIds.push(prayerMap[pName]);
+          }
+        });
+      }
+    } catch {}
     
     const date = new Date();
     if (date.getHours() < 4) {
@@ -297,7 +321,7 @@ export async function getRecentGoalHistory(days: number): Promise<{ date: Date; 
   return history;
 }
 
-// â”€â”€ Prayer Settings Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Prayer Settings Storage
 const PRAYER_SETTINGS_KEY = 'hikmah:prayer-settings:v1';
 
 export type PrayerSettings = {
@@ -328,7 +352,7 @@ export async function savePrayerSettings(s: PrayerSettings) {
   await AsyncStorage.setItem(PRAYER_SETTINGS_KEY, JSON.stringify(s));
 }
 
-// â”€â”€ Shared Notification Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Shared Notification Helpers -------------------------------------------
 const PRAYER_NOTIF_KEY = 'scheduled_prayer_notifications';
 
 export const cancelPrevPrayerNotifications = async () => {

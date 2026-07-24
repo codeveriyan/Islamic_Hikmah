@@ -9,6 +9,9 @@ import { useState, useEffect } from "react";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getPrayerSettings, schedulePrayerNotifications } from "@/src/storage";
+import { backgroundDownloader } from "@/src/services/backgroundDownload";
+import { useAuth } from "@/src/AuthContext";
+import { usePremiumModal } from "@/src/PremiumModalContext";
 
 type SettingItem = {
   id: string;
@@ -75,6 +78,33 @@ export default function SettingsScreen() {
   const [tasbihVibe, setTasbihVibe] = useState(true);
 
   const [downloadWifi, setDownloadWifi] = useState(true);
+  const { profile } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
+  const [downloadingProgress, setDownloadingProgress] = useState<number | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState<string>("");
+
+  const isPremiumUser = profile?.tier === "premium" || profile?.trialActive === true;
+
+  const handleStartOfflineDownload = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (!isPremiumUser) {
+      showPremiumModal("Offline Content Download & Reading");
+      return;
+    }
+
+    setDownloadingProgress(0);
+    setDownloadStatus("Starting download...");
+
+    await backgroundDownloader.startBackgroundDownload(true, (progress, status) => {
+      setDownloadingProgress(progress);
+      setDownloadStatus(status);
+    });
+
+    setTimeout(() => {
+      setDownloadingProgress(null);
+      setDownloadStatus("");
+    }, 4000);
+  };
 
   const getLanguageName = (code: string) => {
     switch (code) {
@@ -410,7 +440,7 @@ export default function SettingsScreen() {
       case "system":
         return (
           <View style={styles.modalContent}>
-            <Text style={[styles.modalTitle, { color: colors.onSurface }]}>System Settings</Text>
+            <Text style={[styles.modalTitle, { color: colors.onSurface }]}>System & Offline Storage</Text>
 
             <View style={styles.optionRow}>
               <View style={{ flex: 1 }}>
@@ -418,6 +448,41 @@ export default function SettingsScreen() {
                 <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Saves mobile data for Quran recitations</Text>
               </View>
               <Switch value={downloadWifi} onValueChange={setDownloadWifi} trackColor={{ true: colors.brand }} />
+            </View>
+
+            <View style={[styles.optionRow, { marginTop: 16, flexDirection: "column", alignItems: "flex-start" }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Offline Content Auto-Download</Text>
+                    <View style={{ backgroundColor: "#D4AF3718", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                      <Text style={{ color: "#D4AF37", fontSize: 10, fontWeight: "700" }}>PRO</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.optionSub, { color: colors.onSurfaceMuted, marginTop: 2 }]}>
+                    Pre-download Quran, 14 Hadith books, Seerah & 99 Names for 100% offline reading.
+                  </Text>
+                </View>
+              </View>
+
+              {downloadingProgress !== null ? (
+                <View style={{ width: "100%", marginTop: 12 }}>
+                  <Text style={{ color: colors.brand, fontSize: 12, fontWeight: "600", marginBottom: 4 }}>{downloadStatus}</Text>
+                  <View style={{ height: 6, backgroundColor: colors.surfaceTertiary, borderRadius: 99, overflow: "hidden" }}>
+                    <View style={{ height: "100%", width: `${downloadingProgress}%`, backgroundColor: colors.brand }} />
+                  </View>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={handleStartOfflineDownload}
+                  style={[styles.rowButton, { backgroundColor: colors.brand + "18", marginTop: 12, width: "100%", justifyContent: "center" }]}
+                >
+                  <MaterialCommunityIcons name={isPremiumUser ? "cloud-download" : "lock"} size={18} color={colors.brand} />
+                  <Text style={[styles.rowButtonTxt, { color: colors.brand, fontWeight: "700" }]}>
+                    {isPremiumUser ? "Download All Content For Offline Reading" : "Unlock Offline Reading (Premium)"}
+                  </Text>
+                </Pressable>
+              )}
             </View>
 
             <Pressable
