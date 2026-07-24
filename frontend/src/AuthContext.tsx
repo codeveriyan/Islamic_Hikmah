@@ -71,6 +71,7 @@ async function migrateAuthStorage(uid?: string) {
   const pairs: [string, string][] = [
     ["auth_is_guest", "hikmah:auth:guest"],
     ["auth_guest_name", "hikmah:auth:guest_name"],
+    ["auth_guest_photo", "hikmah:auth:guest_photo"],
   ];
   if (uid) {
     pairs.push(
@@ -180,11 +181,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (guestRaw === "true") {
           setIsGuest(true);
           const guestName = await AsyncStorage.getItem("hikmah:auth:guest_name") || "Guest User";
+          const guestPhoto = await AsyncStorage.getItem("hikmah:auth:guest_photo") || undefined;
           setProfile({
             uid: "guest-uid",
             name: guestName,
             email: "guest@islamichikmah.app",
             emailVerified: true,
+            photoURL: guestPhoto,
             createdAt: Date.now(),
             status: "Active",
             tier: "free",
@@ -232,6 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsGuest(false);
       await AsyncStorage.removeItem("hikmah:auth:guest");
       await AsyncStorage.removeItem("hikmah:auth:guest_name");
+      await AsyncStorage.removeItem("hikmah:auth:guest_photo");
       return cred.user;
     } finally {
       setLoading(false);
@@ -246,6 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsGuest(false);
       await AsyncStorage.removeItem("hikmah:auth:guest");
       await AsyncStorage.removeItem("hikmah:auth:guest_name");
+      await AsyncStorage.removeItem("hikmah:auth:guest_photo");
       // Set display name in Firebase
       await firebaseUpdateProfile(cred.user, { displayName: name });
       // Send verification email
@@ -263,6 +268,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsGuest(true);
       await AsyncStorage.setItem("hikmah:auth:guest", "true");
       await AsyncStorage.removeItem("hikmah:auth:guest_name");
+      await AsyncStorage.removeItem("hikmah:auth:guest_photo");
       setProfile({
         uid: "guest-uid",
         name: "Guest User",
@@ -290,6 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsGuest(false);
         await AsyncStorage.removeItem("hikmah:auth:guest");
         await AsyncStorage.removeItem("hikmah:auth:guest_name");
+        await AsyncStorage.removeItem("hikmah:auth:guest_photo");
       } else {
         const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
         if (!webClientId) {
@@ -317,6 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsGuest(false);
         await AsyncStorage.removeItem("hikmah:auth:guest");
         await AsyncStorage.removeItem("hikmah:auth:guest_name");
+        await AsyncStorage.removeItem("hikmah:auth:guest_photo");
       }
     } catch (err: any) {
       console.error("Google Sign-In Error:", err);
@@ -341,6 +349,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsGuest(false);
       await AsyncStorage.removeItem("hikmah:auth:guest");
       await AsyncStorage.removeItem("hikmah:auth:guest_name");
+      await AsyncStorage.removeItem("hikmah:auth:guest_photo");
       try {
         await signOut(auth);
       } catch (err) {
@@ -354,6 +363,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Update Profile
   const updateProfileInfo = async (name: string, photoURL?: string) => {
     if (isGuest && profile) {
+      await AsyncStorage.setItem("hikmah:auth:guest_name", name);
+      if (photoURL) {
+        await AsyncStorage.setItem("hikmah:auth:guest_photo", photoURL);
+      } else {
+        await AsyncStorage.removeItem("hikmah:auth:guest_photo");
+      }
       setProfile({ ...profile, name, photoURL });
       return;
     }

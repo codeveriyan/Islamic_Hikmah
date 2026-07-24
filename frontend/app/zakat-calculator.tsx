@@ -80,6 +80,12 @@ export default function ZakatCalculatorScreen() {
 
   const [loadingRates, setLoadingRates] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [ummahNisabInfo, setUmmahNisabInfo] = useState<{
+    goldValue: number | null;
+    silverValue: number | null;
+    goldGrams: number;
+    silverGrams: number;
+  } | null>(null);
 
   const fetchLiveRates = async (currencyCode: string) => {
     setLoadingRates(true);
@@ -107,6 +113,24 @@ export default function ZakatCalculatorScreen() {
         
         const date = new Date();
         setLastUpdated(date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " today");
+
+        // Fetch live UmmahAPI Nisab threshold calculations
+        try {
+          const uNisabRes = await fetch(`https://www.ummahapi.com/api/zakat/nisab?gold_price_per_gram=${calculatedGoldRate.toFixed(2)}&silver_price_per_gram=${calculatedSilverRate.toFixed(2)}`);
+          if (uNisabRes.ok) {
+            const uData = await uNisabRes.json();
+            if (uData?.data?.gold && uData?.data?.silver) {
+              setUmmahNisabInfo({
+                goldValue: uData.data.gold.monetary_value,
+                silverValue: uData.data.silver.monetary_value,
+                goldGrams: uData.data.gold.threshold_grams || 85,
+                silverGrams: uData.data.silver.threshold_grams || 595,
+              });
+            }
+          }
+        } catch (uErr) {
+          console.warn("UmmahAPI Nisab fetch error:", uErr);
+        }
       }
     } catch (e) {
       console.warn("Could not fetch live rates, using defaults:", e);

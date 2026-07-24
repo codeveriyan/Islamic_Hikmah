@@ -20,6 +20,7 @@ import transliterationTajweedData from "@/src/data/quran/transliterationTajweed.
 import transliterationSyllablesData from "@/src/data/quran/transliterationSyllables.json";
 import transliterationWbwData from "@/src/data/quran/transliterationWbw.json";
 import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
+import { QURAN_AUDIO_CATALOG, QURAN_AUDIO_CATEGORIES, QuranAudioCategory } from "@/src/data/quran/quranAudioCatalog";
 
 type Ayah = {
   number: number;
@@ -43,19 +44,19 @@ const tafsirMemoryCache = new Map<string, any>();
 const audioTimingMemoryCache = new Map<string, { url: string; timings: any[] }>();
 const translationMemoryCache = new Map<string, { trans: Ayah[]; translit: Ayah[] }>();
 
-const RECITERS = [
-  { qdcId: 7,   name: "Mishari Rashid al-Afasy",         style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 3,   name: "Abdur-Rahman as-Sudais",          style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 2,   name: "AbdulBaset AbdulSamad",           style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 6,   name: "Mahmoud Khalil Al-Husary",        style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 9,   name: "Mohamed Siddiq al-Minshawi",      style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 4,   name: "Abu Bakr al-Shatri",              style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 5,   name: "Hani ar-Rifai",                   style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 10,  name: "Sa'ud ash-Shuraym",               style: "Murattal",  hasWordSegments: true  },
-  { qdcId: 11,  name: "Mohamed al-Tablawi",              style: "Murattal",  hasWordSegments: false },
-] as const;
-
-type ReciterQdcId = typeof RECITERS[number]["qdcId"];
+type ListenReciter = { id: string; name: string; style: string; source: "qdc" | "quranicaudio"; qdcId?: number; path?: string; hasWordSegments: boolean; category: QuranAudioCategory };
+const QDC_RECITERS: ListenReciter[] = [
+  { id: "qdc-7", qdcId: 7, name: "Mishari Rashid al-Afasy", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-3", qdcId: 3, name: "Abdur-Rahman as-Sudais", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-2", qdcId: 2, name: "AbdulBaset AbdulSamad", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-6", qdcId: 6, name: "Mahmoud Khalil Al-Husary", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-9", qdcId: 9, name: "Mohamed Siddiq al-Minshawi", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-4", qdcId: 4, name: "Abu Bakr al-Shatri", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-5", qdcId: 5, name: "Hani ar-Rifai", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-10", qdcId: 10, name: "Sa'ud ash-Shuraym", style: "Murattal", source: "qdc", hasWordSegments: true, category: "Recitations" },
+  { id: "qdc-11", qdcId: 11, name: "Mohamed al-Tablawi", style: "Murattal", source: "qdc", hasWordSegments: false, category: "Recitations" },
+];
+const RECITERS: ListenReciter[] = [...QDC_RECITERS, ...QURAN_AUDIO_CATALOG.map((reciter) => ({ ...reciter, source: "quranicaudio" as const, hasWordSegments: false }))];
 
 
 type AyahItemProps = {
@@ -243,6 +244,8 @@ const AyahItem = React.memo(
   }
 );
 
+AyahItem.displayName = "AyahItem";
+
 export default function SurahDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -253,9 +256,10 @@ export default function SurahDetail() {
   const [loading, setLoading] = useState(true);
   const [audioErr, setAudioErr] = useState(false);
   const [playingIdx, setPlayingIdx] = useState<number | null>(null);
-  const [reciterId, setReciterId] = useState<ReciterQdcId>(7); // default: Mishary Alafasy
+  const [reciterId, setReciterId] = useState("qdc-7"); // default: Mishary Alafasy
   const [continuous, setContinuous] = useState(false);
   const [showReciters, setShowReciters] = useState(false);
+  const [reciterCategory, setReciterCategory] = useState<QuranAudioCategory | "All">("All");
   // Track download state per (reciterId, surahId): "idle" | "downloading" | "done"
   const [downloadStatus, setDownloadStatus] = useState<Record<string, "idle" | "downloading" | "done">>({});
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
@@ -859,8 +863,8 @@ export default function SurahDetail() {
   }, [id, quranTransLang, transliterationType]);
 
   // Returns the local filesystem path for a downloaded surah audio file.
-  const getOfflinePath = (qId: number, sId: number) =>
-    `${FileSystem.documentDirectory}hikmah_audio/${qId}_surah_${sId}.mp3`;
+  const getOfflinePath = (qId: string | number, sId: number) =>
+    `${FileSystem.documentDirectory}hikmah_audio/${encodeURIComponent(String(qId))}_surah_${sId}.mp3`;
 
   // Enable global background audio playback on mount
   useEffect(() => {
@@ -883,6 +887,11 @@ export default function SurahDetail() {
     };
   }, [player]);
 
+  const currentReciter = useMemo(
+    () => RECITERS.find((reciter) => reciter.id === reciterId) ?? RECITERS[0],
+    [reciterId],
+  );
+
   // Effect 2: Eagerly fetch continuous recitation audio URL and word timings from Quran.com QDC API.
   // Checks for a locally cached (downloaded) file first and uses it if available.
   // Caches timings locally so playing downloaded files works offline!
@@ -892,7 +901,18 @@ export default function SurahDetail() {
     setAudioErr(false);
 
     const surahId = Number(id);
-    const url = `https://api.qurancdn.com/api/qdc/audio/reciters/${reciterId}/audio_files?chapter=${surahId}&segments=true`;
+    const chapterUrl = currentReciter.source === "quranicaudio" && currentReciter.path
+      ? `${currentReciter.path}${String(surahId).padStart(3, "0")}.mp3`
+      : null;
+    if (chapterUrl) {
+      setAudioUrl(chapterUrl);
+      setVerseTimings([]);
+      setAudioErr(false);
+      setAudioLoading(false);
+      return;
+    }
+    const qdcId = currentReciter.qdcId ?? 7;
+    const url = `https://api.qurancdn.com/api/qdc/audio/reciters/${qdcId}/audio_files?chapter=${surahId}&segments=true`;
 
     const isWeb = !FileSystem.documentDirectory;
     const localPath = isWeb ? "" : getOfflinePath(reciterId, surahId);
@@ -1003,7 +1023,7 @@ export default function SurahDetail() {
     return () => {
       active = false;
     };
-  }, [id, reciterId]);
+  }, [id, reciterId, currentReciter]);
 
   // Download the current surah audio for offline use
   const downloadSurah = useCallback(async () => {
@@ -1043,14 +1063,14 @@ export default function SurahDetail() {
       if (result?.uri) {
         setDownloadStatus((s) => ({ ...s, [dlKey]: "done" }));
         setAudioUrl(result.uri);
-        Alert.alert("Downloaded!", `${name} (${RECITERS.find(r => r.qdcId === reciterId)?.name}) saved for offline use.`);
+        Alert.alert("Downloaded!", `${name} (${currentReciter.name}) saved for offline use.`);
       }
     } catch (err) {
       console.error("Download failed:", err);
       setDownloadStatus((s) => ({ ...s, [dlKey]: "idle" }));
       Alert.alert("Download Failed", "Please check your connection and try again.");
     }
-  }, [audioUrl, id, reciterId, name]);
+  }, [audioUrl, id, reciterId, name, currentReciter.name]);
 
   const isFocused = useIsFocused();
 
@@ -1234,7 +1254,7 @@ export default function SurahDetail() {
   }, [audioUrl, verseTimings, playingIdx, status, player, id]);
 
   const playAll = useCallback(() => {
-    if (!audioUrl || verseTimings.length === 0) return;
+    if (!audioUrl) return;
 
     const startSeconds = (verseTimings[0]?.timestamp_from || 0) / 1000;
     setPlayingIdx(0);
@@ -1277,7 +1297,7 @@ export default function SurahDetail() {
     setFavIds(new Set(fs.map((f) => f.id)));
   }, [id, name, trans]);
 
-  const currentReciter = RECITERS.find((r) => r.qdcId === reciterId);
+  const legacyCurrentReciter = RECITERS.find((r) => r.id === reciterId);
   const currentReciterName = currentReciter
     ? `${currentReciter.name} · ${currentReciter.style}`
     : "Unknown Reciter";
@@ -1348,25 +1368,32 @@ export default function SurahDetail() {
       {showReciters ? (
         <View style={[styles.reciterBox, { backgroundColor: colors.surfaceSecondary }]} testID="reciter-list">
           <Text style={[styles.reciterHead, { color: colors.onSurfaceMuted }]}>Choose Qari</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}>
+            {(["All", ...QURAN_AUDIO_CATEGORIES] as const).map((category) => (
+              <Pressable key={category} onPress={() => setReciterCategory(category)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: reciterCategory === category ? colors.brand : colors.surface }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: reciterCategory === category ? colors.onBrandPrimary : colors.onSurfaceMuted }}>{category}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
           <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-            {RECITERS.map((r) => {
-              const dlKey = `${r.qdcId}_${Number(id)}`;
+            {(reciterCategory === "All" ? RECITERS : RECITERS.filter((reciter) => reciter.category === reciterCategory)).map((r) => {
+              const dlKey = `${r.id}_${Number(id)}`;
               const dlState = downloadStatus[dlKey] || "idle";
-              const isSelected = reciterId === r.qdcId;
+              const isSelected = reciterId === r.id;
               return (
                 <Pressable
-                  key={`qdc-${r.qdcId}`}
+                  key={r.id}
                   onPress={() => {
-                    if (r.qdcId !== 7 && profile?.tier !== "premium" && !profile?.trialActive) {
+                    if (r.id !== "qdc-7" && profile?.tier !== "premium" && !profile?.trialActive) {
                       showPremiumModal(`Qari: ${r.name}`);
                       return;
                     }
-                    setReciterId(r.qdcId as ReciterQdcId);
+                    setReciterId(r.id);
                     setShowReciters(false);
                     stopAll();
                   }}
                   style={[styles.reciterItem, isSelected && { backgroundColor: colors.brand + "15", borderRadius: 8 }]}
-                  testID={`reciter-qdc-${r.qdcId}`}
+                  testID={`reciter-${r.id}`}
                 >
                   <MaterialCommunityIcons
                     name={isSelected ? "check-circle" : "circle-outline"}

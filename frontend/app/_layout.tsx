@@ -21,19 +21,59 @@ import { doc, setDoc } from "firebase/firestore";
 import { PremiumModalProvider } from "@/src/PremiumModalContext";
 import PremiumModal from "@/src/components/PremiumModal";
 
+async function checkPrayerNotificationExpired(notification: Notifications.Notification): Promise<boolean> {
+  try {
+    const title = notification.request.content.title || "";
+    const data = notification.request.content.data;
+    const prayer = data?.prayer || (title.match(/^(Fajr|Dhuhr|Asr|Maghrib|Isha)/)?.[1]);
+    
+    // Timestamp check: > 60 seconds delayed means expired
+    const diffMs = Math.abs(Date.now() - notification.date);
+    if (diffMs > 60000) return true;
+
+    if (!prayer) return false;
+
+    // Check cached prayer timings for end of prayer window
+    const rawCache = await AsyncStorage.getItem("hikmah:prayer-timings-cache:v1");
+    if (rawCache) {
+      const parsed = JSON.parse(rawCache);
+      const timings = parsed?.timings;
+      if (timings) {
+        const now = new Date();
+        const parseTimeToday = (timeStr: string) => {
+          const [h, m] = timeStr.split(":").map(Number);
+          const d = new Date();
+          d.setHours(h, m, 0, 0);
+          return d;
+        };
+
+        if (prayer === "Fajr" && timings.Sunrise) {
+          const sunriseTime = parseTimeToday(timings.Sunrise);
+          if (now >= sunriseTime) return true; // Fajr prayer time ends at Sunrise!
+        } else if (prayer === "Dhuhr" && timings.Asr) {
+          const asrTime = parseTimeToday(timings.Asr);
+          if (now >= asrTime) return true;
+        } else if (prayer === "Asr" && timings.Maghrib) {
+          const maghribTime = parseTimeToday(timings.Maghrib);
+          if (now >= maghribTime) return true;
+        } else if (prayer === "Maghrib" && timings.Isha) {
+          const ishaTime = parseTimeToday(timings.Isha);
+          if (now >= ishaTime) return true;
+        }
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    // Check if the notification triggered in the past (e.g. expired or delayed)
-    const date = notification.date; // Unix timestamp
-    const diffMs = Math.abs(Date.now() - date);
-    const hasExpired = diffMs > 60000; // if it triggered more than 60 seconds ago, it is expired
-
     const title = notification.request.content.title || "";
     const isPrayerTime = title.includes("Prayer Time");
     const isStickyPrayerCard = notification.request.content.data?.notificationKind === "sticky-prayer";
 
-    // The next-prayer card is a quiet, persistent status card. Updating it
-    // while the app is open must never create a banner or play a sound.
     if (isStickyPrayerCard) {
       return {
         shouldShowAlert: false,
@@ -44,15 +84,17 @@ Notifications.setNotificationHandler({
       };
     }
 
-    // If it is a prayer time notification and it has expired, do not show alert or play sound
-    if (isPrayerTime && hasExpired) {
-      return {
-        shouldShowAlert: false,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-        shouldShowBanner: false,
-        shouldShowList: false,
-      };
+    if (isPrayerTime) {
+      const expired = await checkPrayerNotificationExpired(notification);
+      if (expired) {
+        return {
+          shouldShowAlert: false,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
+          shouldShowBanner: false,
+          shouldShowList: false,
+        };
+      }
     }
 
     return {
@@ -212,9 +254,9 @@ export default function RootLayout() {
           const bgAzaanEnabled = bgAzaanRaw !== "false";
           if (!bgAzaanEnabled) return;
 
-          // Do not play if notification is expired/delayed
-          const diffMs = Math.abs(Date.now() - notification.date);
-          if (diffMs > 60000) return;
+          // Do not play if notification is expired or prayer time window ended
+          const isExpired = await checkPrayerNotificationExpired(notification);
+          if (isExpired) return;
 
           player.play();
         }

@@ -18,6 +18,9 @@ import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
+import { SURAH_LIST } from "@/src/data/surahList";
+import { SELECTABLE_ADHKAAR, DHIKRS } from "@/src/data/dhikrs";
+import { CATEGORIES as DUA_CATEGORIES } from "@/src/data/duas";
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
   getActiveGoalIds, getPrayerSettings, schedulePrayerNotifications, updateStickyPrayerNotification,
@@ -72,6 +75,7 @@ const CIRC = 2 * Math.PI * RADIUS;
 
 const QUICK_ACTIONS = [
   { id: "pillarsOfIslam",    label: "5 Pillars of Islam",      route: "/pillars-of-islam",      emoji: "☪️" },
+  { id: "dawah",             label: "Dawah (Why Islam)",       route: "/dawah",                  emoji: "📖" },
   { id: "nobleQuran",        label: "Al-Qur'aan",             route: "/quran",                  image: require("@/assets/images/quran_icon.png") },
   { id: "hadithCollections", label: "Hadith Collections",      route: "/hadith",                 emoji: "📚" },
   { id: "seerah",            label: "Seerah",                  route: "/seerah",                 emoji: "🌙" },
@@ -275,10 +279,47 @@ export default function HomeScreen() {
   const [completed, setCompleted] = useState<string[]>([]);
   const [activeIds, setActiveIds] = useState<string[]>([]);
   const [customGoals, setCustomGoals] = useState<Goal[]>([]);
+  const [expandPrayersInline, setExpandPrayersInline] = useState(false);
 
   // Calendar card states
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarDismissed, setCalendarDismissed] = useState(false);
+
+  // Live UmmahAPI Daily Dua state
+  const [dailyDua, setDailyDua] = useState<{
+    title: string;
+    arabic: string;
+    translation: string;
+    source: string;
+  } | null>(null);
+  const [dailyDuaDismissed, setDailyDuaDismissed] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const dismissedDate = await AsyncStorage.getItem("hikmah:daily-dua-dismissed-date");
+        const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
+        if (dismissedDate === todayStr) {
+          setDailyDuaDismissed(true);
+        }
+      } catch {}
+    })();
+
+    fetch("https://www.ummahapi.com/api/duas/random")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json?.data?.title && json?.data?.arabic) {
+          setDailyDua({
+            title: json.data.title,
+            arabic: json.data.arabic,
+            translation: json.data.translation || "",
+            source: json.data.source || "",
+          });
+        }
+      })
+      .catch((err) => console.warn("UmmahAPI daily dua fetch error:", err));
+  }, []);
+
   // Menstrual mode
   const [menstrualMode, setMenstrualMode] = useState(false);
   // Dhikr counts
@@ -295,6 +336,9 @@ export default function HomeScreen() {
   const [selectedAdhkarCount, setSelectedAdhkarCount] = useState(3);
   const [quickActionOrder, setQuickActionOrder] = useState<string[]>(HOME_QUICK_ACTIONS.map(action => action.id));
   const [reorderFrom, setReorderFrom] = useState<string | null>(null);
+  const [quickPageIndex, setQuickPageIndex] = useState(0);
+  const quickPagerPulse = useRef(new Animated.Value(1)).current;
+  const quickScrollX = useRef(new Animated.Value(0)).current;
   const orderedQuickActions = useMemo(() => {
     const actionsById = new Map(HOME_QUICK_ACTIONS.map(action => [action.id, action]));
     const saved = quickActionOrder.map(id => actionsById.get(id)).filter(Boolean) as any[];
@@ -312,6 +356,8 @@ export default function HomeScreen() {
   const [showAddCustomModal, setShowAddCustomModal] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState("");
   const [newGoalCategory, setNewGoalCategory] = useState<"prayer" | "quran" | "dhikr" | "other">("other");
+  const [surahSearch, setSurahSearch] = useState("");
+  const [dhikrSearch, setDhikrSearch] = useState("");
 
   useEffect(() => {
     AsyncStorage.getItem("hikmah:home-quick-action-order:v1").then(raw => {
@@ -323,17 +369,33 @@ export default function HomeScreen() {
     }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(quickPagerPulse, {
+        toValue: 1.35,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.spring(quickPagerPulse, {
+        toValue: 1,
+        friction: 5,
+        tension: 80,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [quickPageIndex, quickPagerPulse]);
+
   // Confetti particles for completion celebration
   const [allCompletedModalVisible, setAllCompletedModalVisible] = useState(false);
-  const lastProgress = useRef(0);
-  const confettiParticles = useRef(Array(45).fill(0).map(() => ({
+  const lastDoneCount = useRef(0);
+  const confettiParticles = useRef(Array(65).fill(0).map(() => ({
     x: Math.random() * width,
     y: new Animated.Value(-100),
     rotate: new Animated.Value(0),
     scale: Math.random() * 0.7 + 0.3,
-    color: ["#FF5A5F", "#3b82f6", "#10b981", "#fbbf24", "#8b5cf6", "#f43f5e", "#06b6d4"][Math.floor(Math.random() * 7)],
+    color: ["#FF5A5F", "#3b82f6", "#10b981", "#fbbf24", "#8b5cf6", "#f43f5e", "#06b6d4", "#eab308"][Math.floor(Math.random() * 8)],
     shape: Math.random() > 0.5 ? "rect" : "circle",
-    drift: Math.random() * 80 - 40
+    drift: Math.random() * 100 - 50
   }))).current;
 
   // Load prayer times
@@ -407,13 +469,24 @@ export default function HomeScreen() {
           AsyncStorage.getItem("hikmah:custom-goals:v1"),
         ]);
         setCompleted(comp);
-        setActiveIds(ids);
+        
+        // Auto-reconcile dhikr goals if activeIds is missing them
+        const defaultDhikrIds = ['morning-adhkar', 'evening-adhkar', 'sleep-adhkar', 'dhikr-after-salah', 'istighfar-100'];
+        let validIds = ids;
+        if (!ids.some(id => defaultDhikrIds.includes(id))) {
+          validIds = Array.from(new Set([...ids, ...defaultDhikrIds]));
+          saveActiveGoalIds(validIds);
+        }
+        setActiveIds(validIds);
+
         setMenstrualMode(menstrual);
         setCalendarConnected(calConnected);
         setCalendarDismissed(calDismissed);
         setDhikrCounts(dCounts || {});
         setPrayerCompletions(pCompletions || { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false });
-        if (sa !== null) setSelectedAdhkarCount(parseInt(sa, 10));
+        
+        const parsedCount = sa !== null ? parseInt(sa, 10) : 5;
+        setSelectedAdhkarCount(isNaN(parsedCount) || parsedCount <= 0 ? 5 : parsedCount);
         
         const loadedCustom = customRaw ? JSON.parse(customRaw) : [];
         setCustomGoals(loadedCustom);
@@ -424,6 +497,57 @@ export default function HomeScreen() {
   const allGoals = useMemo(() => {
     return [...DEFAULT_GOALS, ...customGoals];
   }, [customGoals]);
+
+  const allDhikrAndDuaOptions = useMemo(() => {
+    const list: { id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[] = [];
+    const seenIds = new Set<string>();
+
+    SELECTABLE_ADHKAAR.forEach(item => {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        list.push({
+          id: item.id,
+          title: item.title,
+          arabic: item.arabic,
+          transliteration: item.transliteration,
+          translation: item.translation,
+          categoryTag: "Daily Adhkar"
+        });
+      }
+    });
+
+    DUA_CATEGORIES.forEach(cat => {
+      cat.duas.forEach(d => {
+        if (!seenIds.has(d.id)) {
+          seenIds.add(d.id);
+          list.push({
+            id: d.id,
+            title: d.title,
+            arabic: d.arabic,
+            transliteration: d.transliteration,
+            translation: d.translation,
+            categoryTag: cat.title
+          });
+        }
+      });
+    });
+
+    DHIKRS.forEach(d => {
+      if (!seenIds.has(d.id)) {
+        seenIds.add(d.id);
+        list.push({
+          id: d.id,
+          title: d.transliteration,
+          arabic: d.arabic,
+          transliteration: d.transliteration,
+          translation: d.translation,
+          categoryTag: "Dhikr"
+        });
+      }
+    });
+
+    return list;
+  }, []);
 
   const activeGoals = useMemo(() => {
     const today = new Date().getDay();
@@ -474,7 +598,7 @@ export default function HomeScreen() {
       if (["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(g.id)) {
         const prayerName = g.id.charAt(0).toUpperCase() + g.id.slice(1);
         counts.prayer.total++;
-        if (menstrualMode || prayerCompletions[prayerName]) counts.prayer.done++;
+        if (menstrualMode || prayerCompletions[prayerName] || completed.includes(g.id)) counts.prayer.done++;
       } else {
         counts[g.category].total++;
         if (completed.includes(g.id)) counts[g.category].done++;
@@ -633,11 +757,12 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    if (overallProgress === 1 && lastProgress.current < 1 && totalGoals > 0) {
+    if (totalGoals > 0 && totalDone >= totalGoals && lastDoneCount.current < totalGoals) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setAllCompletedModalVisible(true);
     }
-    lastProgress.current = overallProgress;
-  }, [overallProgress, totalGoals]);
+    lastDoneCount.current = totalDone;
+  }, [totalDone, totalGoals]);
 
   const handleDhikrTap = async (goalId: string) => {
     Haptics.selectionAsync().catch(() => {});
@@ -809,32 +934,167 @@ export default function HomeScreen() {
     return name;
   }, [times]);
 
+  const isGoalEnabledAtCurrentTime = useCallback((goalId: string): { enabled: boolean; reason?: string } => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMin = now.getMinutes();
+    const currentTimeVal = currentHour * 60 + currentMin;
+    const currentDay = now.getDay(); // 0=Sun, 1=Mon, ..., 4=Thu
+
+    const getPrayerTimeInfo = (pName: string, fallbackH: number, fallbackM: number = 0) => {
+      if (times && times[pName]) {
+        const [h, m] = times[pName].split(":").map(Number);
+        return { minutes: h * 60 + m, formatted: format12Hour(times[pName]) };
+      }
+      const formatted = `${fallbackH > 12 ? fallbackH - 12 : fallbackH}:${String(fallbackM).padStart(2, "0")} ${fallbackH >= 12 ? "PM" : "AM"}`;
+      return { minutes: fallbackH * 60 + fallbackM, formatted };
+    };
+
+    // 1. Monday & Thursday Fasting locks
+    if (goalId === "fast-monday" || goalId.includes("fast-monday")) {
+      if (currentDay !== 1) return { enabled: false, reason: "Available on Mondays" };
+    }
+    if (goalId === "fast-thursday" || goalId.includes("fast-thursday")) {
+      if (currentDay !== 4) return { enabled: false, reason: "Available on Thursdays" };
+    }
+
+    // 2. Obligatory Prayers locks
+    if (["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(goalId)) {
+      const pName = goalId.charAt(0).toUpperCase() + goalId.slice(1);
+      const pInfo = getPrayerTimeInfo(pName, pName === "Fajr" ? 4 : pName === "Dhuhr" ? 12 : pName === "Asr" ? 15 : pName === "Maghrib" ? 18 : 19, 30);
+      if (currentTimeVal < pInfo.minutes) {
+        return { enabled: false, reason: `Starts at ${pInfo.formatted}` };
+      }
+    }
+
+    // 3. Tahajjud Prayer (Qiyam time)
+    if (goalId === "tahajjud" || goalId.includes("tahajjud")) {
+      const fajrInfo = getPrayerTimeInfo("Fajr", 4, 30);
+      const qiyamInfo = times?.Lastthird 
+        ? { minutes: times.Lastthird.split(":").map(Number)[0] * 60 + times.Lastthird.split(":").map(Number)[1], formatted: format12Hour(times.Lastthird) } 
+        : { minutes: 1 * 60, formatted: "01:00 AM" };
+      const isQiyamTime = (currentTimeVal >= qiyamInfo.minutes || currentTimeVal < fajrInfo.minutes) && (currentHour >= 23 || currentHour < 6);
+      if (!isQiyamTime) {
+        return { enabled: false, reason: `Available at Qiyam (${qiyamInfo.formatted})` };
+      }
+    }
+
+    // 4. Dynamic prayer-time window logic for Adhkars and Surah Mulk
+    if (goalId === "morning-adhkar") {
+      const fajrInfo = getPrayerTimeInfo("Fajr", 4, 30);
+      if (currentTimeVal < fajrInfo.minutes) {
+        return { enabled: false, reason: `Available after Fajr (${fajrInfo.formatted})` };
+      }
+    }
+    if (goalId === "evening-adhkar") {
+      const asrInfo = getPrayerTimeInfo("Asr", 16, 0);
+      if (currentTimeVal < asrInfo.minutes) {
+        return { enabled: false, reason: `Available after Asr (${asrInfo.formatted})` };
+      }
+    }
+    if (goalId === "sleep-adhkar") {
+      const ishaInfo = getPrayerTimeInfo("Isha", 19, 30);
+      if (currentTimeVal < ishaInfo.minutes) {
+        return { enabled: false, reason: `Available after Isha (${ishaInfo.formatted})` };
+      }
+    }
+    if (goalId === "surah-mulk") {
+      const ishaInfo = getPrayerTimeInfo("Isha", 19, 30);
+      if (currentTimeVal < ishaInfo.minutes) {
+        return { enabled: false, reason: `Available after Isha (${ishaInfo.formatted})` };
+      }
+    }
+
+    const isCompleted = completed.includes(goalId) || (["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(goalId) && prayerCompletions[goalId.charAt(0).toUpperCase() + goalId.slice(1)]);
+    if (isCompleted || menstrualMode) return { enabled: true };
+
+    return { enabled: true };
+  }, [completed, prayerCompletions, menstrualMode, times]);
+
+  const handleGoalLongPress = useCallback(async (goalId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (["morning-adhkar", "evening-adhkar", "sleep-adhkar", "dhikr-after-salah", "istighfar-100", "strengthen-imaan", "for-forgiveness", "for-thanking-allah", "for-glorifying-allah"].includes(goalId)) {
+      router.push("/adhkar");
+    } else if (goalId === "surah-mulk" || goalId.includes("surah-67")) {
+      router.push("/quran/67");
+    } else if (goalId === "surah-kahaf" || goalId.includes("surah-18")) {
+      router.push("/quran/18");
+    } else if (goalId.startsWith("custom-surah-")) {
+      const parts = goalId.split("-");
+      const surahNum = parts[2];
+      if (surahNum) router.push(`/quran/${surahNum}`);
+      else router.push("/quran/read/1");
+    } else if (goalId === "quran-5min") {
+      try {
+        const lastPage = await AsyncStorage.getItem("hikmah:last_quran_page");
+        if (lastPage && !isNaN(Number(lastPage))) {
+          router.push(`/quran/read/${lastPage}`);
+        } else {
+          router.push("/quran/read/1");
+        }
+      } catch {
+        router.push("/quran/read/1");
+      }
+    }
+  }, [router]);
+
   const renderInlineGoalItem = (goal: Goal) => {
+    const timeStatus = isGoalEnabledAtCurrentTime(goal.id);
+    const isLocked = !timeStatus.enabled;
     const catColor = CATEGORY_COLORS[goal.category] || colors.brand;
     const isSpecialAdhkar = ['morning-adhkar', 'evening-adhkar', 'sleep-adhkar'].includes(goal.id);
     const isDhikr = goal.category === 'dhikr' && !isSpecialAdhkar;
     const dhikrCount = dhikrCounts[goal.id] || 0;
-    const isCompleted = completed.includes(goal.id);
+    const isCompleted = completed.includes(goal.id) || (["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(goal.id) && prayerCompletions[goal.id.charAt(0).toUpperCase() + goal.id.slice(1)]);
     const titleText = isDhikr ? `${goal.title} (${dhikrCount}/3)` : goal.title;
+
+    const handlePressGoal = () => {
+      if (isLocked) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        Alert.alert("Goal Not Active Yet", `${goal.title} is locked. ${timeStatus.reason}.`);
+        return;
+      }
+      if (["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(goal.id)) {
+        const pName = goal.id.charAt(0).toUpperCase() + goal.id.slice(1);
+        togglePrayerCompletion(pName);
+      } else if (isDhikr) {
+        handleDhikrTap(goal.id);
+      } else {
+        handleGoalTap(goal.id);
+      }
+    };
     
     return (
-      <View key={goal.id} style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+      <View key={goal.id} style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, opacity: isLocked ? 0.55 : 1 }]}>
         <Pressable 
-          onPress={() => isDhikr ? handleDhikrTap(goal.id) : handleGoalTap(goal.id)}
+          onPress={handlePressGoal}
+          onLongPress={() => handleGoalLongPress(goal.id)}
           style={styles.goalCheckArea}
         >
-          <View style={[styles.goalCircleCheck, { borderColor: catColor, backgroundColor: isCompleted ? catColor : "transparent" }]}>
-            {isCompleted && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
+          <View style={[styles.goalCircleCheck, { borderColor: isLocked ? colors.onSurfaceMuted : catColor, backgroundColor: isCompleted ? catColor : "transparent" }]}>
+            {isCompleted ? (
+              <MaterialCommunityIcons name="check" size={14} color="#fff" />
+            ) : isLocked ? (
+              <MaterialCommunityIcons name="lock-outline" size={12} color={colors.onSurfaceMuted} />
+            ) : null}
           </View>
         </Pressable>
         
         <Pressable 
-          onPress={() => isDhikr ? handleDhikrTap(goal.id) : handleGoalTap(goal.id)}
+          onPress={handlePressGoal}
+          onLongPress={() => handleGoalLongPress(goal.id)}
           style={{ flex: 1 }}
         >
-          <Text style={[styles.goalItemTitle, { color: colors.onSurface, textDecorationLine: isCompleted ? 'line-through' : 'none' }]}>
-            {titleText}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <Text style={[styles.goalItemTitle, { color: isLocked ? colors.onSurfaceMuted : colors.onSurface, textDecorationLine: isCompleted ? 'line-through' : 'none' }]}>
+              {titleText}
+            </Text>
+            {isLocked && timeStatus.reason && (
+              <View style={{ backgroundColor: colors.border, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                <Text style={{ fontSize: 10, color: colors.onSurfaceMuted, fontWeight: "600" }}>{timeStatus.reason}</Text>
+              </View>
+            )}
+          </View>
           {goal.subtitle && !goal.arabic && (
             <Text style={[styles.goalItemSub, { color: colors.onSurfaceMuted }]}>{goal.subtitle}</Text>
           )}
@@ -907,33 +1167,46 @@ export default function HomeScreen() {
 
   const renderCollapsedPrayerRow = () => {
     const isCompleted = menstrualMode ? true : prayerCompletions[activePrayerToDisplay];
+    const pId = activePrayerToDisplay.toLowerCase();
+    const timeStatus = isGoalEnabledAtCurrentTime(pId);
+    const isLocked = !timeStatus.enabled;
     const catColor = CATEGORY_COLORS.prayer;
     
     return (
-      <View key="collapsed-prayer" style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+      <View key="collapsed-prayer" style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, opacity: isLocked ? 0.6 : 1 }]}>
         <Pressable 
           onPress={() => {
             if (menstrualMode) return;
+            if (isLocked) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+              Alert.alert("Prayer Time Not Started", `${activePrayerToDisplay} prayer starts at ${timeStatus.reason?.replace("Starts at ", "")}.`);
+              return;
+            }
             togglePrayerCompletion(activePrayerToDisplay);
           }}
           style={styles.goalCheckArea}
         >
           <View style={[styles.goalCircleCheck, { borderColor: catColor, backgroundColor: isCompleted ? catColor : "transparent" }]}>
-            {isCompleted && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
+            {isCompleted ? <MaterialCommunityIcons name="check" size={14} color="#fff" /> : isLocked ? <MaterialCommunityIcons name="lock-outline" size={12} color={colors.onSurfaceMuted} /> : null}
           </View>
         </Pressable>
         
         <Pressable 
-          onPress={() => setPrayersModalVisible(true)}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            setExpandPrayersInline(!expandPrayersInline);
+          }}
           style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
         >
           <View style={{ flex: 1 }}>
             <Text style={[styles.goalItemTitle, { color: colors.onSurface, textDecorationLine: isCompleted ? 'line-through' : 'none' }]}>
               Offer {activePrayerToDisplay}
             </Text>
-            <Text style={[styles.goalItemSub, { color: colors.onSurfaceMuted }]}>Tap to show all</Text>
+            <Text style={[styles.goalItemSub, { color: colors.onSurfaceMuted }]}>
+              {expandPrayersInline ? "Tap to collapse" : "Tap to show all 5 prayers"}
+            </Text>
           </View>
-          <MaterialCommunityIcons name="chevron-down" size={20} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
+          <MaterialCommunityIcons name={expandPrayersInline ? "chevron-up" : "chevron-down"} size={20} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
         </Pressable>
         
         <Pressable 
@@ -1045,10 +1318,10 @@ export default function HomeScreen() {
             {/* Countdown Ring */}
             <View style={styles.ringWrap}>
               <Svg width={RING} height={RING}>
-                <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke={colors.surfaceSecondary} strokeWidth={STROKE} fill="transparent" />
+                <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke="#70FF00" strokeWidth={STROKE} fill="transparent" opacity={0.85} />
                 <Circle
                   cx={RING/2} cy={RING/2} r={RADIUS}
-                  stroke={colors.brand} strokeWidth={STROKE} fill="transparent"
+                  stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
                   strokeDasharray={CIRC} strokeDashoffset={strokeDash}
                   strokeLinecap="round" rotation="-90" origin={`${RING/2},${RING/2}`}
                 />
@@ -1064,7 +1337,72 @@ export default function HomeScreen() {
         )}
 
         {/* Quick Actions */}
-        <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.quickPager} contentContainerStyle={styles.quickPagerContent}>
+        {/* Daily Dua Card (UmmahAPI) */}
+        {!dailyDuaDismissed && dailyDua && (
+          <View
+            style={{
+              marginHorizontal: 20, marginBottom: 16, padding: 16, borderRadius: 20,
+              backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.brand + "33",
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Pressable onPress={() => router.push("/dua-hub" as any)} style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 8 }}>
+                <MaterialCommunityIcons name="hands-pray" size={18} color={colors.brand} />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.brand, flex: 1 }} numberOfLines={1}>
+                  Dua of the Day: {dailyDua.title}
+                </Text>
+              </Pressable>
+              
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Pressable onPress={() => router.push("/dua-hub" as any)} hitSlop={6}>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={colors.brand} />
+                </Pressable>
+                <Pressable
+                  onPress={async () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setDailyDuaDismissed(true);
+                    const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
+                    await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
+                  }}
+                  hitSlop={10}
+                  accessibilityLabel="Dismiss Dua of the Day"
+                >
+                  <MaterialCommunityIcons name="close-circle-outline" size={20} color={colors.onSurfaceMuted} />
+                </Pressable>
+              </View>
+            </View>
+            <Pressable onPress={() => router.push("/dua-hub" as any)}>
+              <Text style={{ fontFamily: "AmiriBold", fontSize: 20, color: colors.onSurface, textAlign: "right", marginBottom: 6, lineHeight: 32 }}>
+                {dailyDua.arabic}
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.onSurfaceSecondary, lineHeight: 19 }} numberOfLines={2}>
+                "{dailyDua.translation}"
+              </Text>
+              {dailyDua.source ? (
+                <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 4, fontStyle: "italic" }}>
+                  Source: {dailyDua.source}
+                </Text>
+              ) : null}
+            </Pressable>
+          </View>
+        )}
+
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          style={styles.quickPager}
+          contentContainerStyle={styles.quickPagerContent}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: quickScrollX } } }],
+            { useNativeDriver: false }
+          )}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={(event) => {
+            const page = Math.round(event.nativeEvent.contentOffset.x / width);
+            setQuickPageIndex(Math.max(0, Math.min(page, quickActionPages.length - 1)));
+          }}
+        >
           {quickActionPages.map((page, pageIndex) => (
             <View key={`quick-page-${pageIndex}`} style={styles.quickPage}>
               {page.map((a) => (
@@ -1095,7 +1433,52 @@ export default function HomeScreen() {
             </View>
           ))}
         </ScrollView>
-        <Text style={[styles.quickHint, { color: colors.onSurfaceMuted }]}>{reorderFrom ? "Tap another icon to swap its position" : "Swipe for more shortcuts · Hold an icon to rearrange"}</Text>
+        {reorderFrom ? (
+          <Text style={[styles.quickReorderHint, { color: colors.onSurfaceMuted }]}>Tap another icon to swap its position</Text>
+        ) : (
+          <View
+            style={styles.quickDots}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel={`Shortcut page ${quickPageIndex + 1} of ${quickActionPages.length}`}
+          >
+            {quickActionPages.map((_, index) => {
+              const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
+
+              const dotWidth = quickScrollX.interpolate({
+                inputRange,
+                outputRange: [8, 22, 8],
+                extrapolate: "clamp",
+              });
+
+              const opacity = quickScrollX.interpolate({
+                inputRange,
+                outputRange: [0.3, 1, 0.3],
+                extrapolate: "clamp",
+              });
+
+              const backgroundColor = quickScrollX.interpolate({
+                inputRange,
+                outputRange: [colors.border, colors.brand, colors.border],
+                extrapolate: "clamp",
+              });
+
+              return (
+                <Animated.View
+                  key={`quick-dot-${index}`}
+                  style={[
+                    styles.quickDot,
+                    {
+                      width: dotWidth,
+                      opacity,
+                      backgroundColor,
+                    },
+                  ]}
+                />
+              );
+            })}
+          </View>
+        )}
 
         {/* Connection & Daily Goals Section */}
         
@@ -1149,9 +1532,38 @@ export default function HomeScreen() {
 
         {/* Goal Checklist Container */}
         <View style={styles.goalsListContainer}>
-          {/* Obligatory Prayers Row (if active and not excused) */}
+          {/* Obligatory Prayers Section (if active and not excused) */}
           {activeIds.some(id => ["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(id)) && (
-            renderCollapsedPrayerRow()
+            expandPrayersInline ? (
+              <View style={{ gap: 8, marginBottom: 8 }}>
+                <Pressable 
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setExpandPrayersInline(false);
+                  }}
+                  style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 4, paddingVertical: 4 }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.brand }}>
+                    Obligatory Prayers (5)
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                    <Text style={{ fontSize: 11, color: colors.onSurfaceMuted }}>Collapse</Text>
+                    <MaterialCommunityIcons name="chevron-up" size={16} color={colors.onSurfaceMuted} />
+                  </View>
+                </Pressable>
+
+                {["fajr", "dhuhr", "asr", "maghrib", "isha"].map(pId => {
+                  const goal = activeGoals.find(g => g.id === pId) || {
+                    id: pId,
+                    title: `Offer ${pId.charAt(0).toUpperCase() + pId.slice(1)}`,
+                    category: "prayer" as const,
+                  };
+                  return renderInlineGoalItem(goal as Goal);
+                })}
+              </View>
+            ) : (
+              renderCollapsedPrayerRow()
+            )
           )}
           
           {/* Other active goals today */}
@@ -1261,90 +1673,91 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
-      {/* Add New Dhikr Modal */}
+      {/* Select Daily Adhkar Modal */}
       <Modal
         visible={dhikrModalVisible}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setDhikrModalVisible(false)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setDhikrModalVisible(false)}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Add New Dhikr</Text>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Select Daily Adhkar</Text>
+                <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 2 }}>Select your favourite Dhikr to perform everyday</Text>
+              </View>
               <Pressable onPress={() => setDhikrModalVisible(false)} hitSlop={10}>
                 <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
               </Pressable>
             </View>
-            
-            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
-              {[
-                { id: 'morning-adhkar', title: 'Morning Adhkar', subtitle: 'Recited after Fajr', category: 'dhikr' },
-                { id: 'evening-adhkar', title: 'Evening Adhkar', subtitle: 'Recited after Asr', category: 'dhikr' },
-                { id: 'sleep-adhkar', title: 'Sleep Adhkar', subtitle: 'Recited before sleeping', category: 'dhikr' },
-                { id: 'dhikr-after-salah', title: 'Dhikr After Salah', subtitle: 'Recited after prayers', category: 'dhikr' },
-                { id: 'istighfar-100', title: 'Istighfar (100 times)', subtitle: 'For forgiveness', category: 'dhikr' },
-              ].map((item) => {
+
+            {/* Create Custom Goal Button */}
+            <Pressable
+              onPress={() => {
+                setDhikrModalVisible(false);
+                setShowAddCustomModal(true);
+              }}
+              style={[styles.addCustomBtn, { backgroundColor: colors.brand, marginVertical: 10, borderRadius: 12, paddingVertical: 10 }]}
+            >
+              <MaterialCommunityIcons name="plus-circle-outline" size={20} color={colors.onBrandPrimary} style={{ marginRight: 6 }} />
+              <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 14 }}>Create Custom Goal</Text>
+            </Pressable>
+
+            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
+              {SELECTABLE_ADHKAAR.map((item) => {
                 const isAdded = activeIds.includes(item.id);
-                const catColor = CATEGORY_COLORS[item.category] || colors.brand;
                 return (
-                  <Pressable 
+                  <View 
                     key={item.id} 
-                    onPress={() => {
-                      addDhikrToGoals(item.id);
-                      setDhikrModalVisible(false);
+                    style={{
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: 14,
+                      padding: 14,
+                      gap: 8
                     }}
-                    style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{item.title}</Text>
-                      <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>{item.subtitle}</Text>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.onSurface, flex: 1, paddingRight: 8 }}>{item.title}</Text>
+                      <Switch
+                        value={isAdded}
+                        onValueChange={async () => {
+                          Haptics.selectionAsync().catch(() => {});
+                          if (isAdded) {
+                            const updated = activeIds.filter(id => id !== item.id);
+                            setActiveIds(updated);
+                            await saveActiveGoalIds(updated);
+                          } else {
+                            const updated = [...activeIds, item.id];
+                            setActiveIds(updated);
+                            await saveActiveGoalIds(updated);
+                          }
+                        }}
+                        trackColor={{ false: colors.border, true: colors.brand }}
+                        thumbColor={Platform.OS === 'ios' ? undefined : colors.surfaceSecondary}
+                      />
                     </View>
-                    <View style={[styles.goalCircleCheck, { borderColor: catColor, backgroundColor: isAdded ? catColor : "transparent" }]}>
-                      {isAdded && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
+
+                    <Text style={{ fontSize: 16, color: colors.brand, fontFamily: "Amiri", textAlign: "right", lineHeight: 28 }}>
+                      {item.arabic}
+                    </Text>
+
+                    <View style={{ marginTop: 2 }}>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurfaceMuted }}>Transliteration:</Text>
+                      <Text style={{ fontSize: 13, color: colors.onSurface, lineHeight: 18, marginTop: 2 }}>
+                        {item.transliteration}
+                      </Text>
                     </View>
-                  </Pressable>
+                  </View>
                 );
               })}
-
-              {/* Custom Goals List */}
-              {customGoals.map((item) => {
-                const isAdded = activeIds.includes(item.id);
-                const catColor = CATEGORY_COLORS[item.category] || colors.brand;
-                return (
-                  <Pressable 
-                    key={item.id} 
-                    onPress={() => {
-                      toggleCustomGoalActive(item.id);
-                      setDhikrModalVisible(false);
-                    }}
-                    style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{item.title}</Text>
-                      <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>Custom • Category: {item.category}</Text>
-                    </View>
-                    <View style={[styles.goalCircleCheck, { borderColor: catColor, backgroundColor: isAdded ? catColor : "transparent" }]}>
-                      {isAdded && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
-                    </View>
-                  </Pressable>
-                );
-              })}
-
-              <Pressable
-                onPress={() => {
-                  setDhikrModalVisible(false);
-                  setShowAddCustomModal(true);
-                }}
-                style={[styles.addCustomBtn, { backgroundColor: colors.brand, marginTop: 12 }]}
-              >
-                <MaterialCommunityIcons name="plus" size={20} color={colors.onBrandPrimary} style={{ marginRight: 6 }} />
-                <Text style={{ color: colors.onBrandPrimary, fontWeight: "700" }}>Create Custom Goal</Text>
-              </Pressable>
             </ScrollView>
           </View>
-        </Pressable>
+        </View>
       </Modal>
+
       {/* Add Custom Goal Modal */}
       <Modal
         visible={showAddCustomModal}
@@ -1353,31 +1766,21 @@ export default function HomeScreen() {
         onRequestClose={() => setShowAddCustomModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Create Custom Goal</Text>
+              <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Create Custom Goal</Text>
               <Pressable onPress={() => setShowAddCustomModal(false)} hitSlop={10}>
                 <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
               </Pressable>
             </View>
             
-            <View style={{ gap: 16, marginTop: 8, width: "100%" }}>
+            <View style={{ gap: 14, marginTop: 8, width: "100%", flex: 1 }}>
               <View>
-                <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6 }}>Goal Title</Text>
-                <TextInput
-                  value={newGoalTitle}
-                  onChangeText={setNewGoalTitle}
-                  placeholder="e.g. Read Tafseer, Visit Family..."
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
-                />
-              </View>
-              
-              <View>
-                <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6 }}>Category</Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Category</Text>
+                <View style={{ flexDirection: "row", gap: 6 }}>
                   {(["prayer", "quran", "dhikr", "other"] as const).map((cat) => {
                     const isSel = newGoalCategory === cat;
+                    const labelMap: Record<string, string> = { prayer: "Prayer", quran: "Qur'an", dhikr: "Dhikr", other: "Other" };
                     return (
                       <Pressable
                         key={cat}
@@ -1387,24 +1790,156 @@ export default function HomeScreen() {
                         }}
                         style={[
                           styles.catSelectBtn, 
-                          { borderColor: colors.border, backgroundColor: isSel ? colors.brand : colors.surface }
+                          { flex: 1, borderColor: colors.border, backgroundColor: isSel ? colors.brand : colors.surface, paddingVertical: 10, alignItems: "center", borderRadius: 10 }
                         ]}
                       >
-                        <Text style={{ fontSize: 13, color: isSel ? colors.onBrandPrimary : colors.onSurface, fontWeight: isSel ? "700" : "400" }}>
-                          {cat.toUpperCase()}
+                        <Text style={{ fontSize: 12, color: isSel ? colors.onBrandPrimary : colors.onSurface, fontWeight: isSel ? "700" : "500" }}>
+                          {labelMap[cat]}
                         </Text>
                       </Pressable>
                     );
                   })}
                 </View>
               </View>
-              
-              <Pressable 
-                onPress={handleAddCustomGoal}
-                style={[styles.modalSubmitBtn, { backgroundColor: colors.brand, marginTop: 12 }]}
-              >
-                <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 15 }}>Create & Add Goal</Text>
-              </Pressable>
+
+              {newGoalCategory === "quran" ? (
+                <View style={{ flex: 1, gap: 8 }}>
+                  <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Surah to Recite Everyday</Text>
+                  <TextInput
+                    value={surahSearch}
+                    onChangeText={setSurahSearch}
+                    placeholder="Search Surah (e.g. Yaseen, Kahf, Mulk...)"
+                    placeholderTextColor={colors.onSurfaceMuted}
+                    style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  />
+
+                  <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
+                    {SURAH_LIST.filter(s => 
+                      s.englishName.toLowerCase().includes(surahSearch.toLowerCase()) || 
+                      s.englishNameTranslation.toLowerCase().includes(surahSearch.toLowerCase()) ||
+                      s.number.toString() === surahSearch.trim()
+                    ).map((surah) => (
+                      <Pressable
+                        key={surah.number}
+                        onPress={async () => {
+                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                          const newGoal = {
+                            id: `custom-surah-${surah.number}-${Date.now()}`,
+                            title: `Recite Surah ${surah.englishName}`,
+                            arabic: surah.name,
+                            category: "quran" as const,
+                            repeat: "daily" as const
+                          };
+                          const updatedCustom = [...customGoals, newGoal];
+                          setCustomGoals(updatedCustom);
+                          await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
+                          
+                          const updatedActive = [...activeIds, newGoal.id];
+                          setActiveIds(updatedActive);
+                          await saveActiveGoalIds(updatedActive);
+
+                          setShowAddCustomModal(false);
+                          setSurahSearch("");
+                          Alert.alert("Goal Created 🌟", `Added "Recite Surah ${surah.englishName}" to your daily goals!`);
+                        }}
+                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12 }]}
+                      >
+                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brand + "18", alignItems: "center", justifyContent: "center" }}>
+                          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.brand }}>{surah.number}</Text>
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{surah.englishName}</Text>
+                          <Text style={{ fontSize: 11, color: colors.onSurfaceMuted }}>{surah.englishNameTranslation} • {surah.numberOfAyahs} Verses</Text>
+                        </View>
+                        <Text style={{ fontSize: 16, color: colors.brand, fontFamily: "Amiri" }}>{surah.name}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : newGoalCategory === "dhikr" ? (
+                <View style={{ flex: 1, gap: 8 }}>
+                  <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Dhikr or Du'a from Du'a Hub to Recite Everyday</Text>
+                  <TextInput
+                    value={dhikrSearch}
+                    onChangeText={setDhikrSearch}
+                    placeholder="Search Dhikr or Du'a (e.g. Protection, Forgiveness, Ummah, Healing...)"
+                    placeholderTextColor={colors.onSurfaceMuted}
+                    style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  />
+
+                  <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
+                    {allDhikrAndDuaOptions.filter(item => 
+                      item.title.toLowerCase().includes(dhikrSearch.toLowerCase()) || 
+                      (item.transliteration && item.transliteration.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
+                      (item.translation && item.translation.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
+                      (item.categoryTag && item.categoryTag.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
+                      item.arabic.includes(dhikrSearch.trim())
+                    ).map((dhikrItem) => (
+                      <Pressable
+                        key={dhikrItem.id}
+                        onPress={async () => {
+                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                          const newGoal = {
+                            id: `custom-dhikr-${dhikrItem.id}-${Date.now()}`,
+                            title: dhikrItem.title,
+                            arabic: dhikrItem.arabic,
+                            subtitle: dhikrItem.transliteration || dhikrItem.translation,
+                            category: "dhikr" as const,
+                            repeat: "daily" as const
+                          };
+                          const updatedCustom = [...customGoals, newGoal];
+                          setCustomGoals(updatedCustom);
+                          await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
+                          
+                          const updatedActive = [...activeIds, newGoal.id];
+                          setActiveIds(updatedActive);
+                          await saveActiveGoalIds(updatedActive);
+
+                          setShowAddCustomModal(false);
+                          setDhikrSearch("");
+                          Alert.alert("Goal Created 🌟", `Added "${dhikrItem.title}" to your daily goals!`);
+                        }}
+                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12, alignItems: "flex-start" }]}
+                      >
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
+                            <Text style={[styles.modalPrayerLabel, { color: colors.onSurface, fontSize: 14 }]}>{dhikrItem.title}</Text>
+                            <View style={{ backgroundColor: colors.brand + "18", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                              <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>{dhikrItem.categoryTag}</Text>
+                            </View>
+                          </View>
+                          {dhikrItem.transliteration ? (
+                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }} numberOfLines={2}>{dhikrItem.transliteration}</Text>
+                          ) : dhikrItem.translation ? (
+                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }} numberOfLines={2}>{dhikrItem.translation}</Text>
+                          ) : null}
+                        </View>
+                        <Text style={{ fontSize: 15, color: colors.brand, fontFamily: "Amiri", textAlign: "right" }}>{dhikrItem.arabic}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : (
+                <View style={{ gap: 16, marginTop: 4 }}>
+                  <View>
+                    <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Goal Title</Text>
+                    <TextInput
+                      value={newGoalTitle}
+                      onChangeText={setNewGoalTitle}
+                      placeholder={newGoalCategory === "prayer" ? "e.g. Offer Ishraq, Offer Duha" : "e.g. Read Tafseer, Visit Family"}
+                      placeholderTextColor={colors.onSurfaceMuted}
+                      style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
+                    />
+                  </View>
+
+                  <Pressable 
+                    onPress={handleAddCustomGoal}
+                    style={[styles.modalSubmitBtn, { backgroundColor: colors.brand, marginTop: 8, borderRadius: 12 }]}
+                  >
+                    <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 15 }}>Create & Add Goal</Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -1501,10 +2036,10 @@ export default function HomeScreen() {
 
             {/* Celebratory Text */}
             <View style={{ alignItems: "center", justifyContent: "center", flex: 1, paddingHorizontal: 32 }}>
-              <Text style={{ fontSize: 42, color: "#FFFFFF", fontWeight: "bold", textAlign: "center", marginBottom: 14, fontFamily: "AmiriBold" }}>
-                سبحان الله!
+              <Text style={{ fontSize: 48, color: "#F5D061", fontWeight: "bold", textAlign: "center", marginBottom: 16, fontFamily: "AmiriBold", textShadowColor: "rgba(245,208,97,0.45)", textShadowOffset: { width: 0, height: 4 }, textShadowRadius: 14 }}>
+                سُبْحَانَ ٱللَّٰهِ
               </Text>
-              <Text style={{ fontSize: 24, color: "#FFFFFF", fontWeight: "800", textAlign: "center", lineHeight: 34 }}>
+              <Text style={{ fontSize: 24, color: "#FFFFFF", fontWeight: "800", textAlign: "center", lineHeight: 36, textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 }}>
                 You&apos;ve completed{"\n"}all your goals for today.
               </Text>
             </View>
@@ -1584,9 +2119,22 @@ const styles = StyleSheet.create({
   // Quick actions
   quickPager: { marginBottom: 2 },
   quickPagerContent: { alignItems: "flex-start" },
-  quickPage: { width, flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg },
-  quickBtn: { alignItems: "center", width: "30%", marginBottom: 16 },
-  quickHint: { fontSize: 11, textAlign: "center", marginBottom: theme.spacing.md },
+  quickPage: { width, flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, justifyContent: "flex-start" },
+  quickBtn: { alignItems: "center", justifyContent: "flex-start", width: (width - theme.spacing.lg * 2) / 3, marginBottom: 16 },
+  quickDots: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: -2,
+    marginBottom: theme.spacing.md,
+  },
+  quickDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  quickReorderHint: { fontSize: 11, textAlign: "center", marginBottom: theme.spacing.md },
   quickIconOnly: {
     width: 64,
     height: 64,

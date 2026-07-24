@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import { useAuth } from "@/src/AuthContext";
-import { DEFAULT_GOALS } from "@/src/data/goals";
+import { DEFAULT_GOALS, Goal } from "@/src/data/goals";
 import {
   getActiveGoalIds,
   getCompletedGoals,
@@ -197,12 +197,27 @@ export default function PreviousGoalsScreen() {
     );
   };
 
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [customGoals, setCustomGoals] = useState<Goal[]>([]);
+  const [activeGoalIdsList, setActiveGoalIdsList] = useState<string[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const rawCustom = await AsyncStorage.getItem("hikmah:custom-goals:v1");
+        if (rawCustom) setCustomGoals(JSON.parse(rawCustom));
+        const aIds = await getActiveGoalIds();
+        setActiveGoalIdsList(aIds);
+      } catch {}
+    })();
+  }, []);
+
+  const allGoals = [...DEFAULT_GOALS, ...customGoals];
+
   const handleDayPress = (day: PreviousDay) => {
-    const completedGoals = DEFAULT_GOALS.filter(goal => day.completedIds.includes(goal.id));
-    Alert.alert(
-      day.dateLabel,
-      completedGoals.length ? `Goals completed:\n\n${completedGoals.map(goal => `✓ ${goal.title}`).join("\n")}` : "No goals were completed on this day."
-    );
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const dateKey = day.date.toISOString();
+    setExpandedDate(prev => prev === dateKey ? null : dateKey);
   };
 
   return (
@@ -266,25 +281,67 @@ export default function PreviousGoalsScreen() {
         <View style={[styles.listContainer, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           {previousDays.map((day, idx) => {
             const isLast = idx === previousDays.length - 1;
+            const dateKey = day.date.toISOString();
+            const isExpanded = expandedDate === dateKey;
+            const hasCompleted = day.completedIds.length > 0;
+            const dayActiveGoals = allGoals.filter(g => activeGoalIdsList.includes(g.id));
+            const activeListToRender = dayActiveGoals.length > 0 ? dayActiveGoals : DEFAULT_GOALS.slice(0, 12);
+
             return (
-              <Pressable
-                key={day.date.toISOString()}
-                onPress={() => handleDayPress(day)}
-                style={({ pressed }) => [
-                  styles.dayRow,
-                  { borderBottomColor: colors.border, borderBottomWidth: isLast ? 0 : 1 },
-                  pressed && { opacity: 0.7 }
-                ]}
-              >
-                <View style={styles.dayIconCheck}>
-                  <View style={[styles.circleBadge, { borderColor: colors.onSurfaceMuted }]} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.dayTitle, { color: colors.onSurface }]}>{day.dateLabel}</Text>
-                  <Text style={[styles.daySub, { color: colors.onSurfaceMuted }]}>{day.completedRatio}</Text>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
-              </Pressable>
+              <View key={dateKey} style={{ borderBottomColor: colors.border, borderBottomWidth: isLast && !isExpanded ? 0 : 1 }}>
+                <Pressable
+                  onPress={() => handleDayPress(day)}
+                  style={({ pressed }) => [
+                    styles.dayRow,
+                    pressed && { opacity: 0.7 }
+                  ]}
+                >
+                  <View style={styles.dayIconCheck}>
+                    {hasCompleted ? (
+                      <MaterialCommunityIcons name="check-circle" size={24} color={colors.brand} />
+                    ) : (
+                      <View style={[styles.circleBadge, { borderColor: colors.onSurfaceMuted }]} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.dayTitle, { color: colors.onSurface }]}>{day.dateLabel}</Text>
+                    <Text style={[styles.daySub, { color: colors.onSurfaceMuted }]}>{day.completedRatio}</Text>
+                  </View>
+                  <MaterialCommunityIcons 
+                    name={isExpanded ? "chevron-up" : "chevron-right"} 
+                    size={20} 
+                    color={colors.onSurfaceMuted} 
+                  />
+                </Pressable>
+
+                {/* Expanded Goal Checklist Breakdown */}
+                {isExpanded && (
+                  <View style={{ backgroundColor: colors.surface, paddingHorizontal: 16, paddingVertical: 12, gap: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: colors.brand, marginBottom: 4 }}>
+                      Goal Breakdown ({day.completedIds.length}/{activeListToRender.length} Completed)
+                    </Text>
+
+                    {activeListToRender.map(g => {
+                      const isDone = day.completedIds.includes(g.id);
+                      return (
+                        <View key={g.id} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
+                          <MaterialCommunityIcons 
+                            name={isDone ? "check-circle" : "checkbox-blank-circle-outline"} 
+                            size={18} 
+                            color={isDone ? colors.brand : colors.onSurfaceMuted} 
+                          />
+                          <Text style={{ fontSize: 13, color: isDone ? colors.onSurface : colors.onSurfaceMuted, textDecorationLine: isDone ? "none" : "none", flex: 1 }}>
+                            {g.title}
+                          </Text>
+                          {g.arabic ? (
+                            <Text style={{ fontSize: 12, color: colors.brand, fontFamily: "Amiri" }}>{g.arabic}</Text>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
             );
           })}
         </View>

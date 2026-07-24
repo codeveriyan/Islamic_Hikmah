@@ -6,6 +6,8 @@ import {
   ScrollView,
   Pressable,
   Switch,
+  Modal,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -27,6 +29,18 @@ export default function RamadanScreen() {
   const [fastingLogs, setFastingLogs] = useState<FastingLog[]>([]);
   const [todayFasted, setTodayFasted] = useState(false);
 
+  // UmmahAPI 30-day Ramadan Timetable state
+  const [ramadanSchedule, setRamadanSchedule] = useState<Array<{
+    day: number;
+    date: string;
+    day_name: string;
+    hijri_date: string;
+    third: string;
+    suhoor_ends: string;
+    iftar: string;
+  }>>([]);
+  const [showSchedule, setShowSchedule] = useState(false);
+
   const todayStr = useMemo(() => localDateKey(), []);
   const hijriMonth = useMemo(() => {
     const month = new Intl.DateTimeFormat("en-u-ca-islamic", { month: "numeric" }).format(new Date());
@@ -47,6 +61,21 @@ export default function RamadanScreen() {
         });
         setSuhoorTime(times.Fajr);
         setIftarTime(times.Maghrib);
+
+        // Fetch UmmahAPI 30-Day Ramadan Timetable
+        try {
+          const currentYear = new Date().getFullYear();
+          const rRes = await fetch(`https://www.ummahapi.com/api/ramadan/${currentYear}?lat=${loc.lat}&lng=${loc.lon}`);
+          if (rRes.ok) {
+            const rData = await rRes.json();
+            if (rData?.data?.days && Array.isArray(rData.data.days)) {
+              setRamadanSchedule(rData.data.days);
+            }
+          }
+        } catch (rErr) {
+          console.warn("UmmahAPI Ramadan timetable fetch error:", rErr);
+        }
+
       } catch {
         // Fallback default times
       }
@@ -150,7 +179,77 @@ export default function RamadanScreen() {
             </View>
           </View>
         </View>
+
+        {/* 30-Day Ramadan Timetable Trigger Button */}
+        {ramadanSchedule.length > 0 && (
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setShowSchedule(true);
+            }}
+            style={[styles.summaryCard, { backgroundColor: colors.brand + "15", borderColor: colors.brand }]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <MaterialCommunityIcons name="calendar-clock" size={24} color={colors.brand} />
+                <View>
+                  <Text style={[styles.summaryTitle, { color: colors.brand }]}>Full 30-Day Ramadan Timetable</Text>
+                  <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 2 }}>
+                    View complete Suhoor & Iftar schedule for {city}
+                  </Text>
+                </View>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={24} color={colors.brand} />
+            </View>
+          </Pressable>
+        )}
       </ScrollView>
+
+      {/* 30-Day Ramadan Timetable Modal */}
+      <Modal
+        visible={showSchedule}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSchedule(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+          <View style={[styles.header, { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+            <Text style={[styles.title, { color: colors.onSurface }]}>30-Day Ramadan Timetable</Text>
+            <Pressable onPress={() => setShowSchedule(false)} hitSlop={10}>
+              <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
+            </Pressable>
+          </View>
+
+          <FlatList
+            data={ramadanSchedule}
+            keyExtractor={(item) => String(item.day)}
+            contentContainerStyle={{ padding: 16, gap: 10 }}
+            renderItem={({ item }) => (
+              <View style={[styles.fastCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, padding: 14 }]}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <Text style={{ fontSize: 15, fontWeight: "800", color: colors.brand }}>
+                      Day {item.day} · {item.day_name}
+                    </Text>
+                    <View style={{ backgroundColor: colors.brand + "22", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                      <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "700" }}>{item.hijri_date}</Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginBottom: 8 }}>{item.third}</Text>
+                  <View style={{ flexDirection: "row", gap: 16 }}>
+                    <Text style={{ fontSize: 13, color: colors.onSurface, fontWeight: "600" }}>
+                      🌅 Suhoor: <Text style={{ color: colors.brand }}>{format12Hour(item.suhoor_ends)}</Text>
+                    </Text>
+                    <Text style={{ fontSize: 13, color: colors.onSurface, fontWeight: "600" }}>
+                      🌇 Iftar: <Text style={{ color: "#EF4444" }}>{format12Hour(item.iftar)}</Text>
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }

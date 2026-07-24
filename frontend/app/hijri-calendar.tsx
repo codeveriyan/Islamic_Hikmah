@@ -125,10 +125,37 @@ export default function HijriCalendarScreen() {
   const [selectedDay, setSelectedDay] = useState<HijriDay | null>(null);
   const [todayHijri, setTodayHijri] = useState<{ day: number; month: number; year: number } | null>(null);
 
+  // Live UmmahAPI Moon data state
+  const [moonData, setMoonData] = useState<{
+    phase: string;
+    illuminationPct: string;
+    crescentNote: string;
+    nextNewMoon: string;
+    isSacredMonth: boolean;
+  } | null>(null);
+
   // goalsByDate: maps "YYYY-M-D" → completed goal ids for that day
   const [goalsByDate, setGoalsByDate] = useState<Record<string, string[]>>({});
   const [activeGoalIds, setActiveGoalIds] = useState<string[]>([]);
   const [calendarConnected, setCalendarConnected] = useState(false);
+
+  // Fetch live Moon sighting data from UmmahAPI
+  useEffect(() => {
+    fetch("https://www.ummahapi.com/api/moon")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json?.data?.moon) {
+          setMoonData({
+            phase: json.data.moon.phase || "",
+            illuminationPct: json.data.moon.illumination_pct || "",
+            crescentNote: json.data.moon.crescent_note || "",
+            nextNewMoon: json.data.moon.next_new_moon || "",
+            isSacredMonth: !!json.data.hijri?.is_sacred_month,
+          });
+        }
+      })
+      .catch((err) => console.warn("UmmahAPI moon fetch error:", err));
+  }, []);
 
   // Load active goal config once
   useEffect(() => {
@@ -240,6 +267,30 @@ export default function HijriCalendarScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* Live Moon & Crescent Sighting Widget (UmmahAPI) */}
+        {moonData && (
+          <View style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 4, padding: 14, borderRadius: 16, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <MaterialCommunityIcons name="moon-waning-crescent" size={22} color="#F59E0B" />
+                <View>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.onSurface }}>
+                    Moon Phase: {moonData.phase} ({moonData.illuminationPct}%)
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }}>
+                    {moonData.crescentNote}
+                  </Text>
+                </View>
+              </View>
+              {moonData.isSacredMonth && (
+                <View style={{ backgroundColor: "#16a34a22", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 10, color: "#16a34a", fontWeight: "700" }}>Sacred Month</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Month navigator */}
         <View style={[styles.monthNav, { backgroundColor: colors.surfaceSecondary }]}>

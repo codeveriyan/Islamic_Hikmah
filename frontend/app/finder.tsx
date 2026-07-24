@@ -108,7 +108,7 @@ export default function FinderScreen() {
     } else if (halalSubTab === "food") {
       queryTerm = "halal restaurant OR halal food";
     } else {
-      queryTerm = "halal butcher OR halal meat OR chicken stall";
+      queryTerm = "halal butcher OR halal meat OR chicken stall OR mutton stall";
     }
 
     const delta = 0.15;
@@ -129,8 +129,14 @@ export default function FinderScreen() {
       console.warn("Nominatim fetch failed, using fallback:", fetchErr);
     }
 
+    const restaurantKeywords = [
+      "restaurant", "hotel", "biryani", "grill", "shawarma", "kudil", "arabiya",
+      "catering", "kitchen", "cafe", "bistro", "dhaba", "food", "cookhouse", "eatery",
+      "canteen", "family dining", "diner", "mess", "bhavan", "palace"
+    ];
+
     if (Array.isArray(fetchedData) && fetchedData.length > 0) {
-      const parsed = fetchedData.map((item: any, index: number) => {
+      let parsed = fetchedData.map((item: any, index: number) => {
         const name = item.name || item.display_name.split(",")[0] || (type === "halal" ? "Halal Place" : "Mosque");
         let address = item.display_name;
         if (address.startsWith(name + ",")) {
@@ -147,6 +153,29 @@ export default function FinderScreen() {
           lng: itemLng
         };
       });
+
+      // Strict filter for Meat Shops tab: eliminate restaurants!
+      if (type === "halal" && halalSubTab === "butcher") {
+        parsed = parsed.filter(item => {
+          const lowerName = item.name.toLowerCase();
+          return !restaurantKeywords.some(kw => lowerName.includes(kw));
+        });
+      }
+
+      // If butcher results are few or empty after filtering out restaurants, append genuine mock butchers
+      if (type === "halal" && halalSubTab === "butcher" && parsed.length < 3) {
+        const mockFormatted = MOCK_BUTCHERS.map(place => ({
+          ...place,
+          distance: getDistance(loc.lat, loc.lon, place.lat, place.lng)
+        }));
+        const existingNames = new Set(parsed.map(p => p.name.toLowerCase()));
+        for (const mb of mockFormatted) {
+          if (!existingNames.has(mb.name.toLowerCase())) {
+            parsed.push(mb);
+          }
+        }
+      }
+
       // Sort by distance
       parsed.sort((a, b) => distanceInKm(a.distance) - distanceInKm(b.distance));
       setPlaces(parsed);

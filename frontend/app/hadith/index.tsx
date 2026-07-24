@@ -20,14 +20,14 @@ export const HADITH_BOOKS = [
   { id: "darimi", name: "Sunan ad-Darimi", compiler: "Imam ad-Darimi", total: 3503, group: "nine_books", color: "#D97706", source: "ahmedbaset_nine", cover: require("../../assets/images/hadith_darimi_cover.jpg") },
 
   // --- Other Primary Collections ---
-  { id: "khuzayma", name: "Sahih Ibn Khuzayma", compiler: "Imam Ibn Khuzayma", total: 3079, group: "primary", color: "#7C3AED", source: "fallback", cover: require("../../assets/images/hadith_khuzayma_cover.jpg") },
-  { id: "hibban", name: "Sahih Ibn Hibban", compiler: "Imam Ibn Hibban", total: 7491, group: "primary", color: "#DC2626", source: "fallback", cover: require("../../assets/images/hadith_hibban_cover.jpg") },
-  { id: "hakim", name: "Mustadrak al-Hakim", compiler: "Imam al-Hakim", total: 8607, group: "primary", color: "#059669", source: "fallback", cover: require("../../assets/images/hadith_hakim_cover.jpg") },
-  { id: "razzaq", name: "Musannaf 'Abd ar-Razzaq", compiler: "Imam Abd ar-Razzaq", total: 21033, group: "primary", color: "#0284C7", source: "fallback", cover: require("../../assets/images/hadith_razzaq_cover.jpg") },
-  { id: "ibnabishayba", name: "Musannaf Ibn Abi Shayba", compiler: "Imam Ibn Abi Shayba", total: 39011, group: "primary", color: "#DB2777", source: "fallback", cover: require("../../assets/images/hadith_ibnabishayba_cover.jpg") },
-  { id: "daraqutni", name: "Sunan ad-Daraqutni", compiler: "Imam ad-Daraqutni", total: 4898, group: "primary", color: "#EA580C", source: "fallback", cover: require("../../assets/images/hadith_daraqutni_cover.jpg") },
-  { id: "bayhaqi", name: "As-Sunan al-Kubra li al-Bayhaqi", compiler: "Imam al-Bayhaqi", total: 21812, group: "primary", color: "#6D28D9", source: "fallback", cover: require("../../assets/images/hadith_bayhaqi_cover.jpg") },
-  { id: "nasai_kubra", name: "Sunan an-Nasa'i al-Kubra", compiler: "Imam An-Nasa'i", total: 11770, group: "primary", color: "#BE123C", source: "fallback", cover: require("../../assets/images/hadith_nasai_kubra_cover.jpg") },
+  { id: "khuzayma", name: "Sahih Ibn Khuzayma", compiler: "Imam Ibn Khuzayma", total: 8, isCurated: true, group: "primary", color: "#7C3AED", source: "fallback", cover: require("../../assets/images/hadith_khuzayma_cover.jpg") },
+  { id: "hibban", name: "Sahih Ibn Hibban", compiler: "Imam Ibn Hibban", total: 8, isCurated: true, group: "primary", color: "#DC2626", source: "fallback", cover: require("../../assets/images/hadith_hibban_cover.jpg") },
+  { id: "hakim", name: "Mustadrak al-Hakim", compiler: "Imam al-Hakim", total: 7, isCurated: true, group: "primary", color: "#059669", source: "fallback", cover: require("../../assets/images/hadith_hakim_cover.jpg") },
+  { id: "razzaq", name: "Musannaf 'Abd ar-Razzaq", compiler: "Imam Abd ar-Razzaq", total: 4, isCurated: true, group: "primary", color: "#0284C7", source: "fallback", cover: require("../../assets/images/hadith_razzaq_cover.jpg") },
+  { id: "ibnabishayba", name: "Musannaf Ibn Abi Shayba", compiler: "Imam Ibn Abi Shayba", total: 4, isCurated: true, group: "primary", color: "#DB2777", source: "fallback", cover: require("../../assets/images/hadith_ibnabishayba_cover.jpg") },
+  { id: "daraqutni", name: "Sunan ad-Daraqutni", compiler: "Imam ad-Daraqutni", total: 3, isCurated: true, group: "primary", color: "#EA580C", source: "fallback", cover: require("../../assets/images/hadith_daraqutni_cover.jpg") },
+  { id: "bayhaqi", name: "As-Sunan al-Kubra li al-Bayhaqi", compiler: "Imam al-Bayhaqi", total: 3, isCurated: true, group: "primary", color: "#6D28D9", source: "fallback", cover: require("../../assets/images/hadith_bayhaqi_cover.jpg") },
+  { id: "nasai_kubra", name: "Sunan an-Nasa'i al-Kubra", compiler: "Imam An-Nasa'i", total: 3, isCurated: true, group: "primary", color: "#BE123C", source: "fallback", cover: require("../../assets/images/hadith_nasai_kubra_cover.jpg") },
   { id: "aladab_almufrad", name: "Al-Adab Al-Mufrad", compiler: "Imam Bukhari", total: 1329, group: "primary", color: "#047857", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_aladab_almufrad_cover.jpg") },
   { id: "shamail_muhammadiyah", name: "Ash-Shama'il Al-Muhammadiyah", compiler: "Imam Al-Tirmidhi", total: 415, group: "primary", color: "#1D4ED8", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_shamail_cover.jpg") },
 

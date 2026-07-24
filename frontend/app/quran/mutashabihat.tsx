@@ -89,6 +89,22 @@ export default function MutashabihatView() {
   // Phrase View Modal state
   const [selectedGroup, setSelectedGroup] = useState<GroupedPhrase | null>(null);
 
+  // UmmahAPI Live Mutashabihat state
+  const [ummahMutashabihat, setUmmahMutashabihat] = useState<{
+    arabic: string;
+    translation: string;
+    similar_verses: Array<{
+      verse_key: string;
+      surah: number;
+      ayah: number;
+      surah_name_english: string;
+      surah_name_arabic: string;
+      arabic: string;
+      translation: string;
+    }>;
+  } | null>(null);
+  const [ummahLoading, setUmmahLoading] = useState(false);
+
   const activeIndex = verseKeys.indexOf(activeKey);
 
   // Helper to fetch Surah Name
@@ -105,6 +121,31 @@ export default function MutashabihatView() {
   // Split active key
   const [activeSurahNum, activeAyahNum] = activeKey.split(":").map(Number);
   const currentSurahName = getSurahName(activeSurahNum);
+
+  // Fetch live similar verses from UmmahAPI
+  React.useEffect(() => {
+    let active = true;
+    setUmmahLoading(true);
+    setUmmahMutashabihat(null);
+
+    fetch(`https://www.ummahapi.com/api/quran/mutashabihat/${activeSurahNum}/${activeAyahNum}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.data?.similar_verses) {
+          setUmmahMutashabihat(data.data);
+        }
+      })
+      .catch((err) => {
+        console.warn("UmmahAPI Mutashabihat fetch error:", err);
+      })
+      .finally(() => {
+        if (active) setUmmahLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeSurahNum, activeAyahNum]);
 
   // Fetch full Arabic text of any verse from quranData.json
   const getAyahArabicText = (surah: number, ayah: number) => {
@@ -301,6 +342,46 @@ export default function MutashabihatView() {
             </Pressable>
           </View>
         </View>
+
+        {/* Live UmmahAPI Mutashabihat Section */}
+        {ummahLoading ? (
+          <View style={{ marginVertical: 16, alignItems: "center" }}>
+            <Text style={{ fontSize: 12, color: colors.brand }}>Loading live similar verses...</Text>
+          </View>
+        ) : ummahMutashabihat && ummahMutashabihat.similar_verses.length > 0 ? (
+          <View style={{ marginBottom: 20 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <MaterialCommunityIcons name="lightning-bolt" size={18} color={colors.brand} />
+              <Text style={{ fontSize: 14, fontWeight: "700", color: colors.onSurface }}>
+                Live Similar Verses ({ummahMutashabihat.similar_verses.length})
+              </Text>
+            </View>
+
+            {ummahMutashabihat.similar_verses.map((sv, idx) => (
+              <Pressable
+                key={`ummah-sv-${idx}`}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  router.push(`/quran/${sv.surah}` as any);
+                }}
+                style={[styles.phraseCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.brand + "44", marginBottom: 12 }]}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "800", color: colors.brand }}>
+                    {sv.surah_name_english} {sv.verse_key} ({sv.surah_name_arabic})
+                  </Text>
+                  <MaterialCommunityIcons name="arrow-right-thin" size={20} color={colors.brand} />
+                </View>
+                <Text style={{ fontFamily: "AmiriBold", fontSize: 20, color: colors.onSurface, textAlign: "right", marginBottom: 6, lineHeight: 32 }}>
+                  {sv.arabic}
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.onSurfaceSecondary, lineHeight: 19 }}>
+                  "{sv.translation}"
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         {/* List of Phrase Cards in Active Verse */}
         <View style={styles.cardsContainer}>

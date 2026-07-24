@@ -136,14 +136,7 @@ export default function PrayerTimesScreen() {
           source: "remote",
           savedAt: Date.now(),
         });
-        const res = await schedulePrayerNotifications(timings, usedSettings.adhanEnabled);
-        if (!res.success && res.error === 'permission' && Platform.OS !== 'web') {
-          Alert.alert(
-            "Notification Permission Required",
-            "Notification permissions are currently denied. Please enable them in settings to receive Adhan alerts.",
-            [{ text: "OK" }]
-          );
-        }
+        await schedulePrayerNotifications(timings, usedSettings.adhanEnabled);
         // Also keep goal notifications in sync with the latest prayer times
         try {
           const activeIds = await getActiveGoalIds();
