@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ImageBackground, Dimensions } from "react-native";
+﻿import { useCallback, useState } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, ImageBackground, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -73,7 +73,39 @@ export default function DuaHubScreen() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <FlatList
+        data={categories}
+        keyExtractor={(c) => c.id}
+        numColumns={2}
+        columnWrapperStyle={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={5}
+        removeClippedSubviews
+        contentContainerStyle={{ paddingBottom: 24 }}
+        renderItem={({ item: c }) => {
+          const imgSource = CATEGORY_IMAGES[c.id] || { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" };
+          return (
+            <Pressable
+              onPress={() => handleCategoryPress(c.id)}
+              style={({ pressed }) => [
+                styles.card,
+                { width: CARD_WIDTH },
+                pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }
+              ]}
+            >
+              <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
+                <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
+                  <View style={styles.cardLabelContainer}>
+                    <Text style={styles.cardTitle}>{t(c.id).toUpperCase()}</Text>
+                  </View>
+                </LinearGradient>
+              </ImageBackground>
+            </Pressable>
+          );
+        }}
+        ListHeaderComponent={() => (<>
         <Pressable
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
@@ -134,32 +166,10 @@ export default function DuaHubScreen() {
           })}
         </View>
 
-        {/* Grid Categories */}
-        <View style={styles.grid}>
-          {categories.map((c) => {
-            const imgSource = CATEGORY_IMAGES[c.id] || { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" };
-            return (
-              <Pressable
-                key={c.id}
-                onPress={() => handleCategoryPress(c.id)}
-                style={({ pressed }) => [
-                  styles.card,
-                  { width: CARD_WIDTH },
-                  pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }
-                ]}
-              >
-                <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
-                  <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
-                    <View style={styles.cardLabelContainer}>
-                      <Text style={styles.cardTitle}>{t(c.id).toUpperCase()}</Text>
-                    </View>
-                  </LinearGradient>
-                </ImageBackground>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+
+      </>
+      )}
+    />
     </SafeAreaView>
   );
 }

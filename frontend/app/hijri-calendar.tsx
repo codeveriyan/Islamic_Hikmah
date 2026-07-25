@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   ActivityIndicator, Modal, Alert, Linking,
@@ -273,7 +273,7 @@ export default function HijriCalendarScreen() {
           <View style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 4, padding: 14, borderRadius: 16, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <MaterialCommunityIcons name="moon-waning-crescent" size={22} color="#F59E0B" />
+                <MaterialCommunityIcons name="moon-waning-crescent" size={22} color={colors.warning} />
                 <View>
                   <Text style={{ fontSize: 14, fontWeight: "700", color: colors.onSurface }}>
                     Moon Phase: {moonData.phase} ({moonData.illuminationPct}%)

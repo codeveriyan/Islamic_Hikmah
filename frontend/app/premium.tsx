@@ -20,18 +20,19 @@ import { useAuth } from "@/src/AuthContext";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
-import { doc, setDoc } from "firebase/firestore";
-import { db, auth } from "@/src/firebase";
+import { auth } from "@/src/firebase";
 
-const HADITH_API_BASE_URL = process.env.EXPO_PUBLIC_HADITH_API_BASE_URL?.replace(/\/$/, "");
+const API_BASE_URL = (
+  process.env.EXPO_PUBLIC_API_BASE_URL ||
+  process.env.EXPO_PUBLIC_HADITH_API_BASE_URL
+)?.replace(/\/$/, "");
 
 export default function PremiumScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { profile, togglePremiumTier, startTrial, isGuest } = useAuth();
+  const { profile, startTrial, refreshEntitlements, isGuest } = useAuth();
   
   const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly" | "lifetime">("yearly");
-  const [purchasing, setPurchasing] = useState(false);
   const [upiModalVisible, setUpiModalVisible] = useState(false);
   const [utr, setUtr] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -57,7 +58,7 @@ export default function PremiumScreen() {
         "Your 7-day free trial has been activated successfully! You now have unrestricted access to all companion Pro features.",
         [{ text: "Great!", onPress: () => router.back() }]
       );
-    } catch (e) {
+    } catch {
       Alert.alert("Error", "Failed to start free trial. Please check your network connection.");
     }
   };
@@ -72,6 +73,18 @@ export default function PremiumScreen() {
 
   const handleSubscribe = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (isGuest || !auth.currentUser) {
+      Alert.alert(
+        "Sign In Required",
+        "Sign in with a verified account before submitting a payment.",
+        [{ text: "Log In", onPress: () => router.push("/auth/login") }]
+      );
+      return;
+    }
+    if (!API_BASE_URL) {
+      Alert.alert("Payments Unavailable", "The payment service is not configured for this build.");
+      return;
+    }
     setUpiModalVisible(true);
   };
 
@@ -91,7 +104,7 @@ export default function PremiumScreen() {
           [{ text: "Show QR Code", onPress: () => setShowQR(true) }]
         );
       }
-    } catch (e) {
+    } catch {
       Alert.alert("Error", "Unable to launch UPI application. Please pay manually using the QR code.");
     }
   };
@@ -118,45 +131,24 @@ export default function PremiumScreen() {
 
     setVerifying(true);
     try {
-      // Save payment transaction ledger to Firestore
-      const paymentRef = doc(db, "payments", cleanUTR);
-      await setDoc(paymentRef, {
-        uid: profile?.uid || "anonymous",
-        email: profile?.email || "anonymous@islamichikmah.app",
-        plan: selectedPlan,
-        amount: getPlanPrice(),
-        utr: cleanUTR,
-        timestamp: Date.now(),
-        status: "pending"
-      });
-
-      // Call backend UTR verify endpoint if base URL is set
-      if (HADITH_API_BASE_URL) {
-        const token = await auth.currentUser?.getIdToken();
-        if (token) {
-          const res = await fetch(`${HADITH_API_BASE_URL}/api/verify-utr`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              utr: cleanUTR,
-              plan: selectedPlan,
-              amount: getPlanPrice()
-            })
-          });
-
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.detail || "Payment verification failed.");
-          }
-        }
+      if (!API_BASE_URL || !auth.currentUser || isGuest) {
+        throw new Error("Sign in and connect to the payment service before submitting a UTR.");
       }
-
-      // Instantly unlock premium tier locally for a premium experience
-      if (profile?.tier !== "premium") {
-        await togglePremiumTier();
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch(`${API_BASE_URL}/api/payment-submissions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          utr: cleanUTR,
+          plan: selectedPlan
+        })
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.detail || "Payment submission failed.");
       }
 
       setVerifying(false);
@@ -165,9 +157,9 @@ export default function PremiumScreen() {
       setShowQR(false);
 
       Alert.alert(
-        "Verification Logged 🎉",
-        "JazakAllah! Your payment UTR has been logged for audit. All Premium features have been unlocked instantly on your device!",
-        [{ text: "Awesome", onPress: () => router.back() }]
+        "Payment Submitted",
+        "JazakAllah! Your UTR is pending manual review. Premium will be activated only after the payment is confirmed.",
+        [{ text: "Done", onPress: () => router.back() }]
       );
     } catch (err: any) {
       setVerifying(false);
@@ -175,29 +167,13 @@ export default function PremiumScreen() {
     }
   };
 
-  const handleDevBypass = async () => {
-    if (!__DEV__) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    await togglePremiumTier();
-    const isNowPremium = profile?.tier !== "premium"; // due to state batching, check inverse
-    Alert.alert(
-      "Developer Bypass",
-      isNowPremium 
-        ? "Premium mode enabled! All gated features are now unlocked." 
-        : "Premium mode disabled! App returned to Free tier status.",
-      [{ text: "OK", onPress: () => router.back() }]
-    );
-  };
-
-  const handleRestore = () => {
+  const handleRestore = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    if (profile?.tier === "premium" || profile?.trialActive) {
-      Alert.alert("Subscription Restored", "Your active Pro subscription has been verified and restored.");
-    } else {
-      Alert.alert(
-        "No Subscription Found",
-        "We could not locate an active Pro subscription for your account. If you believe this is an error, please try logging in with your registered email."
-      );
+    try {
+      await refreshEntitlements();
+      Alert.alert("Account Refreshed", "Your subscription status has been refreshed from the server.");
+    } catch (error: any) {
+      Alert.alert("Refresh Failed", error.message || "Unable to refresh your subscription status.");
     }
   };
 
@@ -378,11 +354,10 @@ export default function PremiumScreen() {
           
           <Pressable
             onPress={handleSubscribe}
-            disabled={purchasing}
             style={({ pressed }) => [
               styles.subscribeBtn,
               { backgroundColor: colors.brand },
-              (pressed || purchasing) && { opacity: 0.9 }
+              pressed && { opacity: 0.9 }
             ]}
           >
             <Text style={[styles.subscribeBtnTxt, { color: colors.onBrandPrimary }]}>
@@ -394,16 +369,6 @@ export default function PremiumScreen() {
             <Pressable onPress={handleRestore} style={styles.linkBtn}>
               <Text style={[styles.linkBtnTxt, { color: colors.onSurfaceMuted }]}>Restore Purchase</Text>
             </Pressable>
-            {__DEV__ && (
-              <>
-                <View style={[styles.linkDot, { backgroundColor: colors.border }]} />
-                <Pressable onPress={handleDevBypass} style={styles.linkBtn}>
-                  <Text style={[styles.linkBtnTxt, { color: colors.brand, fontWeight: "700" }]}>
-                    {profile?.tier === "premium" ? "Dev: Lock App" : "Dev: Unlock Free Premium"}
-                  </Text>
-                </Pressable>
-              </>
-            )}
           </View>
 
         </View>
@@ -500,7 +465,7 @@ export default function PremiumScreen() {
                   Enter 12-digit UPI Ref No. (UTR)
                 </Text>
                 <Text style={[styles.verificationDesc, { color: colors.onSurfaceMuted }]}>
-                  After completing the transfer inside your UPI app, paste the UTR transaction number here to activate.
+                  After completing the transfer, submit the UTR for manual payment review.
                 </Text>
                 <TextInput
                   style={[styles.utrInput, { backgroundColor: colors.surface, color: colors.onSurface, borderColor: colors.border }]}
@@ -528,7 +493,7 @@ export default function PremiumScreen() {
                   {verifying ? (
                     <ActivityIndicator color={colors.onBrandPrimary} />
                   ) : (
-                    <Text style={[styles.verifyBtnTxt, { color: colors.onBrandPrimary }]}>Verify & Activate</Text>
+                    <Text style={[styles.verifyBtnTxt, { color: colors.onBrandPrimary }]}>Submit for Review</Text>
                   )}
                 </Pressable>
 

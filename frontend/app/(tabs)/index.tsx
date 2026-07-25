@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Platform, Modal, Switch, Alert, TextInput, RefreshControl,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Platform, Modal, Switch, Alert, TextInput, RefreshControl, FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,7 +22,7 @@ import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
 import { SURAH_LIST } from "@/src/data/surahList";
 import { SELECTABLE_ADHKAAR, DHIKRS } from "@/src/data/dhikrs";
-import { CATEGORIES as DUA_CATEGORIES } from "@/src/data/duas";
+// Note: duas.ts is lazily required inside allDhikrAndDuaOptions useMemo to keep it off the startup import graph
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
   getActiveGoalIds, getPrayerSettings, schedulePrayerNotifications, updateStickyPrayerNotification,
@@ -568,6 +568,9 @@ export default function HomeScreen() {
   }, [customGoals]);
 
   const allDhikrAndDuaOptions = useMemo(() => {
+    // Lazy-require duas.ts (608 KB) — only parsed when this memo first runs, not at module init
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { CATEGORIES: DUA_CATEGORIES } = require('@/src/data/duas');
     const list: { id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[] = [];
     const seenIds = new Set<string>();
 
@@ -585,8 +588,8 @@ export default function HomeScreen() {
       }
     });
 
-    DUA_CATEGORIES.forEach(cat => {
-      cat.duas.forEach(d => {
+    DUA_CATEGORIES.forEach((cat: any) => {
+      cat.duas.forEach((d: any) => {
         if (!seenIds.has(d.id)) {
           seenIds.add(d.id);
           list.push({
@@ -2003,19 +2006,27 @@ export default function HomeScreen() {
                     style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
                   />
 
-                  <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
-                    {SURAH_LIST.filter(s => 
-                      s.englishName.toLowerCase().includes(surahSearch.toLowerCase()) || 
+                  <FlatList
+                    data={SURAH_LIST.filter(s =>
+                      s.englishName.toLowerCase().includes(surahSearch.toLowerCase()) ||
                       s.englishNameTranslation.toLowerCase().includes(surahSearch.toLowerCase()) ||
                       s.number.toString() === surahSearch.trim()
-                    ).map((surah) => (
+                    )}
+                    keyExtractor={(surah: any) => surah.number.toString()}
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={10}
+                    windowSize={5}
+                    removeClippedSubviews
+                    renderItem={({ item: surah }: { item: any }) => (
                       <Pressable
-                        key={surah.number}
                         onPress={async () => {
                           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
                           const newGoal = {
-                            id: `custom-surah-${surah.number}-${Date.now()}`,
-                            title: `Recite Surah ${surah.englishName}`,
+                            id: `custom-surah--`,
+                            title: `Recite Surah `,
                             arabic: surah.name,
                             category: "quran" as const,
                             repeat: "daily" as const
@@ -2023,14 +2034,12 @@ export default function HomeScreen() {
                           const updatedCustom = [...customGoals, newGoal];
                           setCustomGoals(updatedCustom);
                           await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
-                          
                           const updatedActive = [...activeIds, newGoal.id];
                           setActiveIds(updatedActive);
                           await saveActiveGoalIds(updatedActive);
-
                           setShowAddCustomModal(false);
                           setSurahSearch("");
-                          Alert.alert("Goal Created 🌟", `Added "Recite Surah ${surah.englishName}" to your daily goals!`);
+                          Alert.alert("Goal Created \ud83c\udf89", `Added "Recite Surah " to your daily goals!`);
                         }}
                         style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12 }]}
                       >
@@ -2039,12 +2048,12 @@ export default function HomeScreen() {
                         </View>
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{surah.englishName}</Text>
-                          <Text style={{ fontSize: 11, color: colors.onSurfaceMuted }}>{surah.englishNameTranslation} • {surah.numberOfAyahs} Verses</Text>
+                          <Text style={{ fontSize: 11, color: colors.onSurfaceMuted }}>{surah.englishNameTranslation} � {surah.numberOfAyahs} Verses</Text>
                         </View>
                         <Text style={{ fontSize: 16, color: colors.brand, fontFamily: "Amiri" }}>{surah.name}</Text>
                       </Pressable>
-                    ))}
-                  </ScrollView>
+                    )}
+                  />
                 </View>
               ) : newGoalCategory === "dhikr" ? (
                 <View style={{ flex: 1, gap: 8 }}>
@@ -2057,20 +2066,28 @@ export default function HomeScreen() {
                     style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
                   />
 
-                  <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
-                    {allDhikrAndDuaOptions.filter(item => 
-                      item.title.toLowerCase().includes(dhikrSearch.toLowerCase()) || 
+                  <FlatList
+                    data={allDhikrAndDuaOptions.filter(item =>
+                      item.title.toLowerCase().includes(dhikrSearch.toLowerCase()) ||
                       (item.transliteration && item.transliteration.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
                       (item.translation && item.translation.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
                       (item.categoryTag && item.categoryTag.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
                       item.arabic.includes(dhikrSearch.trim())
-                    ).map((dhikrItem) => (
+                    )}
+                    keyExtractor={(item: any) => item.id}
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={8}
+                    maxToRenderPerBatch={8}
+                    windowSize={5}
+                    removeClippedSubviews
+                    renderItem={({ item: dhikrItem }: { item: any }) => (
                       <Pressable
-                        key={dhikrItem.id}
                         onPress={async () => {
                           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
                           const newGoal = {
-                            id: `custom-dhikr-${dhikrItem.id}-${Date.now()}`,
+                            id: `custom-dhikr--`,
                             title: dhikrItem.title,
                             arabic: dhikrItem.arabic,
                             subtitle: dhikrItem.transliteration || dhikrItem.translation,
@@ -2080,14 +2097,12 @@ export default function HomeScreen() {
                           const updatedCustom = [...customGoals, newGoal];
                           setCustomGoals(updatedCustom);
                           await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
-                          
                           const updatedActive = [...activeIds, newGoal.id];
                           setActiveIds(updatedActive);
                           await saveActiveGoalIds(updatedActive);
-
                           setShowAddCustomModal(false);
                           setDhikrSearch("");
-                          Alert.alert("Goal Created 🌟", `Added "${dhikrItem.title}" to your daily goals!`);
+                          Alert.alert("Goal Created \ud83c\udf89", `Added "" to your daily goals!`);
                         }}
                         style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12, alignItems: "flex-start" }]}
                       >
@@ -2106,8 +2121,8 @@ export default function HomeScreen() {
                         </View>
                         <Text style={{ fontSize: 15, color: colors.brand, fontFamily: "Amiri", textAlign: "right" }}>{dhikrItem.arabic}</Text>
                       </Pressable>
-                    ))}
-                  </ScrollView>
+                    )}
+                  />
                 </View>
               ) : (
                 <View style={{ gap: 16, marginTop: 4 }}>

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, ScrollView, Image, Platform } from "react-native";
+﻿import { View, Text, StyleSheet, Pressable, ScrollView, Image, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -12,7 +12,7 @@ export const HADITH_BOOKS = [
   { id: "bukhari", name: "Sahih al-Bukhari", compiler: "Imam Bukhari", total: 7563, group: "nine_books", color: "#10B981", source: "fawazahmed", cover: require("../../assets/images/hadith_bukhari_cover.jpg") },
   { id: "muslim", name: "Sahih Muslim", compiler: "Imam Muslim", total: 7563, group: "nine_books", color: "#3B82F6", source: "fawazahmed", cover: require("../../assets/images/hadith_muslim_cover.jpg") },
   { id: "nasai", name: "Sunan an-Nasa'i", compiler: "Imam An-Nasa'i", total: 5758, group: "nine_books", color: "#EC4899", source: "fawazahmed", cover: require("../../assets/images/hadith_nasai_cover.jpg") },
-  { id: "abudawud", name: "Sunan Abi Dawud", compiler: "Imam Abu Dawud", total: 5274, group: "nine_books", color: "#F59E0B", source: "fawazahmed", cover: require("../../assets/images/hadith_abudawud_cover.jpg") },
+  { id: "abudawud", name: "Sunan Abi Dawud", compiler: "Imam Abu Dawud", total: 5274, group: "nine_books", color: colors.warning, source: "fawazahmed", cover: require("../../assets/images/hadith_abudawud_cover.jpg") },
   { id: "tirmidhi", name: "Jami' at-Tirmidhi", compiler: "Imam Al-Tirmidhi", total: 3956, group: "nine_books", color: "#8B5CF6", source: "fawazahmed", cover: require("../../assets/images/hadith_tirmidhi_cover.jpg") },
   { id: "ibnmajah", name: "Sunan Ibn Majah", compiler: "Imam Ibn Majah", total: 4341, group: "nine_books", color: "#EF4444", source: "fawazahmed", cover: require("../../assets/images/hadith_ibnmajah_cover.jpg") },
   { id: "malik", name: "Muwatta Malik", compiler: "Imam Malik", total: 1861, group: "nine_books", color: "#0D9488", source: "fawazahmed", cover: require("../../assets/images/hadith_malik_cover.jpg") },
@@ -33,7 +33,7 @@ export const HADITH_BOOKS = [
 
   // --- Selections ---
   { id: "nawawi40", name: "An-Nawawi's 40 Hadith", compiler: "Imam Al-Nawawi", total: 42, group: "selections", color: "#C084FC", source: "ahmedbaset_forties", cover: require("../../assets/images/hadith_nawawi40_cover.jpg") },
-  { id: "riyad_assalihin", name: "Riyadh as-Salihin", compiler: "Imam Al-Nawawi", total: 1896, group: "selections", color: "#F59E0B", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_riyad_assalihin_cover.jpg") },
+  { id: "riyad_assalihin", name: "Riyadh as-Salihin", compiler: "Imam Al-Nawawi", total: 1896, group: "selections", color: colors.warning, source: "ahmedbaset_other", cover: require("../../assets/images/hadith_riyad_assalihin_cover.jpg") },
   { id: "bulugh_almaram", name: "Bulugh al-Maram", compiler: "Imam Ibn Hajar al-Asqalani", total: 1568, group: "selections", color: "#818CF8", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_bulugh_almaram_cover.jpg") },
   { id: "mishkat_almasabih", name: "Mishkat al-Masabih", compiler: "Khatib al-Tabrizi", total: 6285, group: "selections", color: "#F87171", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_mishkat_almasabih_cover.jpg") },
   { id: "hisn", name: "Hisn al-Muslim", compiler: "Sa'id bin Ali bin Wahf Al-Qahtani", total: 267, group: "selections", color: "#34D399", source: "fallback", cover: require("../../assets/images/hadith_hisn_cover.png") },
@@ -58,7 +58,7 @@ const DynamicBookCover = ({ name, color }: { name: string; color: string }) => {
       />
       <View style={styles.coverSpine} />
       <View style={styles.coverGoldBorder}>
-        <MaterialCommunityIcons name="star-four-points" size={12} color="#D4AF37" style={{ marginBottom: 2 }} />
+        <MaterialCommunityIcons name="star-four-points" size={12} color={colors.gold} style={{ marginBottom: 2 }} />
         <Text style={styles.coverInitials}>{initials}</Text>
         <View style={styles.coverDivider} />
       </View>
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 3.5,
-    backgroundColor: '#D4AF37',
+    backgroundColor: colors.gold,
     opacity: 0.85,
     zIndex: 2,
   },

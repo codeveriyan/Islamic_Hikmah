@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator,
 } from "react-native";
@@ -243,7 +243,7 @@ export default function PrayerTab() {
                   </View>
                   <Text style={[s.scheduleName, { color: isNext ? colors.brand : colors.onSurface, fontWeight: isNext ? "700" : "500" }]}>{name}</Text>
                   {isCurrent && <View style={[s.currentBadge, { backgroundColor: colors.brand }]}><Text style={s.currentBadgeTxt}>NOW</Text></View>}
-                  {isNext && !isCurrent && <View style={[s.currentBadge, { backgroundColor: "#F59E0B22" }]}><Text style={[s.currentBadgeTxt, { color: "#F59E0B" }]}>NEXT</Text></View>}
+                  {isNext && !isCurrent && <View style={[s.currentBadge, { backgroundColor: "#F59E0B22" }]}><Text style={[s.currentBadgeTxt, { color: colors.warning }]}>NEXT</Text></View>}
                   <Text style={[s.scheduleTime, { color: isNext ? colors.brand : colors.onSurfaceMuted }]}>{format12Hour(timeStr)}</Text>
                   {/* Mark as prayed toggle */}
                   <Pressable

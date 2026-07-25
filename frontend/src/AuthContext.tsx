@@ -13,11 +13,29 @@ import {
   GoogleAuthProvider,
   signInWithPopup
 } from "firebase/auth";
-import { auth, db } from "./firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth } from "./firebase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+
+const API_BASE_URL = (
+  process.env.EXPO_PUBLIC_API_BASE_URL ||
+  process.env.EXPO_PUBLIC_HADITH_API_BASE_URL
+)?.replace(/\/$/, "");
+
+interface BackendProfile {
+  id: string;
+  name: string;
+  email: string;
+  profile_image?: string | null;
+  email_verified: boolean;
+  created_at: string;
+  status: "Active" | "Blocked";
+  tier: "free" | "premium";
+  trial_started_at?: string | null;
+  trial_active: boolean;
+  trial_ends_at?: string | null;
+}
 
 // If on native, configure Google Sign-In dynamically using Web Client ID
 if (Platform.OS !== "web") {
@@ -61,8 +79,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateProfileInfo: (name: string, photoURL?: string) => Promise<void>;
   reloadUser: () => Promise<void>;
-  togglePremiumTier: () => Promise<void>;
   startTrial: () => Promise<void>;
+  refreshEntitlements: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -74,16 +92,63 @@ async function migrateAuthStorage(uid?: string) {
     ["auth_guest_photo", "hikmah:auth:guest_photo"],
   ];
   if (uid) {
-    pairs.push(
-      [`ruhani:tier:${uid}`, `hikmah:tier:${uid}`],
-      [`ruhani:trial:${uid}`, `hikmah:trial:${uid}`],
-    );
+    await AsyncStorage.multiRemove([
+      `ruhani:tier:${uid}`,
+      `ruhani:trial:${uid}`,
+      `hikmah:tier:${uid}`,
+      `hikmah:trial:${uid}`,
+    ]);
   }
   for (const [legacyKey, newKey] of pairs) {
     const [legacy, current] = await AsyncStorage.multiGet([legacyKey, newKey]);
     if (legacy[1] != null && current[1] == null) await AsyncStorage.setItem(newKey, legacy[1]);
     if (legacy[1] != null) await AsyncStorage.removeItem(legacyKey);
   }
+}
+
+function toTimestamp(value?: string | null): number | undefined {
+  if (!value) return undefined;
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+  const timestamp = new Date(hasTimezone ? value : `${value}Z`).getTime();
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function buildUserProfile(firebaseUser: User, backendProfile?: BackendProfile | null): UserProfile {
+  const trialStartedAt = toTimestamp(backendProfile?.trial_started_at);
+  const trialEndsAt = toTimestamp(backendProfile?.trial_ends_at);
+  const trialActive = backendProfile?.trial_active === true && (!trialEndsAt || trialEndsAt > Date.now());
+  const trialDaysLeft = trialActive && trialEndsAt
+    ? Math.max(1, Math.ceil((trialEndsAt - Date.now()) / (24 * 60 * 60 * 1000)))
+    : 0;
+
+  return {
+    uid: firebaseUser.uid,
+    name: backendProfile?.name || firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
+    email: backendProfile?.email || firebaseUser.email || "",
+    emailVerified: firebaseUser.emailVerified,
+    phoneNumber: firebaseUser.phoneNumber || undefined,
+    photoURL: backendProfile?.profile_image || firebaseUser.photoURL || undefined,
+    createdAt: toTimestamp(backendProfile?.created_at)
+      || (firebaseUser.metadata.creationTime ? new Date(firebaseUser.metadata.creationTime).getTime() : Date.now()),
+    status: backendProfile?.status || "Active",
+    tier: backendProfile?.tier === "premium" ? "premium" : "free",
+    trialStartedAt,
+    trialActive,
+    trialDaysLeft,
+  };
+}
+
+async function fetchBackendProfile(firebaseUser: User): Promise<BackendProfile | null> {
+  if (!API_BASE_URL) return null;
+  const token = await firebaseUser.getIdToken();
+  const response = await fetch(`${API_BASE_URL}/api/profile`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || "Unable to load account entitlements.");
+  }
+  return response.json();
 }
 
 // Hook to use auth context
@@ -110,72 +175,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         setUser(firebaseUser);
         setIsGuest(false);
-        // Load tier details from local storage and Firestore
-        let localTier = await AsyncStorage.getItem(`hikmah:tier:${firebaseUser.uid}`);
-        let finalTier: "free" | "premium" = (localTier as "free" | "premium") || "free";
-        
+        let backendProfile: BackendProfile | null = null;
         try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            if (data?.tier === "premium" || data?.tier === "free") {
-              finalTier = data.tier;
-              await AsyncStorage.setItem(`hikmah:tier:${firebaseUser.uid}`, finalTier);
-            }
-          } else {
-            // First time login/signup: create document with default tier
-            await setDoc(doc(db, "users", firebaseUser.uid), {
-              name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
-              email: firebaseUser.email || "",
-              tier: finalTier,
-              createdAt: Date.now()
-            }, { merge: true });
-          }
+          backendProfile = await fetchBackendProfile(firebaseUser);
         } catch (e) {
-          console.warn("Failed to sync tier with Firestore:", e);
+          // Entitlements fail closed: authentication still works, but the user
+          // remains free until the backend can be reached.
+          console.warn("Failed to load server entitlements; using free tier:", e);
         }
 
-        // ── Trial computation ──────────────────────────────────────────────
-        let trialStartedAt: number | undefined = undefined;
-        let trialActive = false;
-        let trialDaysLeft = 0;
-        try {
-          const trialRaw = await AsyncStorage.getItem(`hikmah:trial:${firebaseUser.uid}`);
-          if (trialRaw) {
-            trialStartedAt = parseInt(trialRaw, 10);
-          } else {
-            // Try loading from Firestore
-            const userDoc2 = await getDoc(doc(db, "users", firebaseUser.uid));
-            if (userDoc2.exists() && userDoc2.data()?.trialStartedAt) {
-              trialStartedAt = userDoc2.data().trialStartedAt;
-              await AsyncStorage.setItem(`hikmah:trial:${firebaseUser.uid}`, String(trialStartedAt));
-            }
-          }
-          if (trialStartedAt) {
-            const TRIAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-            const elapsed = Date.now() - trialStartedAt;
-            trialActive = elapsed < TRIAL_MS;
-            trialDaysLeft = trialActive ? Math.ceil((TRIAL_MS - elapsed) / (24 * 60 * 60 * 1000)) : 0;
-          }
-        } catch (e) {
-          console.warn("Failed to load trial state:", e);
-        }
-
-        const userProfile: UserProfile = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
-          email: firebaseUser.email || "",
-          emailVerified: firebaseUser.emailVerified,
-          phoneNumber: firebaseUser.phoneNumber || undefined,
-          photoURL: firebaseUser.photoURL || undefined,
-          createdAt: firebaseUser.metadata.creationTime ? new Date(firebaseUser.metadata.creationTime).getTime() : Date.now(),
-          status: "Active",
-          tier: finalTier,
-          trialStartedAt,
-          trialActive,
-          trialDaysLeft,
-        };
-        setProfile(userProfile);
+        setProfile(buildUserProfile(firebaseUser, backendProfile));
       } else {
         const guestRaw = await AsyncStorage.getItem("hikmah:auth:guest");
         if (guestRaw === "true") {
@@ -225,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.replace("/(tabs)");
       }
     }
-  }, [user, isGuest, loading, segments]);
+  }, [user, isGuest, loading, segments, router]);
 
   // Login
   const login = async (email: string, password: string) => {
@@ -374,6 +383,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (!auth.currentUser) return;
     await firebaseUpdateProfile(auth.currentUser, { displayName: name, photoURL });
+    if (API_BASE_URL) {
+      const token = await auth.currentUser.getIdToken();
+      const response = await fetch(`${API_BASE_URL}/api/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name,
+          ...(photoURL !== undefined ? { profile_image: photoURL } : {}),
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || "Unable to update the server profile.");
+      }
+    }
     // Update local profile state
     if (profile) {
       setProfile({
@@ -398,50 +425,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Toggle premium tier (dev bypass / subscription simulation)
-  const togglePremiumTier = async () => {
-    if (isGuest && profile) {
-      const nextTier = profile.tier === "premium" ? "free" : "premium";
-      setProfile({ ...profile, tier: nextTier });
-      return;
-    }
-    if (!user) return;
-    const nextTier = profile?.tier === "premium" ? "free" : "premium";
-    await AsyncStorage.setItem(`hikmah:tier:${user.uid}`, nextTier);
-    
-    try {
-      await setDoc(doc(db, "users", user.uid), { tier: nextTier }, { merge: true });
-    } catch (e) {
-      console.warn("Failed to save premium tier change to Firestore:", e);
-    }
-
-    if (profile) {
-      setProfile({
-        ...profile,
-        tier: nextTier
-      });
-    }
+  const refreshEntitlements = async () => {
+    if (!auth.currentUser || isGuest) return;
+    const backendProfile = await fetchBackendProfile(auth.currentUser);
+    setProfile(buildUserProfile(auth.currentUser, backendProfile));
   };
 
-  // Start 7-day free trial (requires real login, not guest)
+  // Start the one-time trial on the authoritative backend.
   const startTrial = async () => {
-    if (!user || isGuest) return;
-    const now = Date.now();
-    const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
-    await AsyncStorage.setItem(`hikmah:trial:${user.uid}`, String(now));
-    try {
-      await setDoc(doc(db, "users", user.uid), { trialStartedAt: now }, { merge: true });
-    } catch (e) {
-      console.warn("Failed to save trial start to Firestore:", e);
+    if (!auth.currentUser || isGuest) {
+      throw new Error("Sign in to start a trial.");
     }
-    if (profile) {
-      setProfile({
-        ...profile,
-        trialStartedAt: now,
-        trialActive: true,
-        trialDaysLeft: 7,
-      });
+    if (!API_BASE_URL) {
+      throw new Error("The account service is not configured for this build.");
     }
+    const token = await auth.currentUser.getIdToken();
+    const response = await fetch(`${API_BASE_URL}/api/start-trial`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || "Unable to start the trial.");
+    }
+    setProfile(buildUserProfile(auth.currentUser, payload.profile));
   };
 
   return (
@@ -459,8 +466,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         updateProfileInfo,
         reloadUser,
-        togglePremiumTier,
         startTrial,
+        refreshEntitlements,
       }}
     >
       {children}

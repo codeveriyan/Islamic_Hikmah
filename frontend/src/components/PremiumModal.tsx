@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, Pressable, Modal, Animated,
-  ScrollView, Dimensions, Platform
+  ScrollView, Dimensions, Alert
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -11,7 +11,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
 
-const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get("window");
+const { height: SCREEN_H } = Dimensions.get("window");
 
 const PREMIUM_FEATURES = [
   { icon: "food-halal",          label: "Halal Food & Product Finder",     desc: "Find halal restaurants & scan product barcodes"      },
@@ -26,8 +26,8 @@ const PREMIUM_FEATURES = [
 
 const PLANS = [
   { id: "monthly",  label: "Monthly",  price: "₹99",   period: "/month", badge: "" },
-  { id: "yearly",   label: "Yearly",   price: "₹699",  period: "/year",  badge: "Save 40%" },
-  { id: "lifetime", label: "Lifetime", price: "₹1,999", period: "once",  badge: "Best Value" },
+  { id: "yearly",   label: "Yearly",   price: "₹199",  period: "/year",  badge: "Save 80%" },
+  { id: "lifetime", label: "Lifetime", price: "₹499",  period: "once",  badge: "Best Value" },
 ];
 
 export default function PremiumModal() {
@@ -56,7 +56,7 @@ export default function PremiumModal() {
         Animated.timing(slideAnim, { toValue: SCREEN_H, duration: 220, useNativeDriver: true }),
       ]).start();
     }
-  }, [visible]);
+  }, [visible, fadeAnim, scaleAnim, slideAnim]);
 
   const handleUpgrade = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -71,7 +71,11 @@ export default function PremiumModal() {
       router.push("/auth/login");
       return;
     }
-    await startTrial();
+    try {
+      await startTrial();
+    } catch (error: any) {
+      Alert.alert("Trial Unavailable", error.message || "Unable to start the trial right now.");
+    }
   };
 
   const handleLogin = () => {

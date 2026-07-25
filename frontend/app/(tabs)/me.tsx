@@ -10,7 +10,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
-import { getCompletedGoals, getActiveGoalIds, getHadithBookmarks, getQuranBookmarks } from "@/src/storage";
+import { getCompletedGoals, getActiveGoalIds, getHadithBookmarks, getQuranBookmarks, getDhikrStreak, type DhikrDay } from "@/src/storage";
 import { theme } from "@/src/theme";
 
 type MenuItem = {
@@ -33,6 +33,9 @@ export default function MeTab() {
   const [activityWeek, setActivityWeek] = useState<boolean[]>(Array(7).fill(false));
   const [hadithSaved, setHadithSaved] = useState(0);
   const [quranBms, setQuranBms] = useState(0);
+  const [dhikrStreak, setDhikrStreak] = useState<{ streak: number; todayTotal: number; weekHistory: DhikrDay[] }>({
+    streak: 0, todayTotal: 0, weekHistory: [],
+  });
 
   // Compute today's date string
   const todayStr = useMemo(() => {
@@ -44,17 +47,19 @@ export default function MeTab() {
     useCallback(() => {
       (async () => {
         try {
-          const [completedIds, activeIds, hBms, qBms] = await Promise.all([
+          const [completedIds, activeIds, hBms, qBms, dStreak] = await Promise.all([
             getCompletedGoals(),
             getActiveGoalIds(),
             getHadithBookmarks(),
             getQuranBookmarks(),
+            getDhikrStreak(),
           ]);
           const completed = completedIds.length;
           const total = activeIds.length;
           setGoalProgress({ completed, total });
           setHadithSaved(hBms.length);
           setQuranBms(qBms.length);
+          setDhikrStreak(dStreak);
 
           // Mark today as active if any goal completed
           if (completed > 0) {
@@ -156,7 +161,7 @@ export default function MeTab() {
                 <MaterialCommunityIcons
                   name={isPremium ? "crown" : "account"}
                   size={11}
-                  color={isPremium ? "#F59E0B" : "rgba(255,255,255,0.7)"}
+                  color={isPremium ? colors.warning : "rgba(255,255,255,0.7)"}
                 />
                 <Text style={[s.tierTxt, isPremium && { color: "#FCD34D" }]}>
                   {isPremium ? "Premium Member" : "Free Account"}
@@ -174,7 +179,7 @@ export default function MeTab() {
             <View style={s.streakStat}>
               <Text style={[s.streakLabel, { color: colors.onSurfaceMuted }]}>STREAK</Text>
               <View style={s.streakValRow}>
-                <Text style={[s.streakNum, { color: streak.current > 0 ? '#F59E0B' : colors.onSurfaceMuted }]}>
+                <Text style={[s.streakNum, { color: streak.current > 0 ? colors.warning : colors.onSurfaceMuted }]}>
                   {streak.current}
                 </Text>
                 <Text style={s.fireEmoji}>{streak.current >= 3 ? '🔥' : streak.current > 0 ? '✨' : '💤'}</Text>
@@ -217,7 +222,67 @@ export default function MeTab() {
           </View>
         </AnimatedCard>
 
-        {/* ── Quick Stats Row ── */}
+        {/* 📿 Dhikr Consistency Card */}
+        <AnimatedCard style={[s.streakCard, { backgroundColor: cardBg, borderColor: colors.border, marginTop: 12 }]}>
+          <View style={s.streakTop}>
+            {/* Dhikr streak */}
+            <View style={s.streakStat}>
+              <Text style={[s.streakLabel, { color: colors.onSurfaceMuted }]}>DHIKR STREAK</Text>
+              <View style={s.streakValRow}>
+                <Text style={[s.streakNum, { color: dhikrStreak.streak > 0 ? colors.brand : colors.onSurfaceMuted }]}>
+                  {dhikrStreak.streak}
+                </Text>
+                <Text style={s.fireEmoji}>{dhikrStreak.streak >= 7 ? '🌟' : dhikrStreak.streak > 0 ? '📿' : '💤'}</Text>
+              </View>
+              <Text style={[s.streakDays, { color: colors.onSurfaceMuted }]}>days</Text>
+            </View>
+
+            <View style={[s.streakDivider, { backgroundColor: colors.border }]} />
+
+            {/* Today's count */}
+            <View style={s.streakStat}>
+              <Text style={[s.streakLabel, { color: colors.onSurfaceMuted }]}>TODAY</Text>
+              <Text style={[s.streakNum, { color: colors.onSurface, fontSize: 22 }]}>{dhikrStreak.todayTotal}</Text>
+              <Text style={[s.streakDays, { color: colors.onSurfaceMuted }]}>dhikr</Text>
+            </View>
+
+            <View style={[s.streakDivider, { backgroundColor: colors.border }]} />
+
+            {/* 7-day intensity heatmap */}
+            <View style={[s.streakStat, { alignItems: 'flex-end', flex: 1 }]}>
+              <Text style={[s.streakLabel, { color: colors.onSurfaceMuted }]}>THIS WEEK</Text>
+              {(() => {
+                const maxTotal = Math.max(...dhikrStreak.weekHistory.map(d => d.total), 1);
+                return (
+                  <View style={s.activityRow}>
+                    {dhikrStreak.weekHistory.map((day, idx) => {
+                      const intensity = day.total / maxTotal;
+                      const bg = day.total === 0
+                        ? colors.surfaceSecondary
+                        : `rgba(0,168,132,${Math.max(0.2, intensity)})`;
+                      return (
+                        <View
+                          key={idx}
+                          style={[
+                            s.activityDot,
+                            { backgroundColor: bg, borderColor: day.total > 0 ? colors.brand + '40' : colors.border },
+                          ]}
+                        />
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+              <View style={s.activityLabels}>
+                {['M','T','W','T','F','S','S'].map((l, i) => (
+                  <Text key={i} style={[s.activityLbl, { color: colors.onSurfaceMuted }]}>{l}</Text>
+                ))}
+              </View>
+            </View>
+          </View>
+        </AnimatedCard>
+
+        {/* ⚡ Quick Stats Row ⚡ */}
         <View style={s.statsRow}>
           {[
             { label: 'Goals Done', value: goalProgress.completed, icon: 'target', color: colors.brand },
@@ -241,6 +306,8 @@ export default function MeTab() {
             { icon: '🏆', label: 'Hadith Scholar', sub: 'Save 5 hadiths', unlocked: hadithSaved >= 5 },
             { icon: '✅', label: 'Goal Setter', sub: 'Complete a goal', unlocked: goalProgress.completed > 0 },
             { icon: '💫', label: 'Consistent', sub: '3 active days', unlocked: activityWeek.filter(Boolean).length >= 3 },
+            { icon: '📿', label: 'Dhikr Master', sub: '3-day dhikr streak', unlocked: dhikrStreak.streak >= 3 },
+            { icon: '🌟', label: 'Dhikr Devotee', sub: '100+ dhikr today', unlocked: dhikrStreak.todayTotal >= 100 },
           ].map(badge => (
             <View
               key={badge.label}

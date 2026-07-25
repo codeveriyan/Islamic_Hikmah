@@ -184,6 +184,10 @@ function ThemedStack({ azaanPlaying, onStopAzaan }: { azaanPlaying: boolean; onS
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.surface },
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+          animationDuration: 260,
         }}
       />
       {azaanPlaying ? (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Switch, Modal, ScrollView, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Switch, Modal, ScrollView, Platform, Alert } from "react-native";
+import { SkeletonBone } from "@/src/components/SkeletonLoader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -433,7 +434,11 @@ export default function PrayerTimesScreen() {
       </LinearGradient>
 
       {loading ? (
-        <ActivityIndicator color={colors.brand} style={{ marginTop: 32 }} />
+        <View style={{ paddingHorizontal: 20, paddingTop: 20, gap: 12 }}>
+          {[...Array(6)].map((_, i) => (
+            <SkeletonBone key={i} width="100%" height={56} borderRadius={14} />
+          ))}
+        </View>
       ) : err ? (
         <View style={styles.errBox}>
           <MaterialCommunityIcons name="wifi-off" size={48} color={colors.onSurfaceMuted} />

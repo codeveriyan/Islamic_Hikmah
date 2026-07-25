@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+﻿import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -115,7 +115,7 @@ export default function RamadanScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Banner */}
         <LinearGradient
-          colors={["#1B4332", "#2D6A4F", "#D4AF37"]}
+          colors={["#1B4332", "#2D6A4F", colors.gold]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.heroCard}
@@ -130,7 +130,7 @@ export default function RamadanScreen() {
         {/* Timings Section */}
         <View style={styles.timingsRow}>
           <View style={[styles.timingBox, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="weather-sunset-up" size={24} color="#F59E0B" />
+            <MaterialCommunityIcons name="weather-sunset-up" size={24} color={colors.warning} />
             <Text style={[styles.timingLabel, { color: colors.onSurfaceMuted }]}>Suhoor (Fajr)</Text>
             <Text style={[styles.timingVal, { color: colors.onSurface }]}>{format12Hour(suhoorTime)}</Text>
           </View>

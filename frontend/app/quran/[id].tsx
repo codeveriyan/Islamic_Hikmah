@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Modal, FlatList, Platform, Alert } from "react-native";
+import { SkeletonBone } from "@/src/components/SkeletonLoader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -1520,7 +1521,15 @@ export default function SurahDetail() {
       </View>
 
       {loading ? (
-        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
+        <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 20 }}>
+          {[...Array(6)].map((_, i) => (
+            <View key={i} style={{ gap: 8 }}>
+              <SkeletonBone width="100%" height={20} borderRadius={8} />
+              <SkeletonBone width="85%" height={16} borderRadius={6} />
+              <SkeletonBone width="70%" height={14} borderRadius={6} />
+            </View>
+          ))}
+        </View>
       ) : (
         <FlatList
           ref={scrollRef}

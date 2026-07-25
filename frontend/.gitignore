@@ -38,3 +38,7 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+scratch_*
+*.local.json
+*.local.txt

@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function ownsDocument(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Account status, trials, and paid entitlements are server-owned.
+    match /users/{userId} {
+      allow read: if ownsDocument(userId);
+      allow write: if false;
+    }
+
+    // Payment records must only be created and updated by trusted server code.
+    match /payments/{paymentId} {
+      allow read, write: if false;
+    }
+
+    // A signed-in device may maintain only its own Expo push token document.
+    match /pushTokens/{userId} {
+      allow read: if false;
+      allow create, update: if ownsDocument(userId)
+        && request.resource.data.keys().hasOnly([
+          'token',
+          'updatedAt',
+          'platform',
+          'projectId'
+        ])
+        && request.resource.data.token is string
+        && request.resource.data.updatedAt is int
+        && request.resource.data.platform in ['android', 'ios']
+        && request.resource.data.projectId is string;
+      allow delete: if ownsDocument(userId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

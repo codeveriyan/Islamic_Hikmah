@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+﻿import { useMemo, useState, useEffect } from "react";
 import {
   Alert,
   FlatList,
@@ -77,7 +77,7 @@ const CERTIFIED_TERMS = ["halal certified", "certified halal", "halal", "hfa", "
 
 const STATUS_META: Record<IngredientStatus, { label: string; color: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = {
   unknown: { label: "Needs Verification", color: "#64748B", icon: "help-circle" },
-  mushbooh: { label: "Questionable", color: "#F59E0B", icon: "alert-circle" },
+  mushbooh: { label: "Questionable", color: colors.warning, icon: "alert-circle" },
   haram: { label: "Concerning Ingredient Found", color: "#DC2626", icon: "alert-circle" },
 };
 
@@ -385,7 +385,7 @@ export default function HalalScannerScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {!detailMode && <LinearGradient
-          colors={["#052e22", "#0f766e", "#d4af37"]}
+          colors={["#052e22", "#0f766e", colors.gold]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.hero}

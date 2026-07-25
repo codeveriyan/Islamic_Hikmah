@@ -5,28 +5,28 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
-import uuid
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, Literal, Optional
 from datetime import datetime, timedelta
-import bcrypt
 import jwt
 import requests
+from pymongo.errors import DuplicateKeyError
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection with environment fallback
+# MongoDB connection
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 db_name = os.environ.get('DB_NAME', 'islamic_hikmah')
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
 db = client[db_name]
 
-# In-memory database fallback if MongoDB is not running/available
+# The in-memory store is an explicit local-development option only. Production
+# requests fail closed when MongoDB is unavailable.
+ALLOW_IN_MEMORY_DB = os.environ.get("ALLOW_IN_MEMORY_DB", "false").lower() == "true"
 IN_MEMORY_DB = {
     "users": {},
-    "sessions": {},
-    "status_checks": []
+    "payments": {},
 }
 
 # Logger setup
@@ -36,39 +36,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Security config
-SECRET_KEY = os.environ.get("JWT_SECRET", "supersecretkeyforislamichikmahauth12345")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "islamic-hikmah")
+APP_ENV = os.environ.get("APP_ENV", "production").lower()
+DEV_PREMIUM_EMAILS = {
+    email.strip().lower()
+    for email in os.environ.get("DEV_PREMIUM_EMAILS", "").split(",")
+    if email.strip()
+}
+DEFAULT_CORS_ORIGINS = "http://localhost:8081,http://localhost:19006"
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]
+if "*" in CORS_ORIGINS:
+    raise RuntimeError("CORS_ORIGINS must be an explicit allowlist; wildcard origins are not allowed.")
+
+
+def apply_development_entitlements(user: dict) -> dict:
+    if APP_ENV == "development" and user.get("email", "").lower() in DEV_PREMIUM_EMAILS:
+        development_user = user.copy()
+        development_user["tier"] = "premium"
+        development_user["_development_entitlement"] = True
+        return development_user
+    return user
 
 # Pydantic Schemas
-class UserCreate(BaseModel):
-    name: str
-    email: str
-    password: str
-
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-class GoogleLoginInput(BaseModel):
-    provider_id: str
-    email: str
-    name: str
-    profile_image: Optional[str] = None
-
-class ForgotPasswordInput(BaseModel):
-    email: str
-
-class ResetPasswordInput(BaseModel):
-    token: str
-    new_password: str
-
 class ProfileUpdate(BaseModel):
-    name: Optional[str] = None
-    profile_image: Optional[str] = None
-    status: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    profile_image: Optional[str] = Field(default=None, max_length=2048)
 
 class UserProfileResponse(BaseModel):
     id: str
@@ -87,63 +85,73 @@ class UserProfileResponse(BaseModel):
     trial_active: bool = False
     trial_ends_at: Optional[datetime] = None
 
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str
-    profile: UserProfileResponse
+# Database check & query helpers
+def _database_unavailable(operation: str, error: Exception) -> None:
+    if ALLOW_IN_MEMORY_DB:
+        logger.warning(
+            "MongoDB %s failed; using the explicitly enabled in-memory development store. Error: %s",
+            operation,
+            error,
+        )
+        return
+    logger.error("MongoDB %s failed. Error: %s", operation, error)
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="The service database is temporarily unavailable.",
+    )
 
-# Status check model
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
-
-# Helper functions
-def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except Exception:
-        return False
-
-def create_jwt_token(data: dict, expires_delta: timedelta) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-# Database check & query helpers with fallback
 async def db_find_user_by_email(email: str):
+    normalized_email = email.lower()
     try:
-        # Check connection status quickly (timeout in 1 second)
-        user = await db.users.find_one({"email": email})
+        user = await db.users.find_one({"email": normalized_email})
         return user
     except Exception as e:
-        logger.warning(f"MongoDB search failed, falling back to memory database. Error: {e}")
-        return IN_MEMORY_DB["users"].get(email.lower())
+        _database_unavailable("user lookup", e)
+        return IN_MEMORY_DB["users"].get(normalized_email)
 
 async def db_insert_user(user_dict: dict):
     try:
         await db.users.insert_one(user_dict)
     except Exception as e:
-        logger.warning(f"MongoDB insert failed, falling back to memory database. Error: {e}")
+        _database_unavailable("user insert", e)
         IN_MEMORY_DB["users"][user_dict["email"].lower()] = user_dict
 
 async def db_update_user(email: str, update_dict: dict):
     try:
-        await db.users.update_one({"email": email}, {"$set": update_dict})
+        await db.users.update_one({"email": email.lower()}, {"$set": update_dict})
     except Exception as e:
-        logger.warning(f"MongoDB update failed, falling back to memory database. Error: {e}")
+        _database_unavailable("user update", e)
         user = IN_MEMORY_DB["users"].get(email.lower())
         if user:
             user.update(update_dict)
+
+
+async def db_find_payment_by_utr(utr: str):
+    try:
+        return await db.payments.find_one({"_id": utr})
+    except Exception as e:
+        _database_unavailable("payment lookup", e)
+        return IN_MEMORY_DB["payments"].get(utr)
+
+
+async def db_insert_payment(payment_dict: dict):
+    try:
+        await db.payments.insert_one(payment_dict)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This UTR has already been submitted.",
+        )
+    except Exception as e:
+        _database_unavailable("payment insert", e)
+        utr = payment_dict["_id"]
+        if utr in IN_MEMORY_DB["payments"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This UTR has already been submitted.",
+            )
+        IN_MEMORY_DB["payments"][utr] = payment_dict
 
 # Cache of Google public certificates for Firebase ID Token verification
 GOOGLE_CERTS = {}
@@ -171,78 +179,92 @@ def get_google_public_key(kid: str) -> Optional[str]:
     
     return GOOGLE_CERTS.get(kid)
 
-# JWT Verification Dependency
+# Firebase ID token verification dependency
 async def get_current_user_profile(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
-            status_code=status.HTTP_411_LENGTH_REQUIRED if not authorization else status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid Authorization header"
         )
-    token = authorization.split(" ")[1]
-    
-    # Try decoding backend-issued JWT first
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+        if not kid:
+            raise jwt.InvalidTokenError("No key id in token header")
+
+        public_key_pem = get_google_public_key(kid)
+        if not public_key_pem:
+            raise jwt.InvalidTokenError("Matching Firebase public key not found")
+
+        decoded = jwt.decode(
+            token,
+            public_key_pem,
+            algorithms=["RS256"],
+            audience=FIREBASE_PROJECT_ID,
+            issuer=f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}",
+            options={"require": ["exp", "iat", "sub"]},
+        )
+        email = decoded.get("email")
+        uid = decoded.get("user_id") or decoded.get("sub")
         if not email:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+            raise jwt.InvalidTokenError("Email not present in Firebase token")
+
         user = await db_find_user_by_email(email)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        return user
+            now = datetime.utcnow()
+            user = {
+                "id": uid,
+                "name": decoded.get("name", email.split("@")[0]),
+                "email": email.lower(),
+                "password_hash": "",
+                "profile_image": decoded.get("picture"),
+                "provider": "firebase",
+                "provider_id": uid,
+                "email_verified": decoded.get("email_verified", False),
+                "created_at": now,
+                "updated_at": now,
+                "last_login": now,
+                "status": "Active",
+                "tier": "free",
+                "trial_started_at": None,
+                "trial_active": False,
+                "trial_ends_at": None,
+            }
+            await db_insert_user(user)
+        else:
+            bound_uid = user.get("provider_id")
+            if bound_uid and bound_uid != uid:
+                logger.warning("Rejected Firebase identity mismatch for user record %s", user.get("id"))
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="The authenticated identity does not match this account.",
+                )
+            identity_update = {
+                "provider": "firebase",
+                "provider_id": uid,
+                "email_verified": decoded.get("email_verified", False),
+                "last_login": datetime.utcnow(),
+            }
+            await db_update_user(email, identity_update)
+            user.update(identity_update)
+
+        if user.get("status") == "Blocked":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been blocked.")
+        return apply_development_entitlements(user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
-    except jwt.InvalidTokenError:
-        # Fallback to Firebase ID Token validation
-        try:
-            unverified_header = jwt.get_unverified_header(token)
-            kid = unverified_header.get("kid")
-            if not kid:
-                raise jwt.InvalidTokenError("No kid in header")
-                
-            public_key_pem = get_google_public_key(kid)
-            if not public_key_pem:
-                raise jwt.InvalidTokenError("Matching public key not found")
-                
-            decoded = jwt.decode(
-                token,
-                public_key_pem,
-                algorithms=["RS256"],
-                audience="islamic-hikmah",
-                issuer="https://securetoken.google.com/islamic-hikmah"
-            )
-            
-            email = decoded.get("email")
-            uid = decoded.get("user_id") or decoded.get("sub")
-            if not email:
-                raise jwt.InvalidTokenError("Email not present in token")
-                
-            user = await db_find_user_by_email(email)
-            if not user:
-                now = datetime.utcnow()
-                user = {
-                    "id": uid,
-                    "name": decoded.get("name", email.split("@")[0]),
-                    "email": email.lower(),
-                    "password_hash": "",
-                    "profile_image": decoded.get("picture"),
-                    "provider": "firebase",
-                    "provider_id": uid,
-                    "email_verified": decoded.get("email_verified", False),
-                    "created_at": now,
-                    "updated_at": now,
-                    "last_login": now,
-                    "status": "Active",
-                    "tier": "free",
-                    "trial_started_at": None,
-                    "trial_active": False,
-                    "trial_ends_at": None
-                }
-                await db_insert_user(user)
-            return user
-        except Exception as e:
-            logger.warning(f"Firebase token validation fallback failed: {e}")
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except HTTPException:
+        raise
+    except (jwt.InvalidTokenError, requests.RequestException) as e:
+        logger.warning("Firebase token validation failed: %s", e)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception as e:
+        logger.warning("Unexpected Firebase token validation failure: %s", e)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
 # FastAPI application initialization
@@ -354,200 +376,6 @@ def get_sunnah_hadiths(
             return stale
         raise
 
-@api_router.post("/hadith/{collection}/backfill")
-def backfill_sunnah_collection(
-    collection: str,
-    limit: int = Query(100, ge=1, le=100),
-):
-    """Download every available page for one Sunnah.com collection into disk cache."""
-    if collection not in SUNNAH_COLLECTIONS:
-        raise HTTPException(status_code=404, detail="This collection is not available from Sunnah.com.")
-
-    page = 1
-    total_pages = 0
-    total_hadith = 0
-    while page:
-        payload = fetch_sunnah_page(collection, page, limit)
-        write_sunnah_cache(collection, page, limit, payload)
-        total_pages += 1
-        total_hadith += len(payload.get("data", []))
-        page = payload.get("next") or 0
-
-    return {
-        "collection": collection,
-        "pages_cached": total_pages,
-        "hadith_cached": total_hadith,
-        "cache_dir": str(SUNNAH_CACHE_DIR),
-    }
-
-# POST /signup
-@api_router.post("/signup", response_model=TokenResponse)
-async def signup(user_in: UserCreate):
-    existing_user = await db_find_user_by_email(user_in.email)
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An account with this email address already exists."
-        )
-    
-    user_id = str(uuid.uuid4())
-    now = datetime.utcnow()
-    user_dict = {
-        "id": user_id,
-        "name": user_in.name,
-        "email": user_in.email.lower(),
-        "password_hash": hash_password(user_in.password),
-        "profile_image": None,
-        "provider": "email",
-        "provider_id": None,
-        "email_verified": False,
-        "created_at": now,
-        "updated_at": now,
-        "last_login": now,
-        "status": "Active",
-        "tier": "free",
-        "trial_started_at": None,
-        "trial_active": False,
-        "trial_ends_at": None
-    }
-
-    await db_insert_user(user_dict)
-
-    # Generate JWT Tokens
-    access_token = create_jwt_token({"sub": user_dict["email"]}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    refresh_token = create_jwt_token({"sub": user_dict["email"]}, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "Bearer",
-        "profile": user_dict
-    }
-
-# POST /login
-@api_router.post("/login", response_model=TokenResponse)
-async def login(user_in: UserLogin):
-    user = await db_find_user_by_email(user_in.email)
-    if not user or not verify_password(user_in.password, user.get("password_hash", "")):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password."
-        )
-    
-    if user.get("status") == "Blocked":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been blocked.")
-
-    now = datetime.utcnow()
-    await db_update_user(user["email"], {"last_login": now})
-    user["last_login"] = now
-
-    # Generate JWT Tokens
-    access_token = create_jwt_token({"sub": user["email"]}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    refresh_token = create_jwt_token({"sub": user["email"]}, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "Bearer",
-        "profile": user
-    }
-
-# POST /google-login
-@api_router.post("/google-login", response_model=TokenResponse)
-async def google_login(google_in: GoogleLoginInput):
-    user = await db_find_user_by_email(google_in.email)
-    now = datetime.utcnow()
-
-    if not user:
-        # Create Google sign-in user automatically
-        user_id = str(uuid.uuid4())
-        user = {
-            "id": user_id,
-            "name": google_in.name,
-            "email": google_in.email.lower(),
-            "password_hash": "",
-            "profile_image": google_in.profile_image,
-            "provider": "google",
-            "provider_id": google_in.provider_id,
-            "email_verified": True,
-            "created_at": now,
-            "updated_at": now,
-            "last_login": now,
-            "status": "Active",
-            "tier": "free",
-            "trial_started_at": None,
-            "trial_active": False,
-            "trial_ends_at": None
-        }
-        await db_insert_user(user)
-    else:
-        # Update login times
-        update_data = {
-            "last_login": now,
-            "provider": "google",
-            "provider_id": google_in.provider_id
-        }
-        if google_in.profile_image:
-            update_data["profile_image"] = google_in.profile_image
-        
-        await db_update_user(user["email"], update_data)
-        user.update(update_data)
-
-    if user.get("status") == "Blocked":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been blocked.")
-
-    # Generate JWT Tokens
-    access_token = create_jwt_token({"sub": user["email"]}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    refresh_token = create_jwt_token({"sub": user["email"]}, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "Bearer",
-        "profile": user
-    }
-
-# POST /logout
-@api_router.post("/logout")
-async def logout(current_user: dict = Depends(get_current_user_profile)):
-    # In a full production app, you would add the active token to a redis blacklist
-    return {"message": "Successfully logged out from session."}
-
-# POST /forgot-password
-@api_router.post("/forgot-password")
-async def forgot_password(forgot_in: ForgotPasswordInput):
-    user = await db_find_user_by_email(forgot_in.email)
-    if not user:
-        # Avoid user enumeration attacks: return success anyway but log internally
-        logger.info(f"Password reset requested for non-existent email: {forgot_in.email}")
-        return {"message": "If the account exists, a reset link has been dispatched."}
-    
-    # Generate password reset token
-    reset_token = create_jwt_token({"sub": user["email"], "purpose": "reset"}, timedelta(hours=1))
-    logger.info(f"Password reset token generated: {reset_token}")
-    return {"message": "If the account exists, a reset link has been dispatched.", "mock_link_token": reset_token}
-
-# POST /reset-password
-@api_router.post("/reset-password")
-async def reset_password(reset_in: ResetPasswordInput):
-    try:
-        payload = jwt.decode(reset_in.token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("purpose") != "reset":
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token purpose")
-        email = payload.get("sub")
-        user = await db_find_user_by_email(email)
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        
-        # Update password
-        new_hash = hash_password(reset_in.new_password)
-        await db_update_user(email, {"password_hash": new_hash, "updated_at": datetime.utcnow()})
-        return {"message": "Password has been successfully updated."}
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reset link has expired.")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset link token.")
-
 # Helper to check and expire trial on retrieval
 def check_and_update_trial_status(user_dict: dict) -> dict:
     trial_ends_at = user_dict.get("trial_ends_at")
@@ -578,8 +406,6 @@ async def update_profile(profile_in: ProfileUpdate, current_user: dict = Depends
         update_data["name"] = profile_in.name
     if profile_in.profile_image is not None:
         update_data["profile_image"] = profile_in.profile_image
-    if profile_in.status is not None:
-        update_data["status"] = profile_in.status
 
     if update_data:
         update_data["updated_at"] = datetime.utcnow()
@@ -588,66 +414,80 @@ async def update_profile(profile_in: ProfileUpdate, current_user: dict = Depends
 
     return check_and_update_trial_status(current_user)
 
-class UtrVerifyInput(BaseModel):
-    utr: str
-    plan: str
-    amount: float
+PLAN_CATALOG = {
+    "monthly": {"amount": 99, "currency": "INR"},
+    "yearly": {"amount": 199, "currency": "INR"},
+    "lifetime": {"amount": 499, "currency": "INR"},
+}
 
-# POST /verify-utr
-@api_router.post("/verify-utr")
-async def verify_utr(verify_in: UtrVerifyInput, current_user: dict = Depends(get_current_user_profile)):
-    clean_utr = verify_in.utr.strip()
+
+class PaymentSubmissionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    utr: str = Field(min_length=12, max_length=16)
+    plan: Literal["monthly", "yearly", "lifetime"]
+
+
+# This is a containment path for the existing static-UPI flow. It records a
+# submission for manual review but never grants an entitlement. Replace it with
+# a signed payment-provider webhook before enabling automatic fulfilment.
+@api_router.post("/payment-submissions", status_code=status.HTTP_202_ACCEPTED)
+async def submit_payment(
+    submission: PaymentSubmissionInput,
+    current_user: dict = Depends(get_current_user_profile),
+):
+    if not current_user.get("email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verify your email address before submitting a payment.",
+        )
+
+    clean_utr = submission.utr.strip()
     if not clean_utr.isdigit() or len(clean_utr) != 12:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid UTR. The transaction ID must be a 12-digit number."
         )
-    
-    # Simulate processing with a payment gateway (e.g. check UPI settlement records)
-    # Approve any 12-digit UTR not starting with '0000'
-    if clean_utr.startswith("0000"):
+
+    if await db_find_payment_by_utr(clean_utr):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Transaction declined by payment gateway or UTR not found."
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This UTR has already been submitted.",
         )
 
     now = datetime.utcnow()
-    update_data = {
-        "tier": "premium",
-        "updated_at": now
-    }
-    
+    plan = PLAN_CATALOG[submission.plan]
     payment_record = {
+        "_id": clean_utr,
         "utr": clean_utr,
+        "user_id": current_user["id"],
         "user_email": current_user["email"],
-        "plan": verify_in.plan,
-        "amount": verify_in.amount,
-        "status": "verified",
-        "verified_at": now
+        "plan": submission.plan,
+        "amount": plan["amount"],
+        "currency": plan["currency"],
+        "status": "pending_manual_review",
+        "submitted_at": now,
     }
-    
-    try:
-        await db.payments.insert_one(payment_record)
-    except Exception:
-        if "payments" not in IN_MEMORY_DB:
-            IN_MEMORY_DB["payments"] = {}
-        IN_MEMORY_DB["payments"][clean_utr] = payment_record
 
-    await db_update_user(current_user["email"], update_data)
-    current_user.update(update_data)
-    
-    profile_cleaned = check_and_update_trial_status(current_user).copy()
-    profile_cleaned.pop("_id", None)
-    
+    await db_insert_payment(payment_record)
+
     return {
-        "status": "success",
-        "message": "Payment verified successfully. Premium tier unlocked!",
-        "profile": profile_cleaned
+        "status": "pending_manual_review",
+        "message": "Payment submitted for review. Premium has not been activated yet.",
+        "utr": clean_utr,
+        "plan": submission.plan,
+        "amount": plan["amount"],
+        "currency": plan["currency"],
     }
 
 # POST /start-trial
 @api_router.post("/start-trial")
 async def start_trial_backend(current_user: dict = Depends(get_current_user_profile)):
+    if not current_user.get("email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verify your email address before starting a trial.",
+        )
     if current_user.get("trial_started_at") is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -676,36 +516,15 @@ async def start_trial_backend(current_user: dict = Depends(get_current_user_prof
         "profile": profile_cleaned
     }
 
-
-# Original Status Checks endpoints
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    try:
-        _ = await db.status_checks.insert_one(status_obj.dict())
-    except Exception:
-        IN_MEMORY_DB["status_checks"].append(status_obj.dict())
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    try:
-        status_checks = await db.status_checks.find().to_list(1000)
-        return [StatusCheck(**status_check) for status_check in status_checks]
-    except Exception:
-        return [StatusCheck(**status_check) for status_check in IN_MEMORY_DB["status_checks"]]
-
-
 # Include routes & CORS middleware configuration
 app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 @app.on_event("shutdown")

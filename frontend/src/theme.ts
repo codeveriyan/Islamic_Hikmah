@@ -24,6 +24,27 @@ export const theme = {
     text: 'Figtree_400Regular',
     arabic: 'NotoNaskhArabic',
   },
+  /**
+   * Material 3 Expressive Type Scale
+   * Use these tokens instead of raw fontSize numbers in components.
+   *
+   * Roles:
+   *   display  — hero numbers, countdown badges, stat values
+   *   headline — screen titles, section heroes
+   *   title    — card titles, list headers, section labels
+   *   body     — paragraph text, descriptions, subtitles
+   *   label    — tags, badges, micro-captions
+   *
+   * Each role has lg / md / sm sizes.
+   */
+  typography: {
+    display:  { lg: 57, md: 45, sm: 36 },
+    headline: { lg: 32, md: 28, sm: 24 },
+    title:    { lg: 22, md: 16, sm: 14 },
+    body:     { lg: 16, md: 14, sm: 12 },
+    label:    { lg: 14, md: 12, sm: 10 },
+  } as const,
 };
+
 
 export type CardGradient = readonly [string, string, ...string[]];

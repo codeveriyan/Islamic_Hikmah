@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform, Image } from "react-native";
+﻿import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -461,7 +461,7 @@ export default function SettingsScreen() {
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Offline Content Auto-Download</Text>
                     <View style={{ backgroundColor: "#D4AF3718", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                      <Text style={{ color: "#D4AF37", fontSize: 10, fontWeight: "700" }}>PRO</Text>
+                      <Text style={{ color: colors.gold, fontSize: 10, fontWeight: "700" }}>PRO</Text>
                     </View>
                   </View>
                   <Text style={[styles.optionSub, { color: colors.onSurfaceMuted, marginTop: 2 }]}>

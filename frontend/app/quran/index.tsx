@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   Pressable,
-  ActivityIndicator,
   TextInput,
   ScrollView,
   Alert,
   Modal,
 } from "react-native";
+import { SkeletonList } from "@/src/components/SkeletonLoader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -143,7 +143,7 @@ export default function QuranIndex() {
         title: "Mutashabihat",
         subtitle: "Quranic verses with similar wording",
         icon: "book-multiple",
-        color: "#F59E0B",
+        color: colors.warning,
         description: "Explore similar, repeating phrases and structures across surahs."
       }
     ];
@@ -680,7 +680,7 @@ export default function QuranIndex() {
       )}
 
       {loading ? (
-        <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
+        <SkeletonList count={8} type="surah" />
       ) : activeTab === "learn" ? (
         <LearnQuranView />
       ) : activeTab === "mutashabihat" ? (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -35,9 +35,9 @@ type GoalTimeEntry = {
 };
 
 const GOAL_TIME_ENTRIES: GoalTimeEntry[] = [
-  { id: "morning-adhkar", label: "Morning Adhkar",          icon: "weather-sunny",       color: "#F59E0B", note: "After Fajr" },
-  { id: "evening-adhkar", label: "Evening Adhkar",          icon: "weather-sunset",      color: "#F59E0B", note: "Before Maghrib" },
-  { id: "sleep-adhkar",   label: "Sleep Adhkar",            icon: "moon-waning-crescent",color: "#F59E0B", note: "Before bed" },
+  { id: "morning-adhkar", label: "Morning Adhkar",          icon: "weather-sunny",       color: colors.warning, note: "After Fajr" },
+  { id: "evening-adhkar", label: "Evening Adhkar",          icon: "weather-sunset",      color: colors.warning, note: "Before Maghrib" },
+  { id: "sleep-adhkar",   label: "Sleep Adhkar",            icon: "moon-waning-crescent",color: colors.warning, note: "Before bed" },
   { id: "quran-5min",     label: "Read Quran (5 min)",      icon: "book-open-variant",   color: "#6366F1" },
   { id: "surah-mulk",     label: "Recite Surah Al-Mulk",   icon: "moon-waning-crescent",color: "#6366F1", note: "Before sleeping" },
   { id: "surah-kahaf",    label: "Recite Surah Al-Kahf",   icon: "calendar-week",       color: "#6366F1", note: "Fridays only" },

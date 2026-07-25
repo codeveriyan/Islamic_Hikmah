@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react';
+﻿import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Dimensions,
   Animated, Pressable, ScrollView, Platform, Modal,
@@ -760,7 +760,7 @@ export default function TasbihScreen() {
                 <Path
                   d={THREAD_PATH}
                   fill="none"
-                  stroke={isDark ? '#d4af37' : '#000000'}
+                  stroke={isDark ? colors.gold : '#000000'}
                   strokeWidth={8}
                   strokeLinecap="round"
                   opacity={isDark ? 0.18 : 0.12}

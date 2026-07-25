@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+﻿import React, { useState, useEffect, useMemo } from "react";
 import { 
   View, 
   Text, 
@@ -257,7 +257,7 @@ export default function ProfileScreen() {
         <Text style={[styles.sectionTitle, { color: colors.onSurfaceMuted, marginBottom: 10 }]}>MY JOURNEY</Text>
         <View style={styles.statsGrid}>
           {[
-            { icon: 'fire', label: 'Streak', value: journeyStats.streak, unit: 'days', color: '#F59E0B' },
+            { icon: 'fire', label: 'Streak', value: journeyStats.streak, unit: 'days', color: colors.warning },
             { icon: 'mosque', label: 'Prayers This Week', value: journeyStats.prayersThisWeek, unit: 'prayed', color: '#047857' },
             { icon: 'book-open-variant', label: 'Pages Read', value: journeyStats.pagesThisWeek, unit: 'this week', color: '#1D4ED8' },
             { icon: 'bookmark', label: 'Saved Items', value: journeyStats.totalBookmarks, unit: 'bookmarks', color: '#7C3AED' },
@@ -317,7 +317,7 @@ export default function ProfileScreen() {
               ? 'rgba(39,174,96,0.10)'
               : 'rgba(108,117,125,0.08)',
           borderColor: profile?.tier === 'premium'
-            ? '#d4af37'
+            ? colors.gold
             : profile?.trialActive
               ? '#27ae60'
               : colors.border,
@@ -332,10 +332,10 @@ export default function ProfileScreen() {
             >
                 <Text style={styles.subscriptionCrown}>👑</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.subscriptionTitle, { color: '#d4af37' }]}>Premium Member</Text>
+                  <Text style={[styles.subscriptionTitle, { color: colors.gold }]}>Premium Member</Text>
                   <Text style={[styles.subscriptionSub, { color: colors.onSurfaceMuted }]}>Full access to all premium features</Text>
                 </View>
-                <View style={[styles.subscriptionBadge, { backgroundColor: '#d4af37' }]}>
+                <View style={[styles.subscriptionBadge, { backgroundColor: colors.gold }]}>
                   <Text style={styles.subscriptionBadgeTxt}>PREMIUM</Text>
                 </View>
             </Pressable>
@@ -758,7 +758,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: "#d4af37",
+    backgroundColor: colors.gold,
   },
   upgradeBtnTxt: {
     fontSize: 15,
