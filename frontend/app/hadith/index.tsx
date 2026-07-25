@@ -72,7 +72,7 @@ export default function HadithIndexScreen() {
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
 
-  const renderBookItem = (book: typeof HADITH_BOOKS[number]) => {
+  const renderBookItem = (item: typeof HADITH_BOOKS[number]) => {
     // Dynamic localization fallback
     const bookName = t(item.id) !== item.id ? t(item.id) : item.name;
     const bookDetail = t(item.id + "Sub") !== (item.id + "Sub")
