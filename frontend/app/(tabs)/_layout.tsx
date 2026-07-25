@@ -1,4 +1,4 @@
-﻿import { Tabs } from "expo-router";
+import { Tabs } from "expo-router";
 import { StyleSheet, View, Platform } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Animated, {
@@ -10,6 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 
 // ─── Animated Tab Icon ────────────────────────────────────────────────────────
 function TabIcon({
@@ -80,6 +81,13 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.onSurfaceMuted,
         tabBarShowLabel: true,
+        tabBarButton: (props) => (
+          <AnimatedPressable
+            {...props}
+            activeScale={0.92}
+            style={[props.style, { flex: 1 }]}
+          />
+        ),
         tabBarStyle: {
           backgroundColor: tabBarBg,
           borderTopColor: borderColor,

@@ -1,4 +1,4 @@
-﻿import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform, Image } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -805,7 +805,7 @@ export default function SettingsScreen() {
         </Text>
 
         {ITEMS.map((item) => (
-          <Pressable
+          <AnimatedCard
             key={item.id}
             onPress={() => handleItemPress(item)}
             style={[styles.row, { backgroundColor: colors.surfaceSecondary }]}
@@ -821,7 +821,7 @@ export default function SettingsScreen() {
               </Text>
             </View>
             <MaterialCommunityIcons name="chevron-right" size={22} color={colors.onSurfaceMuted} />
-          </Pressable>
+          </AnimatedCard>
         ))}
 
         {/* ── Account Section ── */}

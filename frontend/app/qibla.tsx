@@ -1,18 +1,23 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
-  Animated,
   TouchableOpacity,
   ActivityIndicator,
   Pressable,
   Platform,
-  Easing,
   ScrollView,
   Alert,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -69,16 +74,15 @@ export default function QiblaScreen() {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const [isSensorsAvailable, setIsSensorsAvailable] = useState(false);
 
-  const headingAnim = useRef(new Animated.Value(0)).current;
+  const headingAnim = useSharedValue(0);
+  const tiltXAnim = useSharedValue(0);
+  const tiltYAnim = useSharedValue(0);
+
   const watchHeadingRef = useRef<any>(null);
   const watchLocationRef = useRef<any>(null);
   const magnetometerRef = useRef<any>(null);
   const lastHapticRef = useRef<number>(0);
   const [needsCalibration, setNeedsCalibration] = useState(false);
-
-  // Animated values for 3D tilt dampening
-  const tiltXAnim = useRef(new Animated.Value(0)).current;
-  const tiltYAnim = useRef(new Animated.Value(0)).current;
 
   // Calculate distance to Kaaba in kilometers using Haversine
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -167,12 +171,7 @@ export default function QiblaScreen() {
               const rawHeading = headingData.trueHeading !== -1 ? headingData.trueHeading : headingData.magHeading;
               setHeading(rawHeading);
 
-              Animated.timing(headingAnim, {
-                toValue: rawHeading,
-                duration: 250,
-                easing: Easing.out(Easing.quad),
-                useNativeDriver: true,
-              }).start();
+              headingAnim.value = withTiming(rawHeading, { duration: 250 });
             });
           }
         } catch (err) {
@@ -184,12 +183,7 @@ export default function QiblaScreen() {
               let angle = Math.atan2(data.y, data.x) * (180 / Math.PI);
               if (angle < 0) angle += 360;
               setHeading(angle);
-              Animated.timing(headingAnim, {
-                toValue: angle,
-                duration: 250,
-                easing: Easing.out(Easing.quad),
-                useNativeDriver: true,
-              }).start();
+              headingAnim.value = withTiming(angle, { duration: 250 });
             });
           }
         }
@@ -235,19 +229,8 @@ export default function QiblaScreen() {
               setTilt({ x: data.x, y: data.y });
 
               // Animate tilt values smoothly for dampening
-              Animated.spring(tiltXAnim, {
-                toValue: data.x,
-                tension: 20,
-                friction: 8,
-                useNativeDriver: true,
-              }).start();
-
-              Animated.spring(tiltYAnim, {
-                toValue: data.y,
-                tension: 20,
-                friction: 8,
-                useNativeDriver: true,
-              }).start();
+              tiltXAnim.value = withSpring(data.x, { damping: 15, stiffness: 120 });
+              tiltYAnim.value = withSpring(data.y, { damping: 15, stiffness: 120 });
             });
           } catch (e) {
             console.warn("Accelerometer listener error:", e);
@@ -292,36 +275,29 @@ export default function QiblaScreen() {
   // Calculate relative angle (Qibla - Device Heading)
   const relativeAngle = (qiblaDirection - heading + 360) % 360;
 
-  // Convert heading to rotation (inverse for animation)
-  const rotateAnim = headingAnim.interpolate({
-    inputRange: [0, 360],
-    outputRange: ['0deg', '-360deg'],
-    extrapolate: 'clamp',
+  // Reanimated 3D tilt style
+  const tiltedChamberStyle = useAnimatedStyle(() => {
+    const rx = interpolate(tiltYAnim.value, [-1, 1], [15, -15]) + "deg";
+    const ry = interpolate(tiltXAnim.value, [-1, 1], [-15, 15]) + "deg";
+    const tx = interpolate(tiltXAnim.value, [-1, 1], [-6, 6]);
+    const ty = interpolate(tiltYAnim.value, [-1, 1], [6, -6]);
+    return {
+      transform: [
+        { perspective: 500 },
+        { rotateX: rx },
+        { rotateY: ry },
+        { translateX: tx },
+        { translateY: ty },
+      ],
+    };
   });
 
-  // Calculate dynamic 3D tilt translations & rotations
-  const rotateX = tiltYAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: ['15deg', '-15deg'],
-    extrapolate: 'clamp',
-  });
-
-  const rotateY = tiltXAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: ['-15deg', '15deg'],
-    extrapolate: 'clamp',
-  });
-
-  const translateX = tiltXAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-6, 6],
-    extrapolate: 'clamp',
-  });
-
-  const translateY = tiltYAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [6, -6],
-    extrapolate: 'clamp',
+  // Reanimated dial rotation style
+  const dialRotationStyle = useAnimatedStyle(() => {
+    const rot = interpolate(headingAnim.value, [0, 360], [0, -360]) + "deg";
+    return {
+      transform: [{ rotate: rot }],
+    };
   });
 
   const isAligned = relativeAngle < 5 || relativeAngle > 355;
@@ -561,15 +537,7 @@ export default function QiblaScreen() {
                 <Animated.View
                   style={[
                     styles.tiltedChamber,
-                    {
-                      transform: [
-                        { perspective: 500 },
-                        { rotateX: rotateX },
-                        { rotateY: rotateY },
-                        { translateX: translateX },
-                        { translateY: translateY },
-                      ],
-                    },
+                    tiltedChamberStyle,
                   ]}
                 >
                   {/* Rotating Dial Disk */}
@@ -579,8 +547,8 @@ export default function QiblaScreen() {
                       {
                         backgroundColor: activeSkin.bg,
                         borderColor: isAligned && isFlat ? '#2ecc71' : activeSkin.ringColor,
-                        transform: [{ rotate: rotateAnim }],
                       },
+                      dialRotationStyle,
                     ]}
                   >
                     {/* Concentric texture circles for physical detailing */}
