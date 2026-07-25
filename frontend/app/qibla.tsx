@@ -42,7 +42,7 @@ const KAABA_COORDS: LocationCoords = {
 const DIAL_SKINS = [
   { id: 'hikmah', name: 'Brass Classic', ringColor: '#b87333', bg: '#efe4a8', accent: '#3a2418', needleColorLight: '#3b2430', needleColorDark: '#1d1118', caseGradient: ['#fff0b8', '#c9822e', '#8a4a1f', '#3b1f12'] },
   { id: 'emerald', name: 'Emerald Noor', ringColor: '#00c896', bg: '#062520', accent: '#9fffe0', needleColorLight: '#2ecc71', needleColorDark: '#008f70', caseGradient: ['#8fffe0', '#00c896', '#007a62', '#031713'] },
-  { id: 'moon', name: 'Moon Silver', ringColor: '#bdc3c7', bg: '#17242b', accent: '#ecf0f1', needleColorLight: '#f1d36b', needleColorDark: colors.gold, caseGradient: ['#ffffff', '#bdc3c7', '#6b7b82', '#17242b'] },
+  { id: 'moon', name: 'Moon Silver', ringColor: '#bdc3c7', bg: '#17242b', accent: '#ecf0f1', needleColorLight: '#f1d36b', needleColorDark: '#D4AF37', caseGradient: ['#ffffff', '#bdc3c7', '#6b7b82', '#17242b'] },
   { id: 'obsidian', name: 'Obsidian', ringColor: '#3498db', bg: '#101114', accent: '#5dade2', needleColorLight: '#00c896', needleColorDark: '#008f70', caseGradient: ['#5dade2', '#3498db', '#1f618d', '#061713'] },
 ];
 
@@ -877,7 +877,7 @@ const styles = StyleSheet.create({
   },
   tiltWarningText: {
     fontSize: 12,
-    color: colors.warning,
+    color: '#F59E0B',
     fontWeight: '600',
     marginLeft: 6,
   },
@@ -1046,7 +1046,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: colors.gold,
+    backgroundColor: '#D4AF37',
     borderWidth: 2,
     borderColor: '#ffe066',
     alignItems: 'center',
@@ -1076,7 +1076,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: colors.gold,
+    backgroundColor: '#D4AF37',
     borderWidth: 2,
     borderColor: '#ffe066',
     zIndex: 30,

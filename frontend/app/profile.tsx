@@ -758,7 +758,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: colors.gold,
+    backgroundColor: '#D4AF37',
   },
   upgradeBtnTxt: {
     fontSize: 15,

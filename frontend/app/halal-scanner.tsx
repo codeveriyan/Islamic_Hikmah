@@ -77,7 +77,7 @@ const CERTIFIED_TERMS = ["halal certified", "certified halal", "halal", "hfa", "
 
 const STATUS_META: Record<IngredientStatus, { label: string; color: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = {
   unknown: { label: "Needs Verification", color: "#64748B", icon: "help-circle" },
-  mushbooh: { label: "Questionable", color: colors.warning, icon: "alert-circle" },
+  mushbooh: { label: "Questionable", color: '#F59E0B', icon: "alert-circle" },
   haram: { label: "Concerning Ingredient Found", color: "#DC2626", icon: "alert-circle" },
 };
 
