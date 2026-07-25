@@ -1,17 +1,20 @@
-import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { APP_THEMES, AppThemeId, useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getPrayerSettings, schedulePrayerNotifications } from "@/src/storage";
 import { backgroundDownloader } from "@/src/services/backgroundDownload";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
+import { LinearGradient } from "expo-linear-gradient";
+import { AnimatedCard } from "@/src/components/AnimatedCard";
+import { AppBottomSheet, AppBottomSheetRef } from "@/src/components/AppBottomSheet";
 
 type SettingItem = {
   id: string;
@@ -78,8 +81,9 @@ export default function SettingsScreen() {
   const [tasbihVibe, setTasbihVibe] = useState(true);
 
   const [downloadWifi, setDownloadWifi] = useState(true);
-  const { profile } = useAuth();
+  const { profile, logout } = useAuth();
   const { showPremiumModal } = usePremiumModal();
+  const settingsSheetRef = useRef<AppBottomSheetRef>(null);
   const [downloadingProgress, setDownloadingProgress] = useState<number | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<string>("");
 
@@ -197,6 +201,7 @@ export default function SettingsScreen() {
   const handleItemPress = (item: SettingItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setActiveItem(item);
+    settingsSheetRef.current?.open();
   };
 
   const renderModalContent = () => {
@@ -592,6 +597,66 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md }}>
+
+        {/* ── Profile Card ── */}
+        <AnimatedCard
+          onPress={() => router.push('/profile')}
+          style={{ marginBottom: 4, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: colors.brand + '28' }}
+        >
+          <LinearGradient
+            colors={mode === 'dark' ? ['#0B2D25', '#0F3020'] : ['#F0FDF4', '#DCFCE7']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 }}>
+            {profile?.photoURL ? (
+              <Image source={{ uri: profile.photoURL }} style={{ width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: colors.brand + '66' }} />
+            ) : (
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff' }}>{profile?.name?.charAt(0)?.toUpperCase() || '?'}</Text>
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: colors.onSurface, fontFamily: 'Outfit_600SemiBold' }}>
+                {profile?.name || 'Guest User'}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: 10, backgroundColor: isPremiumUser ? colors.brand + '22' : colors.border }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: isPremiumUser ? colors.brand : colors.onSurfaceMuted }}>
+                    {isPremiumUser ? '⭐ PREMIUM' : 'FREE PLAN'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.onSurfaceMuted} />
+          </View>
+        </AnimatedCard>
+
+        {/* ── Premium Upgrade Banner (if free) ── */}
+        {!isPremiumUser && (
+          <AnimatedCard
+            onPress={() => showPremiumModal('Unlock all features')}
+            style={{ marginBottom: 4, borderRadius: 16, overflow: 'hidden' }}
+          >
+            <LinearGradient
+              colors={['#6D28D9', '#4C1D95']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+            >
+              <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialCommunityIcons name="crown" size={22} color="#FFD700" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff', fontFamily: 'Outfit_600SemiBold' }}>Upgrade to Premium</Text>
+                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', fontFamily: 'Figtree_400Regular', marginTop: 2 }}>
+                  Offline Quran, Tafsir, premium reciters & more
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
+            </LinearGradient>
+          </AnimatedCard>
+        )}
+
         {/* Quick Settings Section */}
         <View style={{ marginBottom: 16 }}>
           <Text style={{ fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, color: colors.brand, marginBottom: 12 }}>
@@ -759,30 +824,53 @@ export default function SettingsScreen() {
           </Pressable>
         ))}
 
+        {/* ── Account Section ── */}
+        <Text style={{ fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, color: colors.brand, marginTop: 8, marginBottom: 8 }}>Account</Text>
+        <View style={{ backgroundColor: colors.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 0.5, borderColor: colors.border, overflow: 'hidden', marginBottom: 8 }}>
+          <AnimatedCard
+            onPress={() => router.push('/profile')}
+            style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12, borderBottomWidth: 0.5, borderBottomColor: colors.border }}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: colors.brand + '18' }]}>
+              <MaterialCommunityIcons name="account-edit-outline" size={22} color={colors.brand} />
+            </View>
+            <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: colors.onSurface }}>Edit Profile</Text>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceMuted} />
+          </AnimatedCard>
+          <AnimatedCard
+            onPress={() => {
+              Alert.alert(
+                'Sign Out',
+                'Are you sure you want to sign out?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Sign Out', style: 'destructive', onPress: async () => { await logout(); router.replace('/auth/welcome'); } },
+                ]
+              );
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 }}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#EF444418' }]}>
+              <MaterialCommunityIcons name="logout" size={22} color="#EF4444" />
+            </View>
+            <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: '#EF4444' }}>Sign Out</Text>
+          </AnimatedCard>
+        </View>
+
         {/* Footer version */}
         <Text style={[styles.version, { color: colors.onSurfaceMuted }]}>{t("appVersion")}</Text>
       </ScrollView>
 
-      {/* Sub-option Sheet Modal */}
-      <Modal
-        visible={activeItem !== null}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setActiveItem(null)}
+      {/* Sub-option Bottom Sheet */}
+      <AppBottomSheet
+        ref={settingsSheetRef}
+        title={activeItem?.label || "Settings"}
+        scrollable
+        snapPoints={["55%", "92%"]}
+        onClose={() => setActiveItem(null)}
       >
-        <View style={styles.modalOverlay}>
-          <Pressable style={{ flex: 1 }} onPress={() => setActiveItem(null)} />
-          <View style={[styles.modalCard, { backgroundColor: colors.surfaceSecondary }]}>
-            <View style={styles.modalHeader}>
-              <View style={[styles.modalIndicator, { backgroundColor: colors.onSurfaceMuted + "40" }]} />
-              <Pressable onPress={() => setActiveItem(null)} style={styles.closeBtn}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
-              </Pressable>
-            </View>
-            {renderModalContent()}
-          </View>
-        </View>
-      </Modal>
+        {renderModalContent()}
+      </AppBottomSheet>
     </SafeAreaView>
   );
 }

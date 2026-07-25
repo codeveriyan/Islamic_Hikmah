@@ -20,6 +20,8 @@ import { db } from "@/src/firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { PremiumModalProvider } from "@/src/PremiumModalContext";
 import PremiumModal from "@/src/components/PremiumModal";
+import { QuranPlayerProvider } from "@/src/QuranPlayerContext";
+import { MiniPlayerBar } from "@/src/components/MiniPlayerBar";
 
 async function checkPrayerNotificationExpired(notification: Notifications.Notification): Promise<boolean> {
   try {
@@ -290,13 +292,38 @@ export default function RootLayout() {
   useEffect(() => {
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
+        const data = response.notification.request.content.data as Record<string, string> | undefined;
         const actionId = response.actionIdentifier;
-        if (actionId === "Tracker" || actionId === "quran") {
+        const categoryId = (response.notification.request.content as any).categoryIdentifier;
+        const kind = data?.notificationKind ?? "";
+
+        // 1. Route by notificationKind in payload data (highest priority)
+        if (kind === "sticky-prayer" || kind === "adhan" || kind === "prayer") {
+          router.push("/(tabs)/prayer" as any);
+        } else if (kind === "goal" || kind === "goals") {
+          router.push("/goals" as any);
+        } else if (kind === "reminder" || kind === "adhkar") {
+          router.push("/(tabs)/reminder" as any);
+        } else if (kind === "quran") {
+          router.push("/(tabs)/quran" as any);
+        }
+        // 2. Route by category identifier
+        else if (categoryId === "prayer-actions") {
+          router.push("/(tabs)/prayer" as any);
+        } else if (categoryId === "goal-actions") {
+          router.push("/goals" as any);
+        }
+        // 3. Legacy actionId routing (backward compat)
+        else if (actionId === "Tracker" || actionId === "quran") {
           router.push("/goals" as any);
         } else if (actionId === "Azkar" || actionId === "hadith") {
           router.push("/adhkar" as any);
         } else if (actionId === "Qibla" || actionId === "tasbih") {
           router.push("/qibla" as any);
+        }
+        // 4. Default: open prayer tab for any unrecognised prayer notification tap
+        else if ((response.notification.request.content.title ?? "").includes("Prayer")) {
+          router.push("/(tabs)/prayer" as any);
         }
       } catch (err) {
         console.warn("Error processing notification action:", err);
@@ -342,10 +369,13 @@ export default function RootLayout() {
           <ThemeProvider>
             <AuthProvider>
               <PushTokenRegistrar />
-              <PremiumModalProvider>
-                <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
-                <PremiumModal />
-              </PremiumModalProvider>
+              <QuranPlayerProvider>
+                <PremiumModalProvider>
+                  <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
+                  <PremiumModal />
+                  <MiniPlayerBar />
+                </PremiumModalProvider>
+              </QuranPlayerProvider>
             </AuthProvider>
           </ThemeProvider>
         </SafeAreaProvider>

@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicat
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
+import { useContentFontSize } from "@/src/hooks/useContentFontSize";
+import { SkeletonList } from "@/src/components/SkeletonLoader";
 import { useTranslation } from "@/src/localization";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { theme } from "@/src/theme";
@@ -85,9 +87,11 @@ const HADITH_OFFLINE_CACHE_PREFIX = "hikmah:hadith:sunnah:";
 export default function HadithDetailScreen() {
   const { book, chapter } = useLocalSearchParams<{ book: string; chapter?: string }>();
   const router = useRouter();
-  const { colors, language } = useTheme();
+  const { colors, language, fontColor } = useTheme();
   const { t } = useTranslation(language);
   const arabicFontFamily = useArabicFont();
+  const { bodySize, bodyLineHeight, transSize, transLineHeight, arabicSize, arabicLineHeight, labelSize, letterSpacing, arabicLetterSpacing } = useContentFontSize();
+  const resolvedFontColor = fontColor === "gold" ? "#D97706" : fontColor === "green" ? "#10B981" : fontColor === "sepia" ? "#B45309" : colors.onSurface;
 
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
@@ -167,6 +171,8 @@ export default function HadithDetailScreen() {
 
   const [hadiths, setHadiths] = useState<Hadith[]>([]);
   const [loading, setLoading] = useState(true);
+  // True while a background Sunnah.com refresh is running (after initial data is shown)
+  const [bgLoading, setBgLoading] = useState(false);
   const [q, setQ] = useState("");
   const [selectedChapterId, setSelectedChapterId] = useState("all");
   
@@ -201,211 +207,275 @@ export default function HadithDetailScreen() {
     setLimit(15);
   }, [chapter, chapters]);
 
-  // Load the full book once (English and Arabic in parallel)
+  // ── PROGRESSIVE HADITH LOADING ──────────────────────────────────────────────
+  // Strategy:
+  //   1. Show data INSTANTLY from memory cache → AsyncStorage → bundled fallback
+  //   2. Kick off a silent background refresh from Sunnah.com, streaming page-by-page
+  //   3. When background refresh completes, save to cache & update state
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!book) return;
 
     const cacheKey = `hadith_${book}`;
     const offlineCacheKey = `${HADITH_OFFLINE_CACHE_PREFIX}${book}`;
-    if (hadithMemoryCache.has(cacheKey)) {
-      setHadiths(hadithMemoryCache.get(cacheKey)!);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    
-    const bookMeta = HADITH_BOOKS.find((b) => b.id === book);
+    const bookMetaLocal = HADITH_BOOKS.find((b) => b.id === book);
     const sunnahCollection = SUNNAH_COLLECTION_IDS[book];
     const SUNNAH_API_KEY = "Ono1lNmgt66jCtN4BNwWGvo0aIAbl0027ruMo6Mb";
+    let isMounted = true;
 
-    const saveLoadedHadiths = (list: Hadith[]) => {
-      hadithMemoryCache.set(cacheKey, list);
-      setHadiths(list);
-    };
-
-    const saveOfflineHadiths = async (list: Hadith[]) => {
-      await AsyncStorage.setItem(offlineCacheKey, JSON.stringify({
-        savedAt: Date.now(),
-        source: "sunnah.com",
-        data: list,
-      }));
-    };
-
-    const loadOfflineHadiths = async () => {
-      const fallbackItems = ((hadithFallback as any)[book] || []);
-      const raw = await AsyncStorage.getItem(offlineCacheKey);
-      if (!raw) throw new Error("No offline Sunnah.com cache for this collection");
-      const cached = JSON.parse(raw);
-      if (!Array.isArray(cached?.data) || cached.data.length === 0) {
-        throw new Error("Offline Sunnah.com cache is empty");
-      }
-      if (fallbackItems.length > 0 && cached.data.length < fallbackItems.length) {
-        await AsyncStorage.removeItem(offlineCacheKey);
-        throw new Error("Offline cache outdated; invalidating");
-      }
-      return cached.data as Hadith[];
-    };
-
-    // Load from local hadithFallback.json (bundled complete datasets), AhmedBaset, or FawazAhmed
-    const loadFallbackCollection = async () => {
-      const fallbackItems = ((hadithFallback as any)[book] || []).map((h: any) => ({
+    // ── helpers ────────────────────────────────────────────────────────────────
+    const getFallbackData = (): Hadith[] =>
+      ((hadithFallback as any)[book] || []).map((h: any) => ({
         hadithnumber: h.hadithnumber,
         bookNumber: h.bookNumber,
         text: toPlainText(h.text),
         arabicText: toPlainText(h.arabicText || ""),
       }));
 
-      if (fallbackItems.length > 0) return fallbackItems;
-
-      if (bookMeta?.source === "fawazahmed" || book === "malik") {
-        const [engResponse, araResponse] = await Promise.all([
-          fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`),
-          fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).catch(() => null),
-        ]);
-        if (engResponse.ok) {
-          const engData = await engResponse.json();
-          const araData = araResponse?.ok ? await araResponse.json() : { hadiths: [] };
-          const araMap: Record<number, string> = {};
-          (araData?.hadiths || []).forEach((h: any) => {
-            if (h.hadithnumber) araMap[h.hadithnumber] = h.text;
-          });
-          return (engData?.hadiths || []).reduce((items: Hadith[], eng: any) => {
-            const arabicText = araMap[eng.hadithnumber] || "";
-            if (!String(eng.text || "").trim() && !arabicText.trim()) return items;
-            items.push({ hadithnumber: eng.hadithnumber, text: eng.text || "", arabicText });
-            return items;
-          }, []);
-        }
+    const loadOfflineCache = async (): Promise<Hadith[] | null> => {
+      try {
+        const raw = await AsyncStorage.getItem(offlineCacheKey);
+        if (!raw) return null;
+        const cached = JSON.parse(raw);
+        if (!Array.isArray(cached?.data) || cached.data.length === 0) return null;
+        return cached.data as Hadith[];
+      } catch {
+        return null;
       }
-
-      // AhmedBaset Hadith Database URLs
-      const ahmedBasetFiles: Record<string, string> = {
-        nawawi40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/nawawi40.json",
-        qudsi40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/qudsi40.json",
-        shahwaliullah40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/shahwaliullah40.json",
-        riyad_assalihin: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/riyad_assalihin.json",
-        bulugh_almaram: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/bulugh_almaram.json",
-        aladab_almufrad: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/aladab_almufrad.json",
-        shamail_muhammadiyah: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/shamail_muhammadiyah.json",
-        ahmad: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/the_9_books/ahmed.json",
-        darimi: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/the_9_books/darimi.json",
-      };
-
-      if (ahmedBasetFiles[book]) {
-        const response = await fetch(ahmedBasetFiles[book]);
-        if (response.ok) {
-          const data = await response.json();
-          return (data.hadiths || []).map((h: any) => ({
-            hadithnumber: Number(h.idInBook || h.id || 1),
-            text: toPlainText((h.english?.narrator ? `${h.english.narrator} ` : "") + (h.english?.text || h.english || "")),
-            arabicText: toPlainText(h.arabic || ""),
-          }));
-        }
-      }
-
-      throw new Error(`No hadith data found for collection ${book}`);
     };
 
-    // Official Sunnah.com API Fetcher with API Key Header & Retry/Pagination
-    const loadOfficialCollection = async () => {
-      if (!sunnahCollection) {
-        throw new Error("No collection key for Sunnah.com");
+    const saveOfflineCache = async (list: Hadith[]) => {
+      try {
+        await AsyncStorage.setItem(offlineCacheKey, JSON.stringify({
+          savedAt: Date.now(),
+          source: "sunnah.com",
+          data: list,
+        }));
+      } catch {}
+    };
+
+    const fetchWithRetry = async (url: string): Promise<Response> => {
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          const res = await fetch(url, { headers: { "x-api-key": SUNNAH_API_KEY } });
+          if (res.status === 429) {
+            await new Promise((r) => setTimeout(r, attempt * 400));
+            continue;
+          }
+          return res;
+        } catch {
+          await new Promise((r) => setTimeout(r, attempt * 400));
+        }
+      }
+      return fetch(url, { headers: { "x-api-key": SUNNAH_API_KEY } });
+    };
+
+    // ── step 1: show something instantly ──────────────────────────────────────
+    const showInitial = async (): Promise<Hadith[]> => {
+      // 1a. memory cache (zero latency)
+      if (hadithMemoryCache.has(cacheKey)) {
+        const cached = hadithMemoryCache.get(cacheKey)!;
+        if (isMounted) { setHadiths(cached); setLoading(false); }
+        return cached;
       }
 
-      const fetchWithRetry = async (url: string) => {
-        for (let attempt = 1; attempt <= 5; attempt++) {
-          try {
-            const res = await fetch(url, { headers: { "x-api-key": SUNNAH_API_KEY } });
-            if (res.status === 429) {
-              await new Promise((r) => setTimeout(r, attempt * 300));
-              continue;
+      // 1b. AsyncStorage (fast, typically <200ms)
+      const offline = await loadOfflineCache();
+      if (offline && offline.length > 0) {
+        hadithMemoryCache.set(cacheKey, offline);
+        if (isMounted) { setHadiths(offline); setLoading(false); }
+        return offline;
+      }
+
+      // 1c. bundled fallback JSON (always available, no network needed)
+      const fallback = getFallbackData();
+      if (fallback.length > 0) {
+        hadithMemoryCache.set(cacheKey, fallback);
+        if (isMounted) { setHadiths(fallback); setLoading(false); }
+        return fallback;
+      }
+
+      // Nothing to show yet – keep spinner until background fetch delivers data
+      return [];
+    };
+
+    // ── step 2: background refresh from Sunnah.com (streams page by page) ────
+    const backgroundRefresh = async (initialData: Hadith[]) => {
+      if (!sunnahCollection) return;
+      if (!isMounted) return;
+      setBgLoading(true);
+
+      try {
+        // Fetch book list for this collection
+        let bookPage = 1;
+        const booksList: any[] = [];
+        while (true) {
+          const res = await fetchWithRetry(
+            `https://api.sunnah.com/v1/collections/${sunnahCollection}/books?page=${bookPage}&limit=100`
+          );
+          if (!res || !res.ok) break;
+          const data = await res.json();
+          const pageBooks = data.data || [];
+          if (pageBooks.length === 0) break;
+          booksList.push(...pageBooks);
+          if (pageBooks.length < 100) break;
+          bookPage++;
+        }
+
+        if (booksList.length === 0 || !isMounted) return;
+
+        // Stream hadiths book by book, updating state as each book arrives
+        const accumulated: Hadith[] = [...initialData];
+        const seenNums = new Set(initialData.map((h) => h.hadithnumber));
+        let newItemsCount = 0;
+
+        for (const b of booksList) {
+          if (!isMounted) break;
+          let page = 1;
+          while (true) {
+            if (!isMounted) break;
+            await new Promise((r) => setTimeout(r, 40)); // gentle rate-limit
+            const res = await fetchWithRetry(
+              `https://api.sunnah.com/v1/collections/${sunnahCollection}/books/${b.bookNumber}/hadiths?page=${page}&limit=100`
+            );
+            if (!res || !res.ok) break;
+            const data = await res.json();
+            const items: any[] = data.data || [];
+            if (items.length === 0) break;
+
+            const newBatch: Hadith[] = [];
+            items.forEach((item) => {
+              const translations = item.hadith || [];
+              const english = translations.find((e: any) => e.lang === "en") || translations[0] || {};
+              const arabic = translations.find((e: any) => e.lang === "ar") || {};
+              const text = toPlainText(english.body);
+              const arabicText = toPlainText(arabic.body);
+              const hadithnum = Number(item.hadithNumber || item.hadithNumberInBook || 1);
+              if ((text || arabicText) && !seenNums.has(hadithnum)) {
+                seenNums.add(hadithnum);
+                newBatch.push({ hadithnumber: hadithnum, bookNumber: Number(b.bookNumber), text, arabicText });
+              }
+            });
+
+            if (newBatch.length > 0) {
+              accumulated.push(...newBatch);
+              newItemsCount += newBatch.length;
+              // Stream update to UI every 50 new hadiths (or end of page)
+              if (newItemsCount >= 50) {
+                const snapshot = [...accumulated];
+                hadithMemoryCache.set(cacheKey, snapshot);
+                if (isMounted) setHadiths(snapshot);
+                newItemsCount = 0;
+              }
             }
-            return res;
-          } catch {
-            await new Promise((r) => setTimeout(r, attempt * 300));
+
+            if (items.length < 100) break;
+            page++;
           }
         }
-        return fetch(url, { headers: { "x-api-key": SUNNAH_API_KEY } });
-      };
 
-      // Paginate through all books of the collection
-      let bookPage = 1;
-      const booksList: any[] = [];
-      while (true) {
-        await new Promise((r) => setTimeout(r, 100));
-        const res = await fetchWithRetry(
-          `https://api.sunnah.com/v1/collections/${sunnahCollection}/books?page=${bookPage}&limit=100`
-        );
-        if (!res.ok) break;
-        const data = await res.json();
-        const pageBooks = data.data || [];
-        if (pageBooks.length === 0) break;
-        booksList.push(...pageBooks);
-        if (pageBooks.length < 100) break;
-        bookPage++;
-      }
+        if (!isMounted) return;
 
-      if (booksList.length === 0) {
-        throw new Error(`Sunnah.com returned 0 books for collection ${sunnahCollection}`);
-      }
-
-      const allItems: Hadith[] = [];
-
-      for (const b of booksList) {
-        let page = 1;
-        while (true) {
-          await new Promise((r) => setTimeout(r, 60));
-          const res = await fetchWithRetry(
-            `https://api.sunnah.com/v1/collections/${sunnahCollection}/books/${b.bookNumber}/hadiths?page=${page}&limit=100`
-          );
-          if (!res.ok) break;
-          const data = await res.json();
-          const items = data.data || [];
-          if (items.length === 0) break;
-
-          items.forEach((item: any) => {
-            const translations = item.hadith || [];
-            const english = translations.find((entry: any) => entry.lang === "en") || translations[0] || {};
-            const arabic = translations.find((entry: any) => entry.lang === "ar") || {};
-            const text = toPlainText(english.body);
-            const arabicText = toPlainText(arabic.body);
-            const hadithnum = Number(item.hadithNumber || item.hadithNumberInBook || 1);
-            if (text || arabicText) {
-              allItems.push({
-                hadithnumber: hadithnum,
-                bookNumber: Number(b.bookNumber),
-                text,
-                arabicText,
-              });
-            }
-          });
-
-          if (items.length < 100) break;
-          page++;
+        // Final update & persist to AsyncStorage
+        if (accumulated.length > (initialData.length === 0 ? 0 : initialData.length)) {
+          hadithMemoryCache.set(cacheKey, accumulated);
+          if (isMounted) setHadiths([...accumulated]);
+          await saveOfflineCache(accumulated);
         }
+      } catch (err) {
+        console.warn("Background Sunnah.com refresh error:", err);
+      } finally {
+        if (isMounted) setBgLoading(false);
       }
-
-      if (allItems.length === 0) {
-        throw new Error("Sunnah.com API returned no readable hadiths");
-      }
-
-      await saveOfflineHadiths(allItems);
-      return allItems;
     };
 
-    loadOfficialCollection()
-      .catch((officialError) => {
-        console.warn("Sunnah.com Hadith fetch failed, trying offline cache:", officialError);
-        return loadOfflineHadiths();
-      })
-      .catch((cacheError) => {
-        console.warn("Offline Sunnah.com Hadith cache unavailable, trying fallback database:", cacheError);
-        return loadFallbackCollection();
-      })
-      .then(saveLoadedHadiths)
-      .catch((error) => console.error("Failed to load Hadith collection:", error))
-      .finally(() => setLoading(false));
+    // ── step 2b: fallback remote fetch (fawazahmed / AhmedBaset CDN) ──────────
+    const remoteFallbackRefresh = async () => {
+      if (!isMounted) return;
+      setBgLoading(true);
+      try {
+        // fawazahmed CDN (for malik and fawazahmed-tagged books)
+        if (bookMetaLocal?.source === "fawazahmed" || book === "malik") {
+          const [engResponse, araResponse] = await Promise.all([
+            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`),
+            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-${book}.min.json`).catch(() => null),
+          ]);
+          if (engResponse.ok) {
+            const engData = await engResponse.json();
+            const araData = araResponse?.ok ? await araResponse.json() : { hadiths: [] };
+            const araMap: Record<number, string> = {};
+            (araData?.hadiths || []).forEach((h: any) => { if (h.hadithnumber) araMap[h.hadithnumber] = h.text; });
+            const list: Hadith[] = (engData?.hadiths || []).reduce((acc: Hadith[], eng: any) => {
+              const arabicText = araMap[eng.hadithnumber] || "";
+              if (String(eng.text || "").trim() || arabicText.trim())
+                acc.push({ hadithnumber: eng.hadithnumber, text: eng.text || "", arabicText });
+              return acc;
+            }, []);
+            if (list.length > 0) {
+              hadithMemoryCache.set(cacheKey, list);
+              if (isMounted) { setHadiths(list); setLoading(false); }
+              await saveOfflineCache(list);
+              return;
+            }
+          }
+        }
+
+        // AhmedBaset CDN
+        const ahmedBasetFiles: Record<string, string> = {
+          nawawi40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/nawawi40.json",
+          qudsi40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/qudsi40.json",
+          shahwaliullah40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/shahwaliullah40.json",
+          riyad_assalihin: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/riyad_assalihin.json",
+          bulugh_almaram: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/bulugh_almaram.json",
+          aladab_almufrad: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/aladab_almufrad.json",
+          shamail_muhammadiyah: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/other_books/shamail_muhammadiyah.json",
+          ahmad: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/the_9_books/ahmed.json",
+          darimi: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/the_9_books/darimi.json",
+        };
+        if (ahmedBasetFiles[book]) {
+          const response = await fetch(ahmedBasetFiles[book]);
+          if (response.ok) {
+            const data = await response.json();
+            const list: Hadith[] = (data.hadiths || []).map((h: any) => ({
+              hadithnumber: Number(h.idInBook || h.id || 1),
+              text: toPlainText((h.english?.narrator ? `${h.english.narrator} ` : "") + (h.english?.text || h.english || "")),
+              arabicText: toPlainText(h.arabic || ""),
+            }));
+            if (list.length > 0) {
+              hadithMemoryCache.set(cacheKey, list);
+              if (isMounted) { setHadiths(list); setLoading(false); }
+              await saveOfflineCache(list);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Remote fallback refresh error:", err);
+      } finally {
+        if (isMounted) setBgLoading(false);
+      }
+    };
+
+    // ── orchestrate ────────────────────────────────────────────────────────────
+    showInitial().then((initialData) => {
+      if (!isMounted) return;
+      // If initial data came from fallback/cache, still refresh silently
+      if (sunnahCollection) {
+        // Run Sunnah.com streaming refresh in background (don't await)
+        backgroundRefresh(initialData).catch(() => { if (isMounted) setBgLoading(false); });
+      } else {
+        // No Sunnah.com — try CDN fallbacks (only if we have no/minimal data)
+        if (initialData.length === 0) {
+          remoteFallbackRefresh().catch(() => { if (isMounted) setBgLoading(false); });
+        } else {
+          // We have data from cache; still try CDN in background for freshness
+          remoteFallbackRefresh().catch(() => { if (isMounted) setBgLoading(false); });
+        }
+      }
+      // If nothing was shown (no cache, no fallback), keep spinner until bg fetch delivers
+      if (initialData.length === 0 && isMounted) setLoading(true);
+    });
+
+    return () => { isMounted = false; };
   }, [book]);
 
   const handleShare = async (item: Hadith) => {
@@ -543,7 +613,7 @@ export default function HadithDetailScreen() {
           <Text 
             style={[
               styles.arabicText, 
-              { color: colors.onSurface, fontFamily: arabicFontFamily || "NotoNaskhArabic" }
+              { color: colors.onSurface, fontFamily: arabicFontFamily || "NotoNaskhArabic", fontSize: arabicSize, lineHeight: arabicLineHeight, letterSpacing: arabicLetterSpacing }
             ]}
           >
             {item.arabicText}
@@ -551,7 +621,7 @@ export default function HadithDetailScreen() {
         ) : null}
 
         {item.text && item.text.trim() !== "" && item.text !== "[object Object]" ? (
-          <Text style={[styles.englishText, { color: colors.onSurface }]}>{item.text}</Text>
+          <Text style={[styles.englishText, { color: resolvedFontColor, fontSize: bodySize, lineHeight: bodyLineHeight, letterSpacing }]}>{item.text}</Text>
         ) : null}
 
         {/* Translation Section */}
@@ -559,14 +629,14 @@ export default function HadithDetailScreen() {
           tamilText ? (
             <View style={[styles.tamilBox, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
               <View style={styles.tamilHeader}>
-                <Text style={[styles.tamilLabel, { color: colors.brand }]}>
+                <Text style={[styles.tamilLabel, { color: colors.brand, fontSize: labelSize }]}>
                   {getLanguageName(language === "en" ? "en" : language)} Translation:
                 </Text>
                 <Pressable onPress={() => handleShare(item)} hitSlop={8}>
                   <MaterialCommunityIcons name="share-variant" size={16} color={colors.onSurfaceMuted} />
                 </Pressable>
               </View>
-              <Text style={[styles.tamilText, { color: colors.onSurface }]}>{tamilText}</Text>
+              <Text style={[styles.tamilText, { color: resolvedFontColor, fontSize: transSize, lineHeight: transLineHeight, letterSpacing }]}>{tamilText}</Text>
             </View>
           ) : (
             <Pressable
@@ -652,6 +722,16 @@ export default function HadithDetailScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Background sync indicator — shown while Sunnah.com refresh runs */}
+      {bgLoading && hadiths.length > 0 && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: colors.brand + "12" }}>
+          <ActivityIndicator size="small" color={colors.brand} />
+          <Text style={{ fontSize: 12, color: colors.brand, fontWeight: "600" }}>
+            Syncing latest hadiths in background… ({hadiths.length} loaded)
+          </Text>
+        </View>
+      )}
 
       {/* Mode Switcher Tabs (Chapters Index vs Read Hadiths) */}
       {chapters.length > 0 && (
@@ -887,7 +967,7 @@ export default function HadithDetailScreen() {
           )}
 
           {loading ? (
-            <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
+            <SkeletonList count={8} type="hadith" />
           ) : (
             <FlatList
               data={paginated}
@@ -1086,9 +1166,9 @@ const styles = StyleSheet.create({
   chapterChipText: { fontSize: 13, fontWeight: "800" },
   chapterRange: { fontSize: 11, fontWeight: "700" },
   hadithCard: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    gap: theme.spacing.sm,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    gap: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   cardHeader: {
@@ -1104,7 +1184,7 @@ const styles = StyleSheet.create({
   badgeTxt: { fontSize: 12, fontWeight: "800" },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
   headerBtn: { padding: 4 },
-  englishText: { fontSize: 14, lineHeight: 22, marginTop: 4 },
+  englishText: { fontFamily: "Figtree_400Regular", marginTop: 4 },
   translateBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1129,13 +1209,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
   },
-  tamilLabel: { fontSize: 12, fontWeight: "800" },
-  tamilText: { fontSize: 13, lineHeight: 20 },
+  tamilLabel: { fontWeight: "800" },
+  tamilText: { fontFamily: "Figtree_400Regular" },
   arabicText: {
-    fontFamily: "NotoNaskhArabic",
-    fontSize: 20,
     textAlign: "right",
-    lineHeight: 34,
     marginBottom: theme.spacing.sm,
     marginTop: theme.spacing.sm,
   },

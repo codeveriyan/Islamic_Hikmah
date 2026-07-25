@@ -91,9 +91,9 @@ export default function DuaCategoryScreen() {
     return 28; // medium
   };
   const getArabicLineHeight = () => {
-    if (fontSize === "small") return 38;
-    if (fontSize === "large") return 58;
-    return 48; // medium
+    if (fontSize === "small") return 40;
+    if (fontSize === "large") return 64;
+    return 50; // medium
   };
   const getTranslitSize = () => {
     if (fontSize === "small") return 13;
@@ -101,9 +101,9 @@ export default function DuaCategoryScreen() {
     return 16; // medium
   };
   const getTranslitLineHeight = () => {
-    if (fontSize === "small") return 21;
-    if (fontSize === "large") return 31;
-    return 25; // medium
+    if (fontSize === "small") return 23;
+    if (fontSize === "large") return 33;
+    return 27; // medium
   };
   const getTranslationSize = () => {
     if (fontSize === "small") return 13;
@@ -111,9 +111,9 @@ export default function DuaCategoryScreen() {
     return 16; // medium
   };
   const getTranslationLineHeight = () => {
-    if (fontSize === "small") return 21;
-    if (fontSize === "large") return 31;
-    return 25; // medium
+    if (fontSize === "small") return 23;
+    if (fontSize === "large") return 33;
+    return 27; // medium
   };
 
   // Font Color Styles
@@ -466,7 +466,7 @@ export default function DuaCategoryScreen() {
       <View style={{ width: SCREEN_WIDTH, padding: theme.spacing.lg }}>
         <ScrollView contentContainerStyle={styles.readerCardScroll} showsVerticalScrollIndicator={false}>
           <View style={styles.readerContent}>
-            <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight(), fontFamily: arabicFontFamily }]}>
+            <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight(), fontFamily: arabicFontFamily, letterSpacing: -0.3 }]}>
               {item.arabic}
             </Text>
             
@@ -476,7 +476,7 @@ export default function DuaCategoryScreen() {
               </Text>
             ) : null}
 
-            <Text style={[styles.translation, { color: getTextColor(), fontSize: getTranslationSize(), lineHeight: getTranslationLineHeight() }]}>
+            <Text style={[styles.translation, { color: getTextColor(), fontSize: getTranslationSize(), lineHeight: getTranslationLineHeight(), letterSpacing: 0.15 }]}>
               {translatedTexts[item.id]?.translation || item.translation}
             </Text>
 

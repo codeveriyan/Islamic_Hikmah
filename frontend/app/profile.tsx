@@ -20,11 +20,58 @@ import { deleteUser } from "firebase/auth";
 import { auth } from "@/src/firebase";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AnimatedCard } from "@/src/components/AnimatedCard";
+import { getQuranBookmarks, getHadithBookmarks } from "@/src/storage";
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { profile, logout, updateProfileInfo } = useAuth();
+
+  // ── Journey Stats State ──
+  const [journeyStats, setJourneyStats] = useState({
+    streak: 0, longestStreak: 0,
+    prayersThisWeek: 0,
+    pagesThisWeek: 0,
+    totalBookmarks: 0,
+  });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const today = new Date();
+        // Streak
+        const streakRaw = await AsyncStorage.getItem("hikmah:streak:v3");
+        const sd = streakRaw ? JSON.parse(streakRaw) : { current: 0, longest: 0 };
+        // Prayers this week
+        let totalPrayed = 0;
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(today); d.setDate(d.getDate() - i);
+          const key = `hikmah:prayed:${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+          const raw = await AsyncStorage.getItem(key);
+          if (raw) totalPrayed += JSON.parse(raw).length;
+        }
+        // Pages read this week
+        let totalPages = 0;
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(today); d.setDate(d.getDate() - i);
+          const key = `hikmah:quran-pages:${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+          const raw = await AsyncStorage.getItem(key);
+          if (raw) totalPages += parseInt(raw, 10);
+        }
+        // Bookmarks
+        const [qBms, hBms] = await Promise.all([getQuranBookmarks(), getHadithBookmarks()]);
+        setJourneyStats({
+          streak: sd.current ?? 0,
+          longestStreak: sd.longest ?? 0,
+          prayersThisWeek: totalPrayed,
+          pagesThisWeek: totalPages,
+          totalBookmarks: qBms.length + hBms.length,
+        });
+      } catch {}
+    })();
+  }, []);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [name, setName] = useState(profile?.name || "");
@@ -203,6 +250,30 @@ export default function ProfileScreen() {
               {profile?.status || "Active"} Session
             </Text>
           </View>
+        </View>
+
+
+        {/* ── Journey Stats Dashboard ── */}
+        <Text style={[styles.sectionTitle, { color: colors.onSurfaceMuted, marginBottom: 10 }]}>MY JOURNEY</Text>
+        <View style={styles.statsGrid}>
+          {[
+            { icon: 'fire', label: 'Streak', value: journeyStats.streak, unit: 'days', color: '#F59E0B' },
+            { icon: 'mosque', label: 'Prayers This Week', value: journeyStats.prayersThisWeek, unit: 'prayed', color: '#047857' },
+            { icon: 'book-open-variant', label: 'Pages Read', value: journeyStats.pagesThisWeek, unit: 'this week', color: '#1D4ED8' },
+            { icon: 'bookmark', label: 'Saved Items', value: journeyStats.totalBookmarks, unit: 'bookmarks', color: '#7C3AED' },
+          ].map(stat => (
+            <AnimatedCard
+              key={stat.label}
+              style={[styles.statCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+            >
+              <View style={[styles.statIconWrap, { backgroundColor: stat.color + '18' }]}>
+                <MaterialCommunityIcons name={stat.icon as any} size={22} color={stat.color} />
+              </View>
+              <Text style={[styles.statValue, { color: colors.onSurface }]}>{stat.value}</Text>
+              <Text style={[styles.statUnit, { color: colors.onSurfaceMuted }]}>{stat.unit}</Text>
+              <Text style={[styles.statLabel, { color: colors.onSurfaceMuted }]}>{stat.label}</Text>
+            </AnimatedCard>
+          ))}
         </View>
 
         {/* Info Rows */}
@@ -434,10 +505,25 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 24,
     paddingVertical: 20,
-    gap: 24,
+    gap: 20,
   },
+  statsGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 4,
+  },
+  statCard: {
+    width: '47.5%', borderRadius: 16, borderWidth: 0.5,
+    padding: 14, alignItems: 'center', gap: 4,
+  },
+  statIconWrap: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 4,
+  },
+  statValue: { fontSize: 26, fontWeight: '800', fontFamily: 'Outfit_600SemiBold' },
+  statUnit: { fontSize: 10, fontFamily: 'Figtree_400Regular', fontWeight: '600' },
+  statLabel: { fontSize: 11, fontFamily: 'Figtree_400Regular', textAlign: 'center', marginTop: 2 },
   profileCard: {
     alignItems: "center",
+
     gap: 8,
     marginTop: 10,
   },

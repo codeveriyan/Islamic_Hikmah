@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Platform, Modal, Switch, Alert, TextInput,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Platform, Modal, Switch, Alert, TextInput, RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,6 +15,8 @@ import { format12Hour } from "@/src/utils/time";
 
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
+import { AnimatedCard } from "@/src/components/AnimatedCard";
+import { PrayerCardSkeleton } from "@/src/components/SkeletonLoader";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
@@ -72,6 +74,26 @@ const RING = 80;
 const STROKE = 6;
 const RADIUS = (RING - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
+
+// ── Islamic Event Calendar (approximate Gregorian dates for 2025–2026) ─────────
+const ISLAMIC_EVENTS = [
+  { name: "Eid al-Adha 1446",    date: new Date("2025-06-06"), emoji: "🕌", grad: ["#78350F", "#B45309"] as [string,string] },
+  { name: "Islamic New Year 1447",date: new Date("2025-06-26"), emoji: "⭐", grad: ["#4C1D95", "#7C3AED"] as [string,string] },
+  { name: "Mawlid al-Nabi ﷺ",   date: new Date("2025-09-04"), emoji: "💚", grad: ["#065F46", "#047857"] as [string,string] },
+  { name: "Ramadan 1447",         date: new Date("2026-02-17"), emoji: "🌙", grad: ["#0F2D5A", "#1D4ED8"] as [string,string] },
+  { name: "Eid al-Fitr 1447",     date: new Date("2026-03-20"), emoji: "🌙", grad: ["#065F46", "#10B981"] as [string,string] },
+  { name: "Dhul Hijjah 1447",     date: new Date("2026-05-17"), emoji: "🕋", grad: ["#78350F", "#B45309"] as [string,string] },
+  { name: "Eid al-Adha 1447",     date: new Date("2026-05-27"), emoji: "🌙", grad: ["#065F46", "#047857"] as [string,string] },
+];
+function getNextIslamicEvent() {
+  const now = new Date();
+  const future = ISLAMIC_EVENTS.filter(e => e.date > now)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  if (!future.length) return null;
+  const next = future[0];
+  const daysLeft = Math.ceil((next.date.getTime() - now.getTime()) / 86400000);
+  return { ...next, daysLeft };
+}
 
 const QUICK_ACTIONS = [
   { id: "pillarsOfIslam",    label: "5 Pillars of Islam",      route: "/pillars-of-islam",      emoji: "☪️" },
@@ -266,6 +288,25 @@ export default function HomeScreen() {
   const { t } = useTranslation(language);
   const greeting = useMemo(() => getGreeting(), []);
   const hijri = useMemo(() => getHijriDate(), []);
+  const nextIslamicEvent = useMemo(() => getNextIslamicEvent(), []);
+
+  // Time-aware greeting gradient + Arabic phrase
+  const greetingGrad = useMemo((): [string, string] => {
+    const h = new Date().getHours();
+    if (h < 5) return ["#0D1B2A", "#1B2838"];
+    if (h < 12) return ["#0B2D25", "#065F46"];
+    if (h < 16) return ["#1E3A5F", "#1B6CA8"];
+    if (h < 20) return ["#3B1F63", "#6D28D9"];
+    return ["#0D1B2A", "#1B2838"];
+  }, []);
+  const arabicGreeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 5) return { arabic: "اللَّيْلُ مُبَارَكٌ", english: "Blessed night" };
+    if (h < 12) return { arabic: "صَبَاحُ الْخَيْرِ", english: greeting.sub };
+    if (h < 17) return { arabic: "اللَّهُمَّ بِكَ أَصْبَحْنَا", english: greeting.sub };
+    if (h < 20) return { arabic: "مَسَاءُ الْخَيْرِ", english: greeting.sub };
+    return { arabic: "اللَّهُمَّ بِكَ أَمْسَيْنَا", english: "Blessed evening" };
+  }, [greeting]);
 
   // Prayer times & countdown
   const [times, setTimes] = useState<Record<string, string> | null>(null);
@@ -339,6 +380,25 @@ export default function HomeScreen() {
   const [quickPageIndex, setQuickPageIndex] = useState(0);
   const quickPagerPulse = useRef(new Animated.Value(1)).current;
   const quickScrollX = useRef(new Animated.Value(0)).current;
+  const scrollY = useRef(new Animated.Value(0)).current;
+  // Quran last-read (Continue Reading widget)
+  const [lastReadQuran, setLastReadQuran] = useState<{ surahNumber: number; surahName: string; ayahNumber?: number } | null>(null);
+  // Pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const loc = await resolveUserLocation();
+      setCity(loc.city);
+      const settings = await getPrayerSettings();
+      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+      const r = await fetch(url);
+      const j = await r.json();
+      if (j?.data?.timings) setTimes(j.data.timings);
+    } catch {}
+    setRefreshing(false);
+  }, []);
   const orderedQuickActions = useMemo(() => {
     const actionsById = new Map(HOME_QUICK_ACTIONS.map(action => [action.id, action]));
     const saved = quickActionOrder.map(id => actionsById.get(id)).filter(Boolean) as any[];
@@ -490,6 +550,15 @@ export default function HomeScreen() {
         
         const loadedCustom = customRaw ? JSON.parse(customRaw) : [];
         setCustomGoals(loadedCustom);
+
+        // Load last-read Quran position for Continue Reading widget
+        try {
+          const lrqRaw = await AsyncStorage.getItem("hikmah:quran-last-read:v1");
+          if (lrqRaw) {
+            const parsed = JSON.parse(lrqRaw);
+            if (parsed?.surahNumber) setLastReadQuran(parsed);
+          }
+        } catch {}
       })();
     }, [])
   );
@@ -1293,21 +1362,69 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} removeClippedSubviews>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        removeClippedSubviews
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#00A884"
+            colors={["#00A884"]}
+            progressBackgroundColor={"#0B2D25"}
+          />
+        }
+      >
 
-        {city ? (
-          <View style={styles.locationRow}>
-            <MaterialCommunityIcons name="map-marker" size={14} color={colors.brand} />
-            <Text style={[styles.locationTxt, { color: colors.onSurface }]}>{city}</Text>
+
+        {/* ── Time-Aware Greeting Hero ── */}
+        <AnimatedCard
+          onPress={() => router.push('/prayer-times')}
+          style={{ marginHorizontal: theme.spacing.lg, marginBottom: 14, borderRadius: 20, overflow: 'hidden' }}
+        >
+          <LinearGradient
+            colors={greetingGrad}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={{ padding: 18 }}>
+            <Text style={{ fontFamily: 'NotoNaskhArabic', fontSize: 22, color: '#fff', textAlign: 'right', marginBottom: 10 }}>
+              {arabicGreeting.arabic}
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.72)', fontFamily: 'Figtree_400Regular' }}>
+                  {arabicGreeting.english}
+                </Text>
+                {profile?.name ? (
+                  <Text style={{ fontSize: 17, color: '#fff', fontFamily: 'Outfit_600SemiBold', fontWeight: '700', marginTop: 3 }}>
+                    {profile.name}
+                  </Text>
+                ) : null}
+                {city ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
+                    <MaterialCommunityIcons name="map-marker" size={13} color="rgba(255,255,255,0.65)" />
+                    <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', fontFamily: 'Figtree_400Regular' }}>{city}</Text>
+                  </View>
+                ) : null}
+              </View>
+              {hijri ? (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontFamily: 'Figtree_400Regular', textTransform: 'uppercase', letterSpacing: 0.5 }}>Hijri</Text>
+                  <Text style={{ fontSize: 13, color: '#fff', fontFamily: 'Outfit_600SemiBold', fontWeight: '700', marginTop: 2 }}>{hijri}</Text>
+                </View>
+              ) : null}
+            </View>
           </View>
-        ) : null}
+        </AnimatedCard>
 
         {/* Prayer Countdown Card */}
         {prayerPeriods && (
-          <Pressable onPress={() => router.push("/prayer-times")} style={styles.prayerCard}>
+          <AnimatedCard onPress={() => router.push("/prayer-times")} style={[styles.prayerCard, { overflow: "hidden" }]}>
             <LinearGradient
               colors={colors.mode === "dark" ? ["#0B2D25", "#10251F", "#1E3528"] : ["#FFFFFF", "#F3FAF2", "#FFF7E0"]}
-              style={StyleSheet.absoluteFillObject}
+              style={{ ...require("react-native").StyleSheet.absoluteFillObject }}
             />
             <View style={{ flex: 1 }}>
               <Text style={[styles.prayerLabel, { color: colors.onSurfaceMuted }]}>{t("currentPrayer")}</Text>
@@ -1333,7 +1450,62 @@ export default function HomeScreen() {
                 <Text style={[styles.countdown, { color: colors.onSurface }]}>{countdown}</Text>
               </View>
             </View>
-          </Pressable>
+          </AnimatedCard>
+        )}
+
+        {/* ── Continue Reading Quran ── */}
+        {lastReadQuran && (
+          <AnimatedCard
+            onPress={() => router.push(`/quran/${lastReadQuran.surahNumber}` as any)}
+            style={{ marginHorizontal: theme.spacing.lg, marginBottom: 14, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.brand + '33' }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceSecondary, padding: 14, gap: 12 }}>
+              <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: colors.brand + '18', alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialCommunityIcons name="book-open-page-variant" size={20} color={colors.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 10, color: colors.onSurfaceMuted, fontFamily: 'Figtree_400Regular', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 2 }}>Continue Reading</Text>
+                <Text style={{ fontSize: 15, color: colors.onSurface, fontFamily: 'Outfit_600SemiBold', fontWeight: '700' }}>{lastReadQuran.surahName}</Text>
+                {lastReadQuran.ayahNumber ? (
+                  <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, fontFamily: 'Figtree_400Regular', marginTop: 1 }}>Ayah {lastReadQuran.ayahNumber}</Text>
+                ) : null}
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={colors.brand} />
+            </View>
+          </AnimatedCard>
+        )}
+
+        {/* ── Islamic Event Countdown ── */}
+        {nextIslamicEvent && (
+          <AnimatedCard
+            onPress={() => router.push('/articles' as any)}
+            style={{ marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: 'hidden' }}
+          >
+            <LinearGradient
+              colors={nextIslamicEvent.grad}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 }}
+            >
+              <View style={{
+                width: 52, height: 52, borderRadius: 14,
+                backgroundColor: 'rgba(255,255,255,0.18)',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ fontSize: 26 }}>{nextIslamicEvent.emoji}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', fontFamily: 'Figtree_400Regular' }}>Coming Soon</Text>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', fontFamily: 'Outfit_600SemiBold', marginTop: 3 }}>{nextIslamicEvent.name}</Text>
+              </View>
+              <View style={{
+                alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.18)',
+                borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+              }}>
+                <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', fontFamily: 'Outfit_600SemiBold', lineHeight: 32 }}>{nextIslamicEvent.daysLeft}</Text>
+                <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: '700', letterSpacing: 0.5 }}>DAYS</Text>
+              </View>
+            </LinearGradient>
+          </AnimatedCard>
         )}
 
         {/* Quick Actions */}
@@ -1406,8 +1578,8 @@ export default function HomeScreen() {
           {quickActionPages.map((page, pageIndex) => (
             <View key={`quick-page-${pageIndex}`} style={styles.quickPage}>
               {page.map((a) => (
-            <Pressable key={a.id} onPress={() => handleQuickActionPress(a)} onLongPress={() => setReorderFrom(a.id)} delayLongPress={350}
-              style={({ pressed }) => [styles.quickBtn, reorderFrom === a.id && { opacity: 0.45, transform: [{ scale: 0.9 }] }, pressed && { opacity: 0.7 }]}>
+            <AnimatedCard key={a.id} onPress={() => handleQuickActionPress(a)} onLongPress={() => setReorderFrom(a.id)} delayLongPress={350}
+              style={[styles.quickBtn, reorderFrom === a.id && { opacity: 0.45 }, { overflow: "hidden" }]}>
               <View style={styles.quickIconOnly}>
                 {"image" in a && a.image ? (
                   <Image 
@@ -1428,7 +1600,7 @@ export default function HomeScreen() {
                 )}
               </View>
               <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{a.label}</Text>
-            </Pressable>
+            </AnimatedCard>
               ))}
             </View>
           ))}
@@ -1490,15 +1662,33 @@ export default function HomeScreen() {
             colors={colors.mode === "dark" ? ["#10231F", "#0E1B18"] : ["#FFFFFF", "#F8FBF7"]}
             style={StyleSheet.absoluteFillObject}
           />
-          <View style={styles.goalsHeader}>
-            <Text style={[styles.goalsTitle, { color: colors.onSurface }]}>
-              Complete {totalGoals} goals today
-            </Text>
-          </View>
-
-          {/* Overall progress bar */}
-          <View style={[styles.progressBg, { backgroundColor: colors.surface }]}>
-            <View style={[styles.progressFill, { width: `${overallProgress * 100}%`, backgroundColor: colors.brand }]} />
+          <View style={[styles.goalsHeader, { flexDirection: 'row', alignItems: 'center' }]}>
+            {/* Left: title + subtitle + progress bar */}
+            <View style={{ flex: 1, marginRight: 14 }}>
+              <Text style={[styles.goalsTitle, { color: colors.onSurface }]}>Today's Goals</Text>
+              <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, fontFamily: 'Figtree_400Regular', marginTop: 3 }}>
+                {totalDone} of {totalGoals} completed
+              </Text>
+              <View style={[styles.progressBg, { backgroundColor: colors.surface, marginTop: 10 }]}>
+                <View style={[styles.progressFill, { width: `${overallProgress * 100}%`, backgroundColor: colors.brand }]} />
+              </View>
+            </View>
+            {/* Right: SVG Progress Ring */}
+            <View style={{ width: 68, height: 68, alignItems: 'center', justifyContent: 'center' }}>
+              <Svg width={68} height={68}>
+                <Circle cx={34} cy={34} r={27} stroke={colors.brand + '22'} strokeWidth={6} fill="transparent" />
+                <Circle
+                  cx={34} cy={34} r={27}
+                  stroke={colors.brand} strokeWidth={6} fill="transparent"
+                  strokeDasharray={2 * Math.PI * 27}
+                  strokeDashoffset={(1 - overallProgress) * 2 * Math.PI * 27}
+                  strokeLinecap="round" rotation="-90" origin="34,34"
+                />
+              </Svg>
+              <View style={{ position: 'absolute', alignItems: 'center' }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: colors.brand }}>{Math.round(overallProgress * 100)}%</Text>
+              </View>
+            </View>
           </View>
 
           {/* Category pills */}

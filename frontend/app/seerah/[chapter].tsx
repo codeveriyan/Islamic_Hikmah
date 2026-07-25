@@ -17,6 +17,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 
 import { useTheme } from "@/src/ThemeContext";
+import { useArabicFont } from "@/src/hooks/useArabicFont";
+import { useContentFontSize } from "@/src/hooks/useContentFontSize";
 import { useTranslation } from "@/src/localization";
 import { 
   toggleFavourite, 
@@ -37,15 +39,16 @@ const STORAGE_KEY = "islamic_hikmah:seerah_read_chapters";
 export default function SeerahChapterScreen() {
   const { chapter: chapterId } = useLocalSearchParams<{ chapter: string }>();
   const router = useRouter();
-  const { colors, language } = useTheme();
+  const { colors, language, fontColor } = useTheme();
   const { t } = useTranslation(language);
+  const arabicFontFamily = useArabicFont();
+  const { bodySize, bodyLineHeight, arabicSize, arabicLineHeight, labelSize, letterSpacing, arabicLetterSpacing } = useContentFontSize();
   const scrollRef = useRef<ScrollView>(null);
 
   const [readChapters, setReadChapters] = useState<Set<string>>(new Set());
   const [scrollProgress, setScrollProgress] = useState(0);
   const [contentHeight, setContentHeight] = useState(1);
   const [scrollViewHeight, setScrollViewHeight] = useState(1);
-  const [fontSize, setFontSize] = useState<"small" | "medium" | "large" | "xlarge">("medium");
 
   const [translatedTitle, setTranslatedTitle] = useState("");
   const [translatedContent, setTranslatedContent] = useState("");
@@ -179,10 +182,9 @@ export default function SeerahChapterScreen() {
     router.replace(`/seerah/${id}` as any);
   };
 
-  const fontSizeMap = { small: 14, medium: 16, large: 19, xlarge: 23 };
-  const lineHeightMap = { small: 22, medium: 26, large: 30, xlarge: 35 };
-  const contentFontSize = fontSizeMap[fontSize];
-  const contentLineHeight = lineHeightMap[fontSize];
+  const contentFontSize = bodySize;
+  const contentLineHeight = bodyLineHeight;
+  const resolvedFontColor = fontColor === "gold" ? "#D97706" : fontColor === "green" ? "#10B981" : fontColor === "sepia" ? "#B45309" : colors.onSurfaceSecondary;
 
   // Simple markdown-like bold rendering
   const renderContent = (text: string) => {
@@ -199,7 +201,7 @@ export default function SeerahChapterScreen() {
         );
       }
       return (
-        <Text key={i} style={{ color: colors.onSurfaceSecondary }}>
+        <Text key={i} style={{ color: resolvedFontColor, letterSpacing }}>
           {part}
         </Text>
       );
@@ -232,8 +234,11 @@ export default function SeerahChapterScreen() {
                 <Text
                   style={{
                     flex: 1,
+                    fontFamily: "Figtree_400Regular",
                     fontSize: contentFontSize,
                     lineHeight: contentLineHeight,
+                    color: resolvedFontColor,
+                    letterSpacing,
                   }}
                 >
                   {renderContent(line.replace(/^-\s*/, ""))}
@@ -249,8 +254,11 @@ export default function SeerahChapterScreen() {
           style={[
             styles.paragraph,
             {
+              fontFamily: "Figtree_400Regular",
               fontSize: contentFontSize,
               lineHeight: contentLineHeight,
+              color: resolvedFontColor,
+              letterSpacing,
             },
           ]}
         >
@@ -318,9 +326,6 @@ export default function SeerahChapterScreen() {
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-              setFontSize((s) =>
-                s === "small" ? "medium" : s === "medium" ? "large" : s === "large" ? "xlarge" : "small"
-              );
             }}
             hitSlop={8}
             style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary }]}
@@ -426,7 +431,7 @@ export default function SeerahChapterScreen() {
           <Text style={[styles.chapterTitle, { color: colors.onSurface }]}>
             {translatedTitle || chapter.title}
           </Text>
-          <Text style={[styles.chapterArabic, { color: colors.brand }]}>
+          <Text style={[styles.chapterArabic, { color: colors.brand, fontFamily: arabicFontFamily, fontSize: arabicSize, lineHeight: arabicLineHeight, letterSpacing: arabicLetterSpacing }]}>
             {chapter.arabicTitle}
           </Text>
           <Text style={[styles.chapterMeta, { color: colors.onSurfaceMuted }]}>
@@ -618,9 +623,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   eraBadgeTxt: { fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
-  chapterTitle: { fontSize: 17, fontWeight: "800", marginBottom: 2 },
-  chapterArabic: { fontFamily: "Amiri", fontSize: 16, marginBottom: 4 },
-  chapterMeta: { fontSize: 12 },
+  chapterTitle: { fontSize: 18, fontWeight: "800", marginBottom: 3 },
+  chapterArabic: { marginBottom: 6 },
+  chapterMeta: { fontSize: 13 },
 
   contentContainer: {
     paddingHorizontal: theme.spacing.lg,

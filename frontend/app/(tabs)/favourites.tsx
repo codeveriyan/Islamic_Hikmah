@@ -1,6 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ScrollView } from "react-native";
+import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -24,6 +25,7 @@ import {
   toggleDhikrBookmark,
   DhikrBookmark
 } from "@/src/storage";
+import { EmptyState } from "@/src/components/EmptyState";
 
 type CategoryType = "quran" | "dhikr" | "hadith" | "seerah";
 
@@ -149,45 +151,67 @@ export default function FavouritesScreen() {
     let arabicText = "";
     let translationText = "";
     let tag = "";
+    let catColor = colors.brand;
+
+    const CAT_COLORS: Record<string, string> = {
+      quran: '#047857', dhikr: '#7C3AED', hadith: '#1D4ED8', seerah: '#B45309',
+      favourites: colors.error,
+    };
+    const CAT_ICONS: Record<string, string> = {
+      quran: 'book-open-variant', dhikr: 'hands-pray',
+      hadith: 'text-box-outline', seerah: 'star-crescent',
+    };
 
     if (activeMode === "favourites") {
-      tag = item.type.toUpperCase();
+      tag = item.type || 'SAVED';
+      catColor = CAT_COLORS.favourites;
       cardTitle = item.title;
       arabicText = item.arabic;
       translationText = item.translation;
     } else {
-      tag = activeCategory.toUpperCase();
+      tag = activeCategory;
+      catColor = CAT_COLORS[activeCategory] || colors.brand;
       if (activeCategory === "quran") {
-        cardTitle = `${item.surahName} · Verse ${item.ayahNumber}`;
-        translationText = item.note ? `Note: ${item.note}` : "Bookmarked Quran Verse";
+        cardTitle = `${item.surahName} — Verse ${item.ayahNumber}`;
+        translationText = item.note ? `📝 ${item.note}` : "Bookmarked Quran Verse";
       } else if (activeCategory === "dhikr") {
         cardTitle = item.title;
         arabicText = item.arabic;
         translationText = item.translation;
       } else if (activeCategory === "hadith") {
-        cardTitle = `${item.bookId.toUpperCase()} · Hadith #${item.hadithnumber}`;
+        cardTitle = `${item.bookId?.toUpperCase()} — Hadith #${item.hadithnumber}`;
         arabicText = item.arabicText;
         translationText = item.text;
       } else if (activeCategory === "seerah") {
         cardTitle = item.title;
-        translationText = item.content ? item.content.slice(0, 160) + "..." : "Bookmarked Seerah Chapter";
+        translationText = item.content ? item.content.slice(0, 160) + "…" : "Bookmarked Seerah Chapter";
       }
     }
 
+    const iconName = activeMode === 'favourites'
+      ? (CAT_ICONS[item.type] || 'star')
+      : (CAT_ICONS[activeCategory] || 'bookmark');
+
     return (
-      <Pressable 
+      <AnimatedCard
         onPress={() => handleCardPress(item)}
-        style={({ pressed }) => [
-          styles.card, 
-          { backgroundColor: colors.surfaceSecondary },
-          pressed && { opacity: 0.95 }
+        style={[
+          styles.card,
+          { backgroundColor: colors.surfaceSecondary, borderLeftColor: catColor },
         ]}
       >
+        {/* Category label row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <View style={[styles.tagIcon, { backgroundColor: catColor + '22' }]}>
+            <MaterialCommunityIcons name={iconName as any} size={12} color={catColor} />
+          </View>
+          <Text style={[styles.cardKind, { color: catColor }]}>{tag.toUpperCase()}</Text>
+        </View>
+
         <View style={{ flex: 1 }}>
-          <Text style={[styles.cardKind, { color: colors.brand }]}>{tag}</Text>
-          <Text style={[styles.cardTitle, { color: colors.onSurface }]}>{cardTitle}</Text>
+          <Text style={[styles.cardTitle, { color: colors.onSurface }]} numberOfLines={2}>{cardTitle}</Text>
           {arabicText ? (
-            <Text style={[styles.arabic, { color: colors.onSurfaceSecondary }]} numberOfLines={2}>
+            <Text style={[styles.arabic, { color: colors.onSurface }]} numberOfLines={2}>
               {arabicText}
             </Text>
           ) : null}
@@ -197,19 +221,20 @@ export default function FavouritesScreen() {
             </Text>
           ) : null}
         </View>
+
+        {/* Remove button */}
         <Pressable
           onPress={() => handleRemove(item)}
           hitSlop={12}
-          style={styles.actionBtn}
+          style={[styles.actionBtn, { backgroundColor: catColor + '15' }]}
         >
-          <MaterialCommunityIcons 
-            name={activeMode === "favourites" ? "heart" : "bookmark"} 
-            // Favourites is red (error), Bookmarks is green/brand
-            color={activeMode === "favourites" ? colors.error : colors.brand} 
-            size={22} 
+          <MaterialCommunityIcons
+            name={activeMode === "favourites" ? "heart" : "bookmark"}
+            color={catColor}
+            size={18}
           />
         </Pressable>
-      </Pressable>
+      </AnimatedCard>
     );
   };
 
@@ -217,9 +242,14 @@ export default function FavouritesScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.onSurface }]}>{t("favourites")}</Text>
+      {/* ── Header ── */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View>
+          <Text style={[styles.title, { color: colors.onSurface }]}>{t("favourites")}</Text>
+          <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, fontFamily: 'Figtree_400Regular', marginTop: 2 }}>
+            {listItems.length > 0 ? `${listItems.length} saved item${listItems.length !== 1 ? 's' : ''}` : 'Your saved content'}
+          </Text>
+        </View>
       </View>
 
       {/* Main Switcher: Favourites / Bookmarks */}
@@ -255,49 +285,49 @@ export default function FavouritesScreen() {
       </View>
 
       {/* Category Sub-Tabs */}
-      <View style={styles.tabContainer}>
-        {(["quran", "dhikr", "hadith", "seerah"] as CategoryType[]).map((cat) => {
-          const isActive = activeCategory === cat;
-          const count = getCategoryCount(cat);
-          let label = cat.toUpperCase();
-          if (cat === "dhikr") label = "DHIKR";
-
-          return (
-            <Pressable
-              key={cat}
-              onPress={() => setActiveCategory(cat)}
-              style={[
-                styles.tabBtn,
-                isActive && { borderBottomColor: colors.brand, borderBottomWidth: 3 }
-              ]}
-            >
-              <Text style={[
-                styles.tabText,
-                { color: isActive ? colors.brand : colors.onSurfaceMuted },
-                isActive && { fontWeight: "700" }
-              ]}>
-                {label} ({count})
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {activeMode === 'bookmarks' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabContainer} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+          {([
+            { cat: 'quran', icon: 'book-open-variant', color: '#047857' },
+            { cat: 'dhikr', icon: 'hands-pray', color: '#7C3AED' },
+            { cat: 'hadith', icon: 'text-box-outline', color: '#1D4ED8' },
+            { cat: 'seerah', icon: 'star-crescent', color: '#B45309' },
+          ] as const).map(({ cat, icon, color }) => {
+            const isActive = activeCategory === cat;
+            const count = getCategoryCount(cat as CategoryType);
+            return (
+              <Pressable
+                key={cat}
+                onPress={() => setActiveCategory(cat as CategoryType)}
+                style={[
+                  styles.tabBtn,
+                  { borderColor: isActive ? color : colors.border,
+                    backgroundColor: isActive ? color + '18' : colors.surfaceSecondary },
+                ]}
+              >
+                <MaterialCommunityIcons name={icon as any} size={14} color={isActive ? color : colors.onSurfaceMuted} />
+                <Text style={[styles.tabText, { color: isActive ? color : colors.onSurfaceMuted, fontWeight: isActive ? '700' : '500' }]}>
+                  {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                </Text>
+                {count > 0 && (
+                  <View style={[styles.tabBadge, { backgroundColor: isActive ? color : colors.border }]}>
+                    <Text style={[styles.tabBadgeTxt, { color: isActive ? '#fff' : colors.onSurfaceMuted }]}>{count}</Text>
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {/* Main List */}
       {listItems.length === 0 ? (
-        <View style={styles.empty}>
-          <MaterialCommunityIcons 
-            name={activeMode === "favourites" ? "heart-broken" : "bookmark-off-outline"} 
-            size={64} 
-            color={colors.brand + "55"} 
-          />
-          <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>
-            No {activeMode === "favourites" ? "favorites" : "bookmarks"} saved
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>
-            Go to the {activeCategory.toUpperCase()} tab to save items here.
-          </Text>
-        </View>
+        <EmptyState
+          icon={activeMode === "favourites" ? "heart-outline" : "bookmark-outline"}
+          title={`No ${activeMode === "favourites" ? "Favourites" : "Bookmarks"} Yet`}
+          subtitle={`Tap the heart or bookmark icon on any Quran verse, Hadith, or Dhikr to save it here.`}
+          orbitIcons={["book-open-variant", "hands-pray", "star-crescent", "heart"]}
+        />
       ) : (
         <FlatList
           data={listItems}
@@ -313,8 +343,12 @@ export default function FavouritesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.sm },
-  title: { fontSize: 24, fontWeight: "700" },
+  header: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: 14, paddingBottom: 12,
+    borderBottomWidth: 0.5,
+  },
+  title: { fontSize: 24, fontWeight: "700", fontFamily: "Outfit_600SemiBold" },
   
   // Mode switcher (Pill style)
   modeSwitcher: {
@@ -338,19 +372,22 @@ const styles = StyleSheet.create({
 
   // Tab container
   tabContainer: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
     borderBottomColor: "rgba(128,128,128,0.15)",
-    paddingHorizontal: theme.spacing.lg,
   },
   tabBtn: {
-    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
   },
   tabText: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 12,
+    fontFamily: "Figtree_400Regular",
     letterSpacing: 0.5,
   },
 
@@ -363,13 +400,25 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     borderRadius: theme.radius.lg,
     gap: theme.spacing.md,
+    borderLeftWidth: 3,
+    marginBottom: 10,
   },
-  cardKind: { fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
-  cardTitle: { fontSize: 15, fontWeight: "700", marginTop: 4 },
+  tagIcon: {
+    width: 20, height: 20, borderRadius: 6,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cardKind: { fontSize: 10, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase", fontFamily: "Figtree_400Regular" },
+  cardTitle: { fontSize: 15, fontWeight: "700", marginTop: 2, fontFamily: "Outfit_600SemiBold" },
   arabic: { fontFamily: "Amiri", fontSize: 18, marginTop: 8, textAlign: "right", alignSelf: "stretch" },
-  translation: { marginTop: 6, fontSize: 13, lineHeight: 18 },
+  translation: { marginTop: 6, fontSize: 13, lineHeight: 19, fontFamily: "Figtree_400Regular" },
   actionBtn: {
-    padding: 4,
-    alignSelf: "flex-start",
+    padding: 8, alignSelf: "flex-start",
+    borderRadius: 10,
   },
+  tabBadge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  tabBadgeTxt: { fontSize: 9, fontWeight: '800' },
 });

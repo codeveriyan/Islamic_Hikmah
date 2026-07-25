@@ -1,83 +1,184 @@
-import { Tabs } from "expo-router";
-import { StyleSheet } from "react-native";
+﻿import { Tabs } from "expo-router";
+import { StyleSheet, View, Platform } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  interpolate,
+} from "react-native-reanimated";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 
+// ─── Animated Tab Icon ────────────────────────────────────────────────────────
+function TabIcon({
+  icon,
+  iconFocused,
+  color,
+  focused,
+}: {
+  icon: string;
+  iconFocused: string;
+  color: string;
+  focused: boolean;
+}) {
+  const scale = useSharedValue(1);
+  const dotOpacity = useSharedValue(0);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: dotOpacity.value,
+    width: interpolate(dotOpacity.value, [0, 1], [0, 4]),
+  }));
+
+  // Trigger once on focus change
+  if (focused !== (scale.value > 1)) {
+    scale.value = withSpring(focused ? 1.18 : 1, { damping: 12, stiffness: 260 });
+    dotOpacity.value = withTiming(focused ? 1 : 0, { duration: 200 });
+  }
+
+  return (
+    <View style={{ alignItems: "center", gap: 4 }}>
+      <Animated.View style={animStyle}>
+        <MaterialCommunityIcons
+          name={(focused ? iconFocused : icon) as any}
+          size={24}
+          color={color}
+        />
+      </Animated.View>
+      <Animated.View
+        style={[
+          dotStyle,
+          { height: 4, borderRadius: 2, backgroundColor: color },
+        ]}
+      />
+    </View>
+  );
+}
+
+// ─── Layout ──────────────────────────────────────────────────────────────────
 export default function TabsLayout() {
-  const { colors, language } = useTheme();
+  const { colors, mode, language } = useTheme();
   const { t } = useTranslation(language);
+
+  const tabBarBg =
+    mode === "dark"
+      ? "rgba(11,20,26,0.97)"
+      : "rgba(255,255,255,0.97)";
+  const borderColor =
+    mode === "dark"
+      ? "rgba(255,255,255,0.06)"
+      : "rgba(0,0,0,0.08)";
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.brandSecondary,
+        tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.onSurfaceMuted,
+        tabBarShowLabel: true,
         tabBarStyle: {
-          position: "relative",
-          backgroundColor: colors.mode === "dark" ? "rgba(15,36,31,0.96)" : "rgba(255,255,255,0.96)",
-          borderColor: colors.mode === "dark" ? "rgba(212,175,55,0.22)" : "rgba(16,128,105,0.16)",
-          borderWidth: 0,
+          backgroundColor: tabBarBg,
+          borderTopColor: borderColor,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: 64,
+          height: Platform.OS === "ios" ? 82 : 68,
           paddingTop: 8,
-          paddingBottom: 8,
-          borderRadius: 0,
-          elevation: 0,
+          paddingBottom: Platform.OS === "ios" ? 24 : 10,
+          elevation: 20,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: mode === "dark" ? 0.5 : 0.08,
+          shadowRadius: 16,
         },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: "800" },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontFamily: "Figtree_400Regular",
+          fontWeight: "700",
+          marginTop: 0,
+        },
       }}
     >
+      {/* ── VISIBLE TABS ─────────────────────────────────────────────── */}
+
+      {/* 1. Home */}
       <Tabs.Screen
         name="index"
         options={{
           title: t("home") || "Home",
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="home-variant" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon icon="home-variant-outline" iconFocused="home-variant" color={color} focused={focused} />
           ),
           tabBarButtonTestID: "tab-home",
         }}
       />
+
+      {/* 2. Quran */}
+      <Tabs.Screen
+        name="quran"
+        options={{
+          title: "Quran",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon icon="book-open-outline" iconFocused="book-open" color={color} focused={focused} />
+          ),
+          tabBarButtonTestID: "tab-quran",
+        }}
+      />
+
+      {/* 3. Prayer */}
+      <Tabs.Screen
+        name="prayer"
+        options={{
+          title: "Prayer",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon icon="mosque" iconFocused="mosque" color={color} focused={focused} />
+          ),
+          tabBarButtonTestID: "tab-prayer",
+        }}
+      />
+
+      {/* 4. Discover */}
+      <Tabs.Screen
+        name="discover"
+        options={{
+          title: "Discover",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon icon="compass-outline" iconFocused="compass" color={color} focused={focused} />
+          ),
+          tabBarButtonTestID: "tab-discover",
+        }}
+      />
+
+      {/* 5. Me */}
+      <Tabs.Screen
+        name="me"
+        options={{
+          title: "Me",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon icon="account-circle-outline" iconFocused="account-circle" color={color} focused={focused} />
+          ),
+          tabBarButtonTestID: "tab-me",
+        }}
+      />
+
+      {/* ── HIDDEN LEGACY TABS (routes stay valid) ───────────────────── */}
       <Tabs.Screen
         name="favourites"
-        options={{
-          title: t("favourites"),
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="heart" size={size} color={color} />
-          ),
-          tabBarButtonTestID: "tab-favourites",
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="articles"
-        options={{
-          title: t("publications"),
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="text-box" size={size} color={color} />
-          ),
-          tabBarButtonTestID: "tab-articles",
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="emotions"
-        options={{
-          title: t("emotions"),
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="emoticon" size={size} color={color} />
-          ),
-          tabBarButtonTestID: "tab-emotions",
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="reminder"
-        options={{
-          title: t("reminders"),
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="bell" size={size} color={color} />
-          ),
-          tabBarButtonTestID: "tab-reminder",
-        }}
+        options={{ href: null }}
       />
     </Tabs>
   );

@@ -85,6 +85,7 @@ type AyahItemProps = {
   surahId: number;
   surahName: string;
   onLayoutY: (i: number, y: number) => void;
+  resolvedTransColor: string;
 };
 
 const AyahItem = React.memo(
@@ -114,6 +115,7 @@ const AyahItem = React.memo(
     surahId,
     surahName,
     onLayoutY,
+    resolvedTransColor,
   }: AyahItemProps) => {
     const words = useMemo(() => a.text.trim().split(/\s+/), [a.text]);
     return (
@@ -212,12 +214,12 @@ const AyahItem = React.memo(
           })}
         </Text>
         {showTransliteration && (
-          <Text style={[styles.translit, { color: rc.translit }]}>
+          <Text style={[styles.translit, { color: rc.translit, fontSize: Math.max(13, fontSize * 0.58), lineHeight: Math.max(21, fontSize * 0.58 * 1.72), letterSpacing: 0.15 }]}>
             {translitText}
           </Text>
         )}
         {showTranslation && (
-          <Text style={[styles.translation, { color: rc.trans }]}>{transText}</Text>
+          <Text style={[styles.translation, { color: resolvedTransColor, fontSize: Math.max(14, fontSize * 0.62), lineHeight: Math.max(22, fontSize * 0.62 * 1.72), letterSpacing: 0.15 }]}>{transText}</Text>
         )}
       </View>
     );
@@ -238,6 +240,7 @@ const AyahItem = React.memo(
       prev.translitText === next.translitText &&
       prev.rc === next.rc &&
       prev.colors === next.colors &&
+      prev.resolvedTransColor === next.resolvedTransColor &&
       prev.surahId === next.surahId &&
       prev.surahName === next.surahName
     );
@@ -277,7 +280,7 @@ export default function SurahDetail() {
 
   const player = useAudioPlayer(null, { updateInterval: 50 });
   const status = useAudioPlayerStatus(player);
-  const { colors, language } = useTheme();
+  const { colors, language, fontColor } = useTheme();
   const { t } = useTranslation(language);
   const { profile } = useAuth();
   const { showPremiumModal } = usePremiumModal();
@@ -1310,6 +1313,8 @@ export default function SurahDetail() {
     dark:    { bg: "#0D2137", card: "#112840", arabic: "#FFFFFF", trans: "#8BAFC8", translit: "#C5A880" },
   };
   const rc = READING_COLORS[readingMode];
+  // fontColor preference → override translation text colour
+  const resolvedTransColor = fontColor === "gold" ? "#D97706" : fontColor === "green" ? "#10B981" : fontColor === "sepia" ? "#B45309" : rc.trans;
 
   // Current Juz for display in header
   const currentJuz = arabic.length > 0 ? getJuzForAyah(Number(id), 1) : null;
@@ -1580,6 +1585,7 @@ export default function SurahDetail() {
                 surahId={Number(id)}
                 surahName={name}
                 onLayoutY={handleLayoutY}
+                resolvedTransColor={resolvedTransColor}
               />
             );
           }}
@@ -1866,8 +1872,8 @@ const styles = StyleSheet.create({
   ayahNum: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   ayahNumTxt: { fontWeight: "700" },
   arabic: { fontFamily: "NotoNaskhArabic", fontSize: 26, textAlign: "right", lineHeight: 48, marginTop: theme.spacing.md },
-  translation: { marginTop: theme.spacing.md, lineHeight: 22 },
-  translit: { fontSize: 14, fontStyle: "normal", lineHeight: 22, marginTop: 8 },
+  translation: { fontFamily: "Figtree_400Regular", fontSize: 15, marginTop: theme.spacing.md },
+  translit: { fontFamily: "Figtree_400Regular", fontSize: 14, fontStyle: "normal", marginTop: 8 },
   juzModal: { position: "absolute", bottom: 0, left: 0, right: 0, maxHeight: "70%", borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 32 },
   juzModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#33445566" },
   juzModalTitle: { fontSize: 17, fontWeight: "700" },

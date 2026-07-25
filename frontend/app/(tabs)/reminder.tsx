@@ -9,6 +9,7 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { getReminders, saveReminders, Reminder } from "@/src/storage";
+import { EmptyState } from "@/src/components/EmptyState";
 
 export default function ReminderScreen() {
   const [items, setItems] = useState<Reminder[]>([]);
@@ -107,8 +108,8 @@ export default function ReminderScreen() {
             value={title}
             onChangeText={setTitle}
             style={[styles.input, { backgroundColor: colors.surfaceTertiary, color: colors.onSurface }]}
-            testID="reminder-title-input"
-          />
+              testID="reminder-title-input"
+            />
           <View style={styles.timeRow}>
             <TextInput
               value={hour}
@@ -148,11 +149,12 @@ export default function ReminderScreen() {
       ) : null}
 
       {items.length === 0 && !adding ? (
-        <View style={styles.empty} testID="rem-empty">
-          <MaterialCommunityIcons name="bell-ring-outline" size={64} color={colors.brand} />
-          <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>No reminders</Text>
-          <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>Set daily reminders for adhkar, Quran reading, or any Du{`'`}a habit.</Text>
-        </View>
+        <EmptyState
+          icon="bell-ring-outline"
+          title="No Reminders Set"
+          subtitle={`Set daily reminders for Adhkar, Quran reading, or any Du'a habit. Tap + below to add one.`}
+          orbitIcons={["bell", "book-open-variant", "moon-waning-crescent", "hands-pray"]}
+        />
       ) : (
         <FlatList
           data={items}
