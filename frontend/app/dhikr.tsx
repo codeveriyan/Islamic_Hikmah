@@ -1,9 +1,10 @@
-﻿import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Dimensions,
   Animated, Pressable, ScrollView, Platform, Modal,
   TextInput, FlatList, KeyboardAvoidingView, Image, Easing
 } from 'react-native';
+import Reanimated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,7 +18,7 @@ import { usePremiumModal } from '@/src/PremiumModalContext';
 import { getDhikrCounts, setDhikrCount, recordDhikrSession, getDhikrStreak, DhikrDay } from '@/src/storage';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { theme } from '@/src/theme';
-import { CATEGORIES, DuaItem } from '@/src/data/duas';
+import type { DuaItem } from '@/src/data/duas';
 import { MORNING_EVENING_ADHKAR, AdhkarItem } from '@/src/data/adhkar';
 import { DHIKR_DATA } from '@/src/data/quran/dhikrData';
 import Svg, { Path } from 'react-native-svg';
@@ -553,8 +554,13 @@ export default function TasbihScreen() {
   // ─── Picker data ──────────────────────────────────────────────────────────
   const pickerItems = useMemo(() => {
     const allDhikr = allPhrases.map(p => ({ id: p.id, arabic: p.arabic, transliteration: p.transliteration, meaning: p.meaning, source: p.source }));
-    const mainDuas: DhikrEntry[] = CATEGORIES.filter(c => c.group === 'main').flatMap(c => c.duas.map((d: DuaItem) => ({ id: `dua-${d.id}`, arabic: d.arabic, transliteration: d.transliteration || d.title, meaning: d.translation, source: 'dua' as const })));
-    const otherDuas: DhikrEntry[] = CATEGORIES.filter(c => c.group === 'other').flatMap(c => c.duas.map((d: DuaItem) => ({ id: `dua-${d.id}`, arabic: d.arabic, transliteration: d.transliteration || d.title, meaning: d.translation, source: 'dua' as const })));
+    let mainDuas: DhikrEntry[] = [];
+    let otherDuas: DhikrEntry[] = [];
+    if (pickerTab === 'main' || pickerTab === 'other' || pickerTab === 'all') {
+      const categories: any[] = require('@/src/data/duas').CATEGORIES;
+      mainDuas = categories.filter(c => c.group === 'main').flatMap(c => c.duas.map((d: DuaItem) => ({ id: `dua-${d.id}`, arabic: d.arabic, transliteration: d.transliteration || d.title, meaning: d.translation, source: 'dua' as const })));
+      otherDuas = categories.filter(c => c.group === 'other').flatMap(c => c.duas.map((d: DuaItem) => ({ id: `dua-${d.id}`, arabic: d.arabic, transliteration: d.transliteration || d.title, meaning: d.translation, source: 'dua' as const })));
+    }
     const adhkar: DhikrEntry[] = MORNING_EVENING_ADHKAR.map((a: AdhkarItem) => ({ id: `adhkar-${a.id}`, arabic: a.arabic, transliteration: a.transliteration || '', meaning: a.translation, source: 'adhkar' as const }));
     const base = pickerTab === 'all' ? allDhikr : pickerTab === 'main' ? mainDuas : pickerTab === 'other' ? otherDuas : adhkar;
     if (!searchQuery.trim()) return base;

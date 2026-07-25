@@ -1,10 +1,11 @@
-﻿import { View, Text, StyleSheet, Pressable, ScrollView, Image, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Image, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { theme } from "@/src/theme";
 
 export const HADITH_BOOKS = [
@@ -73,29 +74,30 @@ export default function HadithIndexScreen() {
 
   const renderBookItem = (book: typeof HADITH_BOOKS[number]) => {
     // Dynamic localization fallback
-    const bookName = t(book.id) !== book.id ? t(book.id) : book.name;
-    const bookDetail = t(book.id + "Sub") !== (book.id + "Sub")
-      ? t(book.id + "Sub").replace("{total}", String(book.total))
-      : `By ${book.compiler} · ${book.total} narrations`;
+    const bookName = t(item.id) !== item.id ? t(item.id) : item.name;
+    const bookDetail = t(item.id + "Sub") !== (item.id + "Sub")
+      ? t(item.id + "Sub").replace("{total}", String(item.total))
+      : `By ${item.compiler} · ${item.total} narrations`;
 
     return (
-      <Pressable
-        key={book.id}
-        onPress={() => router.push(`/hadith/${book.id}` as any)}
-        style={({ pressed }) => [
+      <AnimatedPressable
+        key={item.id}
+        onPress={() => router.push(`/hadith/${item.id}` as any)}
+        style={[
           styles.card,
-          { backgroundColor: colors.surfaceSecondary },
-          pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+          {
+            backgroundColor: colors.surfaceSecondary,
+          },
         ]}
       >
-        {book.cover ? (
+        {item.cover ? (
           <Image 
-            source={book.cover} 
+            source={item.cover} 
             style={styles.bookCoverImage} 
             resizeMode="cover" 
           />
         ) : (
-          <DynamicBookCover name={book.name} color={book.color} />
+          <DynamicBookCover name={item.name} color={item.color} />
         )}
         <View style={{ flex: 1 }}>
           <Text style={[styles.bookName, { color: colors.onSurface }]}>{bookName}</Text>
@@ -104,7 +106,7 @@ export default function HadithIndexScreen() {
           </Text>
         </View>
         <MaterialCommunityIcons name="chevron-right" size={24} color={colors.onSurfaceMuted} />
-      </Pressable>
+      </AnimatedPressable>
     );
   };
 

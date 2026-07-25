@@ -17,6 +17,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { theme } from "@/src/theme";
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import {
   SEERAH_CHAPTERS,
   SeerahEra,
@@ -158,20 +159,19 @@ export default function SeerahIndexScreen() {
             const meta = translatedEraMeta[era];
             const isFullWidth = index === ERA_ORDER.length - 1;
             return (
-              <Pressable
+              <AnimatedPressable
                 key={era}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                   setSelectedEra(era);
                 }}
-                style={({ pressed }) => [
+                style={[
                   styles.eraCard,
                   { 
                     backgroundColor: colors.surfaceSecondary, 
                     borderColor: colors.border,
                     width: isFullWidth ? "100%" : "48%"
                   },
-                  pressed && { opacity: 0.85 }
                 ]}
               >
                 <View style={[styles.eraCardIconWrap, { backgroundColor: meta.color + "15" }]}>
@@ -179,7 +179,7 @@ export default function SeerahIndexScreen() {
                 </View>
                 <Text style={[styles.eraCardTitle, { color: colors.onSurface }]}>{meta.label}</Text>
                 <Text style={[styles.eraCardSub, { color: colors.onSurfaceMuted }]}>{meta.sub}</Text>
-              </Pressable>
+              </AnimatedPressable>
             );
           })}
         </View>

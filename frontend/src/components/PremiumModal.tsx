@@ -1,8 +1,14 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import {
-  View, Text, StyleSheet, Pressable, Modal, Animated,
+  View, Text, StyleSheet, Pressable, Modal,
   ScrollView, Dimensions, Alert
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+} from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -25,9 +31,9 @@ const PREMIUM_FEATURES = [
 ];
 
 const PLANS = [
-  { id: "monthly",  label: "Monthly",  price: "₹99",   period: "/month", badge: "" },
-  { id: "yearly",   label: "Yearly",   price: "₹199",  period: "/year",  badge: "Save 80%" },
-  { id: "lifetime", label: "Lifetime", price: "₹499",  period: "once",  badge: "Best Value" },
+  { id: "monthly",  label: "Monthly",  price: "₹199",   period: "/month", badge: "" },
+  { id: "yearly",   label: "Yearly",   price: "₹1199",  period: "/year",  badge: "Save 80%" },
+  { id: "lifetime", label: "Lifetime", price: "₹1499",  period: "once",  badge: "Best Value" },
 ];
 
 export default function PremiumModal() {
@@ -36,27 +42,29 @@ export default function PremiumModal() {
   const { colors } = useTheme();
   const router = useRouter();
 
-  const slideAnim = useRef(new Animated.Value(SCREEN_H)).current;
-  const fadeAnim  = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.92)).current;
+  const slideAnim = useSharedValue(SCREEN_H);
+  const fadeAnim  = useSharedValue(0);
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: fadeAnim.value,
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: slideAnim.value }],
+  }));
 
   const trialAvailable = !profile?.trialStartedAt && !!profile && profile.uid !== "guest-uid";
   const trialActive    = profile?.trialActive ?? false;
 
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
-        Animated.timing(fadeAnim,  { toValue: 1, duration: 240, useNativeDriver: true }),
-        Animated.spring(slideAnim, { toValue: 0, damping: 22, stiffness: 200, useNativeDriver: true }),
-        Animated.spring(scaleAnim, { toValue: 1, damping: 22, stiffness: 200, useNativeDriver: true }),
-      ]).start();
+      fadeAnim.value = withTiming(1, { duration: 240 });
+      slideAnim.value = withSpring(0, { damping: 22, stiffness: 200 });
     } else {
-      Animated.parallel([
-        Animated.timing(fadeAnim,  { toValue: 0, duration: 180, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: SCREEN_H, duration: 220, useNativeDriver: true }),
-      ]).start();
+      fadeAnim.value = withTiming(0, { duration: 180 });
+      slideAnim.value = withTiming(SCREEN_H, { duration: 220 });
     }
-  }, [visible, fadeAnim, scaleAnim, slideAnim]);
+  }, [visible]);
 
   const handleUpgrade = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -94,7 +102,7 @@ export default function PremiumModal() {
       onRequestClose={hidePremiumModal}
     >
       {/* Backdrop */}
-      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.backdrop, backdropStyle]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={hidePremiumModal} />
       </Animated.View>
 
@@ -102,7 +110,7 @@ export default function PremiumModal() {
       <Animated.View
         style={[
           styles.sheet,
-          { transform: [{ translateY: slideAnim }] }
+          sheetStyle,
         ]}
       >
         {/* Gradient header */}

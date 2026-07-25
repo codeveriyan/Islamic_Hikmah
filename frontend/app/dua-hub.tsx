@@ -1,4 +1,4 @@
-﻿import { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ImageBackground, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -10,6 +10,7 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { CATEGORIES } from "@/src/data/duas";
+import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md) / 2;
@@ -87,13 +88,9 @@ export default function DuaHubScreen() {
         renderItem={({ item: c }) => {
           const imgSource = CATEGORY_IMAGES[c.id] || { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" };
           return (
-            <Pressable
+            <AnimatedPressable
               onPress={() => handleCategoryPress(c.id)}
-              style={({ pressed }) => [
-                styles.card,
-                { width: CARD_WIDTH },
-                pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] }
-              ]}
+              style={[styles.card, { width: CARD_WIDTH }]}
             >
               <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
                 <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
@@ -102,38 +99,30 @@ export default function DuaHubScreen() {
                   </View>
                 </LinearGradient>
               </ImageBackground>
-            </Pressable>
+            </AnimatedPressable>
           );
         }}
         ListHeaderComponent={() => (<>
-        <Pressable
+        <AnimatedPressable
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
             router.push("/fortress" as any);
           }}
-          style={({ pressed }) => [
-            styles.fortressCard,
-            { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-            pressed && { opacity: 0.9, transform: [{ scale: 0.985 }] },
-          ]}
+          style={[styles.fortressCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
         >
           <LinearGradient colors={["#064E3B", "#0F766E"]} style={styles.fortressIcon}>
             <MaterialCommunityIcons name="shield-outline" size={34} color="#FFFFFF" />
           </LinearGradient>
           <View style={{ flex: 1 }}>
             <Text style={[styles.fortressTitle, { color: colors.onSurface }]}>Fortress of the Muslim</Text>
-            <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>132 chapters · 267 authentic du&apos;as</Text>
+            <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>132 chapters • 267 authentic du&apos;as</Text>
           </View>
           <MaterialCommunityIcons name="chevron-right" size={26} color={colors.onSurfaceMuted} />
-        </Pressable>
+        </AnimatedPressable>
 
-        <Pressable
+        <AnimatedPressable
           onPress={() => router.push("/names" as any)}
-          style={({ pressed }) => [
-            styles.fortressCard,
-            { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-            pressed && { opacity: 0.9, transform: [{ scale: 0.985 }] },
-          ]}
+          style={[styles.fortressCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
         >
           <LinearGradient colors={["#7C3AED", "#A855F7"]} style={styles.fortressIcon}>
             <MaterialCommunityIcons name="mosque-outline" size={32} color="#FFFFFF" />
@@ -143,7 +132,7 @@ export default function DuaHubScreen() {
             <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>Learn the 99 beautiful Names of Allah</Text>
           </View>
           <MaterialCommunityIcons name="chevron-right" size={26} color={colors.onSurfaceMuted} />
-        </Pressable>
+        </AnimatedPressable>
 
         {/* Tab Switcher */}
         <View style={[styles.segment, { backgroundColor: colors.surfaceSecondary }]}>

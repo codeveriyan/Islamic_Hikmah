@@ -8,7 +8,6 @@ import {
   FlatList,
   TextInput,
   Dimensions,
-  Animated,
   LayoutAnimation,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
