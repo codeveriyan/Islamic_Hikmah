@@ -9,7 +9,8 @@ import {
   TextInput, 
   Modal, 
   ActivityIndicator, 
-  Alert 
+  Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -27,7 +28,7 @@ import { getQuranBookmarks, getHadithBookmarks } from "@/src/storage";
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { profile, logout, updateProfileInfo } = useAuth();
+  const { profile, isGuest, logout, updateProfileInfo } = useAuth();
 
   // ── Journey Stats State ──
   const [journeyStats, setJourneyStats] = useState({
@@ -121,18 +122,36 @@ export default function ProfileScreen() {
 
   const handleLogout = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const performLogout = async () => {
+      try {
+        await logout();
+        router.replace("/auth/welcome");
+      } catch (error) {
+        console.error("Sign out failed:", error);
+        Alert.alert("Sign Out Failed", "Unable to sign out. Please try again.");
+      }
+    };
+
+    if (isGuest) {
+      await performLogout();
+      return;
+    }
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Are you sure you want to sign out?");
+      if (confirmed) await performLogout();
+      return;
+    }
+
     Alert.alert(
       "Sign Out",
       "Are you sure you want to sign out?",
       [
         { text: "Cancel", style: "cancel" },
         { 
-          text: "Sign Out", 
+          text: "Sign Out",
           style: "destructive",
-          onPress: async () => {
-            await logout();
-            router.replace("/auth/welcome");
-          }
+          onPress: performLogout,
         }
       ]
     );
@@ -294,7 +313,9 @@ export default function ProfileScreen() {
             <MaterialCommunityIcons name="shield-check-outline" size={20} color={colors.onSurfaceMuted} />
             <View style={styles.rowContent}>
               <Text style={[styles.rowLabel, { color: colors.onSurfaceMuted }]}>Security Provider</Text>
-              <Text style={[styles.rowVal, { color: colors.onSurface }]}>Firebase Secure Auth</Text>
+              <Text style={[styles.rowVal, { color: colors.onSurface }]}>
+                {isGuest ? "Local Guest Mode" : "Firebase Secure Auth"}
+              </Text>
             </View>
           </View>
 
@@ -304,7 +325,9 @@ export default function ProfileScreen() {
             <MaterialCommunityIcons name="cellphone-link" size={20} color={colors.onSurfaceMuted} />
             <View style={styles.rowContent}>
               <Text style={[styles.rowLabel, { color: colors.onSurfaceMuted }]}>Active Session Device</Text>
-              <Text style={[styles.rowVal, { color: colors.onSurface }]}>Current Mobile Device</Text>
+              <Text style={[styles.rowVal, { color: colors.onSurface }]}>
+                {Platform.OS === "web" ? "Current Browser" : "Current Mobile Device"}
+              </Text>
             </View>
           </View>
         </View>
@@ -401,8 +424,14 @@ export default function ProfileScreen() {
               pressed && { backgroundColor: colors.surfaceSecondary }
             ]}
           >
-            <MaterialCommunityIcons name="logout" size={20} color="#D32F2F" />
-            <Text style={[styles.btnTxt, { color: "#D32F2F" }]}>Sign Out</Text>
+            <MaterialCommunityIcons
+              name={isGuest ? "login" : "logout"}
+              size={20}
+              color={isGuest ? colors.brand : "#D32F2F"}
+            />
+            <Text style={[styles.btnTxt, { color: isGuest ? colors.brand : "#D32F2F" }]}>
+              {isGuest ? "Sign In or Create Account" : "Sign Out"}
+            </Text>
           </Pressable>
         </View>
       </ScrollView>

@@ -7,3 +7,7 @@ pydantic>=2.6.4
 pyjwt>=2.10.1
 motor==3.3.1
 requests>=2.31.0
+python-multipart>=0.0.9
+# Real Quran ASR. ffmpeg must also be installed on the server.
+torch==2.13.0
+transformers==4.57.6

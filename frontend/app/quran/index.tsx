@@ -139,6 +139,14 @@ export default function QuranIndex() {
         description: "Interactive tools to understand Quranic words and meanings."
       },
       {
+        id: "learn-ai",
+        title: "Learn Quran through AI",
+        subtitle: "Qaida · recitation coach · guided review",
+        icon: "creation",
+        color: "#7C3AED",
+        description: "Build reading foundations, record Al-Fatihah, and review word-level prototype feedback."
+      },
+      {
         id: "mutashabihat",
         title: "Mutashabihat",
         subtitle: "Quranic verses with similar wording",
@@ -160,7 +168,7 @@ export default function QuranIndex() {
 
         <View style={styles.dashboardGrid}>
           {selectorItems.map((item) => {
-            const isPremiumItem = item.id === "listen" || item.id === "learn" || item.id === "mutashabihat";
+            const isPremiumItem = item.id === "listen" || item.id === "learn" || item.id === "learn-ai" || item.id === "mutashabihat";
             const isLocked = isPremiumItem && profile?.tier !== "premium" && !profile?.trialActive;
             return (
               <Pressable
@@ -169,6 +177,10 @@ export default function QuranIndex() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
                   if (isLocked) {
                     showPremiumModal(item.title);
+                    return;
+                  }
+                  if (item.id === "learn-ai") {
+                    router.push("/quran/learn-ai" as any);
                     return;
                   }
                   setActiveTab(item.id as any);

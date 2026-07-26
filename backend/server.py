@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Header, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -11,6 +12,8 @@ from datetime import datetime, timedelta
 import jwt
 import requests
 from pymongo.errors import DuplicateKeyError
+from learn_quran.router import create_learn_quran_router
+from learn_quran.asr import AsrUnavailableError, get_quran_asr_service
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -517,6 +520,7 @@ async def start_trial_backend(current_user: dict = Depends(get_current_user_prof
     }
 
 # Include routes & CORS middleware configuration
+api_router.include_router(create_learn_quran_router(db, get_current_user_profile))
 app.include_router(api_router)
 
 app.add_middleware(
@@ -526,6 +530,19 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.on_event("startup")
+async def preload_quran_asr():
+    if os.environ.get("LEARN_QURAN_ASR_PRELOAD", "false").lower() != "true":
+        return
+    try:
+        await run_in_threadpool(get_quran_asr_service().ensure_loaded)
+    except AsrUnavailableError as exc:
+        # Keep non-ASR routes available, while /learn/status exposes the error
+        # and /learn/score continues to fail closed.
+        logger.error("Quran ASR preload failed: %s", exc)
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

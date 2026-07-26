@@ -23,6 +23,12 @@ const API_BASE_URL = (
   process.env.EXPO_PUBLIC_HADITH_API_BASE_URL
 )?.replace(/\/$/, "");
 
+// Local testing escape hatch. The __DEV__ guard means this can never unlock a
+// production bundle, even if the public environment flag is accidentally left
+// enabled in a developer's local .env file.
+const DEV_UNLOCK_PREMIUM =
+  __DEV__ && process.env.EXPO_PUBLIC_DEV_UNLOCK_PREMIUM === "true";
+
 interface BackendProfile {
   id: string;
   name: string;
@@ -131,7 +137,7 @@ function buildUserProfile(firebaseUser: User, backendProfile?: BackendProfile | 
     createdAt: toTimestamp(backendProfile?.created_at)
       || (firebaseUser.metadata.creationTime ? new Date(firebaseUser.metadata.creationTime).getTime() : Date.now()),
     status: backendProfile?.status || "Active",
-    tier: backendProfile?.tier === "premium" ? "premium" : "free",
+    tier: DEV_UNLOCK_PREMIUM || backendProfile?.tier === "premium" ? "premium" : "free",
     trialStartedAt,
     trialActive,
     trialDaysLeft,
@@ -199,7 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             photoURL: guestPhoto,
             createdAt: Date.now(),
             status: "Active",
-            tier: "free",
+            tier: DEV_UNLOCK_PREMIUM ? "premium" : "free",
             trialActive: false,
             trialDaysLeft: 0,
           });
@@ -226,8 +232,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Redirect to welcome screen if not logged in and not in auth screens
       router.replace("/auth/welcome");
     } else if (isLoggedIn && inAuthGroup) {
+      // Guests must be allowed to open login/register so they can upgrade
+      // their local guest session to a real Firebase account.
       if (isGuest) {
-        router.replace("/(tabs)");
+        return;
       } else if (user && !user.emailVerified) {
         router.replace("/auth/verify-email");
       } else {
@@ -285,7 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         emailVerified: true,
         createdAt: Date.now(),
         status: "Active",
-        tier: "free",
+        tier: DEV_UNLOCK_PREMIUM ? "premium" : "free",
         trialActive: false,
         trialDaysLeft: 0,
       });
@@ -355,15 +363,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setLoading(true);
     try {
-      setIsGuest(false);
-      await AsyncStorage.removeItem("hikmah:auth:guest");
-      await AsyncStorage.removeItem("hikmah:auth:guest_name");
-      await AsyncStorage.removeItem("hikmah:auth:guest_photo");
-      try {
+      await AsyncStorage.multiRemove([
+        "hikmah:auth:guest",
+        "hikmah:auth:guest_name",
+        "hikmah:auth:guest_photo",
+      ]);
+      if (auth.currentUser) {
         await signOut(auth);
-      } catch (err) {
-        console.warn("Firebase signOut error (ignoring):", err);
       }
+      // Guest logout does not trigger Firebase's auth-state listener, so clear
+      // all context state explicitly for both guest and Firebase sessions.
+      setUser(null);
+      setProfile(null);
+      setIsGuest(false);
     } finally {
       setLoading(false);
     }
