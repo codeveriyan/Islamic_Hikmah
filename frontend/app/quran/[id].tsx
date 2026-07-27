@@ -436,7 +436,7 @@ export default function SurahDetail() {
       }
       
       const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-      console.log("Downloading Tafsir to offline cache:", downloadUrl);
+      if (__DEV__) console.log("Downloading Tafsir to offline cache:", downloadUrl);
       const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
       if (dlResult.status === 200) {
         setDownloadedTafsirs(prev => ({ ...prev, [tafsirId]: true }));
@@ -491,7 +491,7 @@ export default function SurahDetail() {
             let response = null;
             try {
               const localUrl = window.location.origin + '/tafsirs/' + tafsirId + '.json';
-              console.log("Attempting local fetch:", localUrl);
+              if (__DEV__) console.log("Attempting local fetch:", localUrl);
               response = await fetch(localUrl);
             } catch (localErr) {
               console.warn("Local fetch failed, falling back to GitHub:", localErr);
@@ -499,7 +499,7 @@ export default function SurahDetail() {
 
             if (!response || !response.ok) {
               const githubUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-              console.log("Fetching from GitHub:", githubUrl);
+              if (__DEV__) console.log("Fetching from GitHub:", githubUrl);
               response = await fetch(githubUrl);
             }
 
@@ -533,7 +533,7 @@ export default function SurahDetail() {
             if (!jsonContent) {
               // Download JSON from raw GitHub
               const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-              console.log("Downloading Tafsir from:", downloadUrl);
+              if (__DEV__) console.log("Downloading Tafsir from:", downloadUrl);
               const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
               if (dlResult.status === 200) {
                 const raw = await FileSystem.readAsStringAsync(localUri);
@@ -1001,7 +1001,7 @@ export default function SurahDetail() {
         }
       } catch (err) {
         if (!active) return;
-        console.log("Offline or fetch failed, checking local storage for:", dlKey);
+        if (__DEV__) console.log("Offline or fetch failed, checking local storage for:", dlKey);
         // Load cached timings & local file for offline playback (only on native)
         if (!isWeb) {
           try {

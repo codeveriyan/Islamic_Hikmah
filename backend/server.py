@@ -5,12 +5,14 @@ from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import json
 from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Dict, Literal, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 import requests
+from cryptography import x509
 from pymongo.errors import DuplicateKeyError
 from learn_quran.router import create_learn_quran_router
 from learn_quran.asr import AsrUnavailableError, get_quran_asr_service
@@ -46,7 +48,7 @@ DEV_PREMIUM_EMAILS = {
     for email in os.environ.get("DEV_PREMIUM_EMAILS", "").split(",")
     if email.strip()
 }
-DEFAULT_CORS_ORIGINS = "http://localhost:8081,http://localhost:19006"
+DEFAULT_CORS_ORIGINS = "http://localhost:8080,http://localhost:8081,http://localhost:19006"
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.environ.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
@@ -89,6 +91,12 @@ class UserProfileResponse(BaseModel):
     trial_ends_at: Optional[datetime] = None
 
 # Database check & query helpers
+def _use_development_memory_store() -> bool:
+    """Skip MongoDB entirely only when the local-development fallback is explicit."""
+
+    return APP_ENV == "development" and ALLOW_IN_MEMORY_DB
+
+
 def _database_unavailable(operation: str, error: Exception) -> None:
     if ALLOW_IN_MEMORY_DB:
         logger.warning(
@@ -106,6 +114,8 @@ def _database_unavailable(operation: str, error: Exception) -> None:
 
 async def db_find_user_by_email(email: str):
     normalized_email = email.lower()
+    if _use_development_memory_store():
+        return IN_MEMORY_DB["users"].get(normalized_email)
     try:
         user = await db.users.find_one({"email": normalized_email})
         return user
@@ -114,6 +124,9 @@ async def db_find_user_by_email(email: str):
         return IN_MEMORY_DB["users"].get(normalized_email)
 
 async def db_insert_user(user_dict: dict):
+    if _use_development_memory_store():
+        IN_MEMORY_DB["users"][user_dict["email"].lower()] = user_dict
+        return
     try:
         await db.users.insert_one(user_dict)
     except Exception as e:
@@ -121,6 +134,11 @@ async def db_insert_user(user_dict: dict):
         IN_MEMORY_DB["users"][user_dict["email"].lower()] = user_dict
 
 async def db_update_user(email: str, update_dict: dict):
+    if _use_development_memory_store():
+        user = IN_MEMORY_DB["users"].get(email.lower())
+        if user:
+            user.update(update_dict)
+        return
     try:
         await db.users.update_one({"email": email.lower()}, {"$set": update_dict})
     except Exception as e:
@@ -131,6 +149,8 @@ async def db_update_user(email: str, update_dict: dict):
 
 
 async def db_find_payment_by_utr(utr: str):
+    if _use_development_memory_store():
+        return IN_MEMORY_DB["payments"].get(utr)
     try:
         return await db.payments.find_one({"_id": utr})
     except Exception as e:
@@ -139,6 +159,15 @@ async def db_find_payment_by_utr(utr: str):
 
 
 async def db_insert_payment(payment_dict: dict):
+    if _use_development_memory_store():
+        utr = payment_dict["_id"]
+        if utr in IN_MEMORY_DB["payments"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This UTR has already been submitted.",
+            )
+        IN_MEMORY_DB["payments"][utr] = payment_dict
+        return
     try:
         await db.payments.insert_one(payment_dict)
     except DuplicateKeyError:
@@ -156,31 +185,141 @@ async def db_insert_payment(payment_dict: dict):
             )
         IN_MEMORY_DB["payments"][utr] = payment_dict
 
-# Cache of Google public certificates for Firebase ID Token verification
-GOOGLE_CERTS = {}
-GOOGLE_CERTS_EXPIRE = datetime.min
+# Cache of Google public certificates for Firebase ID Token verification.
+# Persisting these public certificates lets a restarted local backend verify
+# tokens during a transient network outage without weakening signature checks.
+GOOGLE_CERTS_URL = (
+    "https://www.googleapis.com/robot/v1/metadata/x509/"
+    "securetoken@system.gserviceaccount.com"
+)
+FIREBASE_CERT_CACHE_PATH = Path(
+    os.environ.get(
+        "FIREBASE_CERT_CACHE_PATH",
+        ROOT_DIR / "data" / "firebase_public_certs_cache.json",
+    )
+)
+GOOGLE_CERTS: dict[str, str] = {}
+GOOGLE_CERTS_EXPIRE = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _certificate_is_current(certificate_pem: str, now: datetime) -> bool:
+    try:
+        certificate = x509.load_pem_x509_certificate(certificate_pem.encode("utf-8"))
+        return certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc
+    except (TypeError, ValueError):
+        return False
+
+
+def _validated_google_certificates(value: Any, now: datetime) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        kid: certificate
+        for kid, certificate in value.items()
+        if isinstance(kid, str)
+        and isinstance(certificate, str)
+        and _certificate_is_current(certificate, now)
+    }
+
+
+def _load_google_certificate_cache(now: datetime) -> None:
+    global GOOGLE_CERTS, GOOGLE_CERTS_EXPIRE
+    if not FIREBASE_CERT_CACHE_PATH.is_file():
+        return
+    try:
+        payload = json.loads(FIREBASE_CERT_CACHE_PATH.read_text(encoding="utf-8"))
+        certificates = _validated_google_certificates(payload.get("certificates"), now)
+        expires_at = datetime.fromisoformat(payload["expiresAt"])
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if certificates:
+            GOOGLE_CERTS = certificates
+            GOOGLE_CERTS_EXPIRE = expires_at
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        logger.warning("Ignoring an invalid Firebase certificate cache: %s", exc)
+
+
+def _save_google_certificate_cache(
+    certificates: dict[str, str],
+    expires_at: datetime,
+) -> None:
+    try:
+        FIREBASE_CERT_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = FIREBASE_CERT_CACHE_PATH.with_suffix(".tmp")
+        temporary_path.write_text(
+            json.dumps(
+                {
+                    "expiresAt": expires_at.isoformat(),
+                    "certificates": certificates,
+                }
+            ),
+            encoding="utf-8",
+        )
+        temporary_path.replace(FIREBASE_CERT_CACHE_PATH)
+    except OSError as exc:
+        logger.warning("Could not persist Firebase public certificates: %s", exc)
+
+
+def refresh_google_public_certificates() -> dict[str, str]:
+    global GOOGLE_CERTS, GOOGLE_CERTS_EXPIRE
+    now = datetime.now(timezone.utc)
+    response = requests.get(GOOGLE_CERTS_URL, timeout=10)
+    response.raise_for_status()
+    certificates = _validated_google_certificates(response.json(), now)
+    if not certificates:
+        raise ValueError("Google returned no currently valid Firebase certificates")
+
+    max_age = 3600
+    for part in response.headers.get("Cache-Control", "").split(","):
+        if "max-age" in part:
+            try:
+                max_age = max(60, int(part.split("=", 1)[1].strip()))
+            except (ValueError, IndexError):
+                pass
+    expires_at = now + timedelta(seconds=max_age)
+    GOOGLE_CERTS = certificates
+    GOOGLE_CERTS_EXPIRE = expires_at
+    _save_google_certificate_cache(certificates, expires_at)
+    return certificates
+
 
 def get_google_public_key(kid: str) -> Optional[str]:
-    global GOOGLE_CERTS, GOOGLE_CERTS_EXPIRE
-    now = datetime.utcnow()
-    if not GOOGLE_CERTS or now > GOOGLE_CERTS_EXPIRE:
+    now = datetime.now(timezone.utc)
+    if not GOOGLE_CERTS:
+        _load_google_certificate_cache(now)
+
+    if not GOOGLE_CERTS or now > GOOGLE_CERTS_EXPIRE or kid not in GOOGLE_CERTS:
         try:
-            res = requests.get("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com", timeout=10)
-            if res.status_code == 200:
-                GOOGLE_CERTS = res.json()
-                cc = res.headers.get("Cache-Control", "")
-                max_age = 3600
-                for part in cc.split(","):
-                    if "max-age" in part:
-                        try:
-                            max_age = int(part.split("=")[1].strip())
-                        except Exception:
-                            pass
-                GOOGLE_CERTS_EXPIRE = now + timedelta(seconds=max_age)
-        except Exception as e:
-            logger.warning(f"Failed to fetch Google public certificates: {e}")
-    
+            refresh_google_public_certificates()
+        except (requests.RequestException, ValueError) as exc:
+            if kid in GOOGLE_CERTS and _certificate_is_current(GOOGLE_CERTS[kid], now):
+                logger.warning(
+                    "Using a cached Firebase certificate because refresh failed: %s",
+                    exc,
+                )
+            else:
+                logger.warning("Failed to fetch Google public certificates: %s", exc)
+
     return GOOGLE_CERTS.get(kid)
+
+
+def prepare_firebase_verification_key(certificate_or_key: str | bytes) -> Any:
+    """Convert Google's cached X.509 certificate into an RSA public key.
+
+    Firebase's certificate endpoint returns PEM certificates. PyJWT 2.10 only
+    accepts PEM public keys, so passing the certificate string directly causes
+    every legitimate Firebase token to fail with InvalidKeyError.
+    """
+
+    key_bytes = (
+        certificate_or_key.encode("utf-8")
+        if isinstance(certificate_or_key, str)
+        else certificate_or_key
+    )
+    if b"-----BEGIN CERTIFICATE-----" in key_bytes:
+        return x509.load_pem_x509_certificate(key_bytes).public_key()
+    return certificate_or_key
+
 
 # Firebase ID token verification dependency
 async def get_current_user_profile(authorization: Optional[str] = Header(None)) -> dict:
@@ -205,14 +344,16 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
 
         decoded = jwt.decode(
             token,
-            public_key_pem,
+            prepare_firebase_verification_key(public_key_pem),
             algorithms=["RS256"],
             audience=FIREBASE_PROJECT_ID,
             issuer=f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}",
-            options={"require": ["exp", "iat", "sub"]},
+            options={"require": ["exp", "iat", "auth_time", "sub"]},
         )
         email = decoded.get("email")
         uid = decoded.get("user_id") or decoded.get("sub")
+        if not uid:
+            raise jwt.InvalidTokenError("Firebase user id is missing")
         if not email:
             raise jwt.InvalidTokenError("Email not present in Firebase token")
 

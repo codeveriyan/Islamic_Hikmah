@@ -5,8 +5,11 @@ from pathlib import Path
 
 import jwt
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from fastapi import HTTPException
 from pydantic import ValidationError
 
@@ -57,9 +60,21 @@ def test_known_hs256_tokens_are_not_accepted_as_application_credentials():
 
 def test_valid_firebase_rs256_token_creates_a_bound_free_account(monkeypatch):
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    public_key = private_key.public_key().public_bytes(
+    certificate_name = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, "securetoken test signer")]
+    )
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(certificate_name)
+        .issuer_name(certificate_name)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(server.datetime.utcnow() - server.timedelta(minutes=1))
+        .not_valid_after(server.datetime.utcnow() + server.timedelta(hours=1))
+        .sign(private_key, hashes.SHA256())
+    )
+    certificate_pem = certificate.public_bytes(
         encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
     now = int(time.time())
     token = jwt.encode(
@@ -70,6 +85,7 @@ def test_valid_firebase_rs256_token_creates_a_bound_free_account(monkeypatch):
             "user_id": "firebase-uid-1",
             "email": "test@example.com",
             "email_verified": True,
+            "auth_time": now - 5,
             "iat": now,
             "exp": now + 3600,
         },
@@ -79,7 +95,7 @@ def test_valid_firebase_rs256_token_creates_a_bound_free_account(monkeypatch):
     )
     inserted = []
 
-    monkeypatch.setattr(server, "get_google_public_key", lambda _kid: public_key)
+    monkeypatch.setattr(server, "get_google_public_key", lambda _kid: certificate_pem)
 
     async def find_user(_email):
         return None
@@ -96,6 +112,50 @@ def test_valid_firebase_rs256_token_creates_a_bound_free_account(monkeypatch):
     assert user["provider_id"] == "firebase-uid-1"
     assert user["tier"] == "free"
     assert inserted[0]["email"] == "test@example.com"
+
+
+def test_cached_firebase_certificate_survives_a_network_outage(monkeypatch, tmp_path):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    certificate_name = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, "cached securetoken signer")]
+    )
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(certificate_name)
+        .issuer_name(certificate_name)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(server.datetime.utcnow() - server.timedelta(minutes=1))
+        .not_valid_after(server.datetime.utcnow() + server.timedelta(hours=1))
+        .sign(private_key, hashes.SHA256())
+    )
+    certificate_pem = certificate.public_bytes(
+        encoding=serialization.Encoding.PEM,
+    ).decode("utf-8")
+    now = server.datetime.now(server.timezone.utc)
+
+    monkeypatch.setattr(
+        server,
+        "FIREBASE_CERT_CACHE_PATH",
+        tmp_path / "firebase_public_certs_cache.json",
+    )
+    monkeypatch.setattr(server, "GOOGLE_CERTS", {})
+    monkeypatch.setattr(
+        server,
+        "GOOGLE_CERTS_EXPIRE",
+        server.datetime.min.replace(tzinfo=server.timezone.utc),
+    )
+    server._save_google_certificate_cache(
+        {"cached-key": certificate_pem},
+        now - server.timedelta(seconds=1),
+    )
+
+    def offline(*_args, **_kwargs):
+        raise server.requests.ConnectionError("offline")
+
+    monkeypatch.setattr(server.requests, "get", offline)
+
+    assert server.get_google_public_key("cached-key") == certificate_pem
 
 
 def test_unsafe_custom_auth_routes_are_removed():
@@ -139,6 +199,28 @@ def test_database_failures_fail_closed_when_dev_fallback_is_disabled(monkeypatch
         server._database_unavailable("test operation", RuntimeError("database down"))
 
     assert error.value.status_code == 503
+
+
+def test_development_memory_store_skips_mongodb_without_timeout(monkeypatch):
+    class ForbiddenUsers:
+        async def find_one(self, *_args, **_kwargs):
+            raise AssertionError("Development memory mode must not query MongoDB")
+
+        async def insert_one(self, *_args, **_kwargs):
+            raise AssertionError("Development memory mode must not query MongoDB")
+
+    class ForbiddenDatabase:
+        users = ForbiddenUsers()
+
+    monkeypatch.setattr(server, "APP_ENV", "development")
+    monkeypatch.setattr(server, "ALLOW_IN_MEMORY_DB", True)
+    monkeypatch.setattr(server, "db", ForbiddenDatabase())
+    server.IN_MEMORY_DB["users"].pop("fast@example.com", None)
+
+    user = verified_user(email="fast@example.com")
+    run(server.db_insert_user(user))
+
+    assert run(server.db_find_user_by_email("FAST@example.com")) is user
 
 
 def test_payment_submission_is_pending_and_uses_server_owned_price(monkeypatch):

@@ -1,6 +1,8 @@
 import logging
 import os
+from pathlib import Path
 import shutil
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -43,6 +45,7 @@ class QuranAsrService:
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self._device = "not_loaded"
+        self._ffmpeg_executable: Optional[str] = None
 
     @property
     def enabled(self) -> bool:
@@ -55,6 +58,13 @@ class QuranAsrService:
     @property
     def model_revision(self) -> str:
         return os.environ.get("LEARN_QURAN_ASR_REVISION", DEFAULT_MODEL_REVISION)
+
+    @property
+    def local_files_only(self) -> bool:
+        return (
+            os.environ.get("LEARN_QURAN_ASR_LOCAL_FILES_ONLY", "false").lower()
+            == "true"
+        )
 
     def status(self) -> dict[str, Any]:
         if not self.enabled:
@@ -73,6 +83,7 @@ class QuranAsrService:
             "model": self.model_name,
             "revision": self.model_revision,
             "device": self._device,
+            "localFilesOnly": self.local_files_only,
             "error": self._load_error,
         }
 
@@ -93,9 +104,11 @@ class QuranAsrService:
                 raise AsrUnavailableError(self._load_error)
             self._loading = True
             try:
-                if shutil.which("ffmpeg") is None:
+                self._ffmpeg_executable = self._resolve_ffmpeg_executable()
+                if self._ffmpeg_executable is None:
                     raise AsrUnavailableError(
-                        "ffmpeg is required to decode phone recordings but was not found."
+                        "FFmpeg is required to decode phone recordings. Install "
+                        "imageio-ffmpeg or make ffmpeg available on PATH."
                     )
 
                 import torch
@@ -119,6 +132,7 @@ class QuranAsrService:
                     device=device,
                     dtype=torch_dtype,
                     trust_remote_code=False,
+                    model_kwargs={"local_files_only": self.local_files_only},
                 )
                 logger.info("Quran ASR model is ready")
             except AsrUnavailableError as exc:
@@ -134,6 +148,57 @@ class QuranAsrService:
             finally:
                 self._loading = False
 
+    @staticmethod
+    def _resolve_ffmpeg_executable() -> Optional[str]:
+        system_ffmpeg = shutil.which("ffmpeg")
+        if system_ffmpeg:
+            return system_ffmpeg
+
+        try:
+            import imageio_ffmpeg
+        except ImportError:
+            return None
+
+        bundled_ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        return bundled_ffmpeg if Path(bundled_ffmpeg).is_file() else None
+
+    def _decode_audio(self, audio_bytes: bytes):
+        """Decode uploads to the 16 kHz mono float waveform Whisper expects."""
+
+        if self._ffmpeg_executable is None:
+            raise AsrUnavailableError("The FFmpeg audio decoder is not available.")
+
+        process = subprocess.run(
+            [
+                self._ffmpeg_executable,
+                "-loglevel",
+                "error",
+                "-i",
+                "pipe:0",
+                "-f",
+                "f32le",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "pipe:1",
+            ],
+            input=audio_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if process.returncode != 0 or not process.stdout:
+            decoder_error = process.stderr.decode("utf-8", errors="replace").strip()
+            logger.warning("FFmpeg could not decode a recitation: %s", decoder_error)
+            raise AsrTranscriptionError(
+                "The recording could not be decoded. Please record the ayah again."
+            )
+
+        import numpy as np
+
+        return np.frombuffer(process.stdout, dtype=np.float32).copy()
+
     def transcribe(self, audio_bytes: bytes) -> AsrTranscript:
         self.ensure_loaded()
         if not audio_bytes:
@@ -141,12 +206,13 @@ class QuranAsrService:
 
         started = time.perf_counter()
         try:
+            waveform = self._decode_audio(audio_bytes)
             with self._inference_lock:
                 # This Quran checkpoint predates generation_config.json. Passing
                 # modern Whisper language/task arguments makes current
                 # Transformers reject its legacy configuration, so use the
                 # checkpoint's own learned decoder setup as its model card does.
-                output = self._pipeline(audio_bytes)
+                output = self._pipeline(waveform)
         except (OSError, RuntimeError, ValueError) as exc:
             logger.exception("Quran ASR inference failed")
             raise AsrTranscriptionError(

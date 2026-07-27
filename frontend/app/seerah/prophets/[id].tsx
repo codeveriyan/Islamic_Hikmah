@@ -129,7 +129,7 @@ export default function ProphetDetailScreen() {
         message: `${story.name} - ${story.title}\n\nRead full story on Islamic Hikmah App!`,
       });
     } catch (e) {
-      console.log("Share error:", e);
+      if (__DEV__) console.log("Share error:", e);
     }
   };
 
@@ -194,7 +194,7 @@ export default function ProphetDetailScreen() {
                 return prefix + data[0].map((x: any) => x[0]).join("");
               }
             } catch (e) {
-              console.log("Translation segment error:", e);
+              if (__DEV__) console.log("Translation segment error:", e);
             }
             return para;
           });

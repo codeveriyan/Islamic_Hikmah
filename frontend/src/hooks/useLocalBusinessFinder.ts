@@ -76,7 +76,7 @@ export const useLocalBusinessFinder = () => {
 
           // Check if cache is fresh (less than 24 hours old)
           if (Date.now() - timestamp < CACHE_DURATION) {
-            console.log(`✓ Using cached ${cacheKey}`);
+            if (__DEV__) console.log(`✓ Using cached ${cacheKey}`);
             return data;
           }
         }
@@ -96,7 +96,7 @@ export const useLocalBusinessFinder = () => {
           timestamp: Date.now(),
         };
         await AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData));
-        console.log(`✓ Cached ${cacheKey}`);
+        if (__DEV__) console.log(`✓ Cached ${cacheKey}`);
       } catch (err) {
         console.error(`Cache write error for ${cacheKey}:`, err);
       }
@@ -128,7 +128,7 @@ export const useLocalBusinessFinder = () => {
         }
 
         // Search from API
-        console.log('🔍 Searching for masjids...');
+        if (__DEV__) console.log('🔍 Searching for masjids...');
         const rawResults = await searchMasjids(
           location.latitude,
           location.longitude,
@@ -145,7 +145,7 @@ export const useLocalBusinessFinder = () => {
         await saveCachedData(cacheKey, verified);
         setMasjids(verified);
 
-        console.log(`✓ Found ${verified.length} verified masjids`);
+        if (__DEV__) console.log(`✓ Found ${verified.length} verified masjids`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         setError(errorMsg);
@@ -180,7 +180,7 @@ export const useLocalBusinessFinder = () => {
         }
 
         // Search from API
-        console.log('🔍 Searching for halal food...');
+        if (__DEV__) console.log('🔍 Searching for halal food...');
         const rawResults = await searchHalalFood(
           location.latitude,
           location.longitude,
@@ -197,7 +197,7 @@ export const useLocalBusinessFinder = () => {
         await saveCachedData(cacheKey, verified);
         setHalalFood(verified);
 
-        console.log(`✓ Found ${verified.length} verified halal restaurants`);
+        if (__DEV__) console.log(`✓ Found ${verified.length} verified halal restaurants`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         setError(errorMsg);
@@ -232,7 +232,7 @@ export const useLocalBusinessFinder = () => {
         }
 
         // Search from API
-        console.log('🔍 Searching for halal butchers...');
+        if (__DEV__) console.log('🔍 Searching for halal butchers...');
         const rawResults = await searchHalalButchers(
           location.latitude,
           location.longitude,
@@ -249,7 +249,7 @@ export const useLocalBusinessFinder = () => {
         await saveCachedData(cacheKey, verified);
         setButchers(verified);
 
-        console.log(`✓ Found ${verified.length} verified halal butchers`);
+        if (__DEV__) console.log(`✓ Found ${verified.length} verified halal butchers`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
         setError(errorMsg);
@@ -281,7 +281,7 @@ export const useLocalBusinessFinder = () => {
       );
 
       await AsyncStorage.multiRemove(cacheKeys);
-      console.log('✓ Cache cleared');
+      if (__DEV__) console.log('✓ Cache cleared');
     } catch (err) {
       console.error('Cache clear error:', err);
     }

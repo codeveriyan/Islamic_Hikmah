@@ -29,6 +29,21 @@ def test_learn_score_route_is_mounted_under_existing_api_router():
     assert "/api/learn/status" in paths
 
 
+def test_localhost_web_origin_can_preflight_scoring_upload():
+    client = TestClient(server.app)
+    response = client.options(
+        "/api/learn/score",
+        headers={
+            "Origin": "http://localhost:8080",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:8080"
+
+
 def test_mock_score_is_explicit_and_uses_server_owned_quran_text():
     result = build_mock_score(audio_size=2048, surah_id=1, ayah_id=1)
 

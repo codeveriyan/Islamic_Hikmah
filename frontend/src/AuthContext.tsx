@@ -14,14 +14,18 @@ import {
   signInWithPopup
 } from "firebase/auth";
 import { auth } from "./firebase";
+import { API_BASE_URL } from "./apiBaseUrl";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
-
-const API_BASE_URL = (
-  process.env.EXPO_PUBLIC_API_BASE_URL ||
-  process.env.EXPO_PUBLIC_HADITH_API_BASE_URL
-)?.replace(/\/$/, "");
+// GoogleSignin is a native module — it is NOT available in Expo Go.
+// We lazy-load it with a try-catch so Expo Go doesn't crash at startup.
+let GoogleSignin: any = null;
+try {
+  GoogleSignin = require("@react-native-google-signin/google-signin").GoogleSignin;
+} catch (e) {
+  // Running in Expo Go or a build without native Google Sign-In support
+  GoogleSignin = null;
+}
 
 // Local testing escape hatch. The __DEV__ guard means this can never unlock a
 // production bundle, even if the public environment flag is accidentally left
@@ -43,8 +47,8 @@ interface BackendProfile {
   trial_ends_at?: string | null;
 }
 
-// If on native, configure Google Sign-In dynamically using Web Client ID
-if (Platform.OS !== "web") {
+// If on native and GoogleSignin module is available, configure it
+if (Platform.OS !== "web" && GoogleSignin) {
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
   if (webClientId) {
     GoogleSignin.configure({
@@ -315,12 +319,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.removeItem("hikmah:auth:guest_name");
         await AsyncStorage.removeItem("hikmah:auth:guest_photo");
       } else {
+        // Native Google Sign-In — requires a custom development build
+        if (!GoogleSignin) {
+          Alert.alert(
+            "Google Sign-In Unavailable",
+            "Google Sign-In requires a custom development build and is not supported in Expo Go. Please use email/password login instead."
+          );
+          setLoading(false);
+          return;
+        }
+
         const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
         if (!webClientId) {
           Alert.alert(
-          "Google Sign-In Not Configured",
-          "Google Sign-In is not yet set up for this build. Please use email/password login or try again later."
-        );
+            "Google Sign-In Not Configured",
+            "Google Sign-In is not yet set up for this build. Please use email/password login or try again later."
+          );
           setLoading(false);
           return;
         }
@@ -328,7 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Native Google Sign-In
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
         const userInfo = await GoogleSignin.signIn();
-        
+
         const idToken = (userInfo as any)?.data?.idToken || (userInfo as any)?.idToken;
         if (!idToken) {
           throw new Error("No ID Token returned from Google Sign-In.");
@@ -336,7 +350,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const credential = GoogleAuthProvider.credential(idToken);
         const cred = await signInWithCredential(auth, credential);
-        
+
         setUser(cred.user);
         setIsGuest(false);
         await AsyncStorage.removeItem("hikmah:auth:guest");

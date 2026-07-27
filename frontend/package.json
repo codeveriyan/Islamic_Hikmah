@@ -9,7 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:duas": "node ./scripts/verify-dua-catalog.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "6.1.2",

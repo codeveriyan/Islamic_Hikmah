@@ -157,7 +157,7 @@ export const searchMasjids = async (
   radiusKm: number = 5
 ): Promise<GooglePlace[]> => {
   if (!GOOGLE_MAPS_API_KEY) {
-    console.log("No Google Maps API Key found, returning consolidated OSM + local mock masjids");
+    if (__DEV__) console.log("No Google Maps API Key found, returning consolidated OSM + local mock masjids");
     const osmResults = await fetchOsmFallback(latitude, longitude, "mosque OR masjid", radiusKm);
     return deduplicatePlaces(osmResults);
   }
@@ -204,7 +204,7 @@ export const searchHalalFood = async (
   radiusKm: number = 3
 ): Promise<GooglePlace[]> => {
   if (!GOOGLE_MAPS_API_KEY) {
-    console.log("No Google Maps API Key found, returning consolidated OSM + local mock food places");
+    if (__DEV__) console.log("No Google Maps API Key found, returning consolidated OSM + local mock food places");
     const osmResults = await fetchOsmFallback(latitude, longitude, "halal restaurant OR halal food", radiusKm);
     return deduplicatePlaces(osmResults);
   }
@@ -260,7 +260,7 @@ export const searchHalalButchers = async (
   radiusKm: number = 3
 ): Promise<GooglePlace[]> => {
   if (!GOOGLE_MAPS_API_KEY) {
-    console.log("No Google Maps API Key found, returning consolidated OSM + local mock butchers");
+    if (__DEV__) console.log("No Google Maps API Key found, returning consolidated OSM + local mock butchers");
     const osmResults = await fetchOsmFallback(latitude, longitude, "halal butcher OR halal meat OR halal chicken OR chicken stall", radiusKm);
     return deduplicatePlaces(osmResults);
   }

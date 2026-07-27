@@ -1,4 +1,4 @@
-﻿import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Alert,
   FlatList,
@@ -46,7 +46,10 @@ type ScanResult = {
 };
 
 const HISTORY_KEY = "hikmah:halal-scanner:history:v1";
-const OCR_SPACE_API_KEY = process.env.EXPO_PUBLIC_OCR_SPACE_API_KEY || "helloworld";
+const OCR_SPACE_API_KEY = process.env.EXPO_PUBLIC_OCR_SPACE_API_KEY ?? "";
+if (__DEV__ && !OCR_SPACE_API_KEY) {
+  console.warn("[HalalScanner] EXPO_PUBLIC_OCR_SPACE_API_KEY is not set. Photo scanning will fail. Add it to your .env file.");
+}
 
 const RULES: IngredientRule[] = [
   { term: "pork", status: "haram", reason: "Pork and pork-derived ingredients are not halal." },

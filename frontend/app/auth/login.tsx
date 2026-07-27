@@ -42,7 +42,7 @@ export default function LoginScreen() {
       await login(email, password);
       // Success: AuthContext redirection logic will handle route navigation
     } catch (err: any) {
-      console.error("Login error details:", err);
+      if (__DEV__) console.error("Login error details:", err);
       let msg = err.message || "Invalid email or password.";
       if (err.code === "auth/user-not-found") {
         msg = "No user found with this email.";

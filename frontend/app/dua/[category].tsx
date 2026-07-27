@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ImageBackground, Platform, Share, Dimensions, FlatList, Vibration, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ImageBackground, Platform, Share, Dimensions, FlatList, Vibration, Modal, PanResponder } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -20,7 +20,7 @@ import {
 import { transliterateToTamil } from "@/src/transliterator";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 export default function DuaCategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
@@ -38,6 +38,9 @@ export default function DuaCategoryScreen() {
   const [activeDuaIndex, setActiveDuaIndex] = useState<number>(0);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [readerViewportHeight, setReaderViewportHeight] = useState<number | null>(
+    Platform.OS === "web" ? Math.max(240, SCREEN_HEIGHT - 205) : null,
+  );
   
   // Audio state
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -56,10 +59,108 @@ export default function DuaCategoryScreen() {
   const status = useAudioPlayerStatus(player);
   const webAudioInstance = useRef<HTMLAudioElement | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoAdvanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const webSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const webWheelNavigationAtRef = useRef(0);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      if (autoAdvanceTimeoutRef.current) clearTimeout(autoAdvanceTimeoutRef.current);
+    };
+  }, []);
 
   const currentTime = Platform.OS === "web" ? webCurrentTime : (status?.currentTime || 0);
   const duration = Platform.OS === "web" ? webDuration : (status?.duration || 0);
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  const [isPlayerBarOpen, setIsPlayerBarOpen] = useState(false);
+  const [isAudioPaused, setIsAudioPaused] = useState(false);
+  const [loopMode, setLoopMode] = useState<"1x" | "2x" | "3x" | "infinity">("1x");
+  const [loopCountRemaining, setLoopCountRemaining] = useState(0);
+
+  const holdSeekTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const rewind5Sec = () => {
+    const validCurrent = (typeof currentTime === "number" && Number.isFinite(currentTime)) ? currentTime : 0;
+    const targetSeconds = Math.max(0, validCurrent - 5);
+    if (Platform.OS === "web") {
+      if (webAudioInstance.current && Number.isFinite(webAudioInstance.current.duration)) {
+        webAudioInstance.current.currentTime = Math.min(webAudioInstance.current.duration, targetSeconds);
+      }
+    } else {
+      player.seekTo(targetSeconds);
+    }
+  };
+
+  const fastForward5Sec = () => {
+    const validCurrent = (typeof currentTime === "number" && Number.isFinite(currentTime)) ? currentTime : 0;
+    if (Platform.OS === "web") {
+      if (webAudioInstance.current && Number.isFinite(webAudioInstance.current.duration)) {
+        const targetSeconds = Math.min(webAudioInstance.current.duration, validCurrent + 5);
+        if (Number.isFinite(targetSeconds)) {
+          webAudioInstance.current.currentTime = targetSeconds;
+        }
+      }
+    } else {
+      const validDuration = (typeof duration === "number" && Number.isFinite(duration) && duration > 0) ? duration : 9999;
+      player.seekTo(Math.min(validDuration, validCurrent + 5));
+    }
+  };
+
+  const startContinuousRewind = () => {
+    rewind5Sec();
+    if (holdSeekTimerRef.current) clearInterval(holdSeekTimerRef.current);
+    holdSeekTimerRef.current = setInterval(() => {
+      rewind5Sec();
+    }, 200);
+  };
+
+  const startContinuousFastForward = () => {
+    fastForward5Sec();
+    if (holdSeekTimerRef.current) clearInterval(holdSeekTimerRef.current);
+    holdSeekTimerRef.current = setInterval(() => {
+      fastForward5Sec();
+    }, 200);
+  };
+
+  const stopContinuousSeek = () => {
+    if (holdSeekTimerRef.current) {
+      clearInterval(holdSeekTimerRef.current);
+      holdSeekTimerRef.current = null;
+    }
+  };
+
+  const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+  const cycleSpeed = () => {
+    const currentIdx = speeds.indexOf(playbackSpeed);
+    const nextSpeed = speeds[(currentIdx + 1) % speeds.length];
+    setPlaybackSpeed(nextSpeed);
+    if (Platform.OS === "web") {
+      if (webAudioInstance.current) webAudioInstance.current.playbackRate = nextSpeed;
+    } else {
+      player.setPlaybackRate(nextSpeed);
+    }
+  };
+
+  const cycleLoopMode = () => {
+    if (loopMode === "1x") {
+      setLoopMode("2x");
+      setLoopCountRemaining(1);
+    } else if (loopMode === "2x") {
+      setLoopMode("3x");
+      setLoopCountRemaining(2);
+    } else if (loopMode === "3x") {
+      setLoopMode("infinity");
+      setIsLooping(true);
+    } else {
+      setLoopMode("1x");
+      setIsLooping(false);
+      setLoopCountRemaining(0);
+    }
+  };
 
   const stopCurrentAudio = () => {
     if (Platform.OS === "web") {
@@ -72,6 +173,8 @@ export default function DuaCategoryScreen() {
     }
     setPlayingId(null);
     setIsPlayingAll(false);
+    setIsAudioPaused(false);
+    setIsPlayerBarOpen(false);
   };
 
   const switchCategory = (nextCategoryId: string) => {
@@ -174,7 +277,7 @@ export default function DuaCategoryScreen() {
   // Handle scroll index sync when switching into reader mode
   useEffect(() => {
     if (viewMode === 'reader' && cat) {
-      setTimeout(() => {
+      scrollTimeoutRef.current = setTimeout(() => {
         flatListRef.current?.scrollToIndex({ index: activeDuaIndex, animated: false });
       }, 100);
       
@@ -183,6 +286,9 @@ export default function DuaCategoryScreen() {
         playDua(cat.duas[activeDuaIndex]);
       }
     }
+    return () => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
   }, [viewMode]);
 
   // When index changes via swipe, play if already playing
@@ -193,14 +299,21 @@ export default function DuaCategoryScreen() {
   }, [activeDuaIndex]);
 
   const handleAudioFinished = () => {
-    if (isLooping) return;
+    if (loopMode === "infinity") {
+      if (cat) playDua(cat.duas[activeDuaIndex]);
+      return;
+    }
+    if (loopCountRemaining > 0) {
+      setLoopCountRemaining(prev => prev - 1);
+      if (cat) playDua(cat.duas[activeDuaIndex]);
+      return;
+    }
     
     if (isPlayingAll && cat) {
       if (activeDuaIndex + 1 < cat.duas.length) {
         const nextIdx = activeDuaIndex + 1;
         setActiveDuaIndex(nextIdx);
         flatListRef.current?.scrollToIndex({ index: nextIdx, animated: true });
-        // Let effect handle autoplay
       } else {
         setIsPlayingAll(false);
         setPlayingId(null);
@@ -210,86 +323,149 @@ export default function DuaCategoryScreen() {
     }
   };
 
-  const fallbackToSpeechSynthesis = (text: string, id: string) => {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "ar";
-      utterance.rate = 0.8;
-      
-      const voices = window.speechSynthesis.getVoices();
-      const arabicVoice = voices.find((v: any) => v.lang.startsWith("ar"));
-      if (arabicVoice) utterance.voice = arabicVoice;
-      
-      utterance.onstart = () => setPlayingId(id);
-      utterance.onend = () => {
-        setPlayingId(null);
-        handleAudioFinished();
-      };
-      utterance.onerror = () => setPlayingId(null);
-      
-      window.speechSynthesis.speak(utterance);
-    } else {
-      setPlayingId(null);
-    }
-  };
-
-  const playDua = async (d: any) => {
-    if (playingId === d.id) {
-      if (Platform.OS === "web") {
-        if (webAudioInstance.current) {
-          webAudioInstance.current.pause();
-        }
-        window.speechSynthesis?.cancel();
-      } else {
-        player.pause();
-      }
+  const playSpeechSynthesis = (text: string, id: string, rate: number = 0.85) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
       setPlayingId(null);
       return;
     }
 
-    const cleanText = d.arabic.replace(/[^\u0600-\u06FF\s]/g, "");
-    const audioUrl = d.audio || `https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
+    // Cancel any previous speech
+    window.speechSynthesis.cancel();
 
+    // MUST call speak() immediately (within user gesture context).
+    // setTimeout breaks the browser's autoplay/gesture policy and silences audio.
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "ar-SA";
+    utterance.rate = rate;
+    utterance.pitch = 1.0;
+
+    // Try to assign Arabic voice if already loaded — don't wait for it
+    const voices = window.speechSynthesis.getVoices();
+    const arabicVoice = voices.find((v: SpeechSynthesisVoice) => v.lang.startsWith("ar")) || null;
+    if (arabicVoice) utterance.voice = arabicVoice;
+
+    // Set playing immediately so player bar shows active
+    setPlayingId(id);
+    setIsAudioPaused(false);
+
+    utterance.onstart = () => {
+      setPlayingId(id);
+      setIsAudioPaused(false);
+    };
+    utterance.onend = () => {
+      setPlayingId(null);
+      handleAudioFinished();
+    };
+    utterance.onerror = (e) => {
+      console.warn("SpeechSynthesis error:", e.error);
+      setPlayingId(null);
+    };
+
+    // Speak immediately — this MUST stay in the user gesture call stack
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const fallbackToSpeechSynthesis = (text: string, id: string) => {
+    playSpeechSynthesis(text, id, playbackSpeed * 0.85);
+  };
+
+
+  const playDua = async (d: any) => {
+    setIsPlayerBarOpen(true);
+
+    if (playingId === d.id && !isAudioPaused) {
+      // Pause
+      if (Platform.OS === "web") {
+        if (webAudioInstance.current && !webAudioInstance.current.paused) {
+          webAudioInstance.current.pause();
+        }
+        window.speechSynthesis?.pause();
+      } else {
+        player.pause();
+      }
+      setIsAudioPaused(true);
+      return;
+    }
+
+    if (playingId === d.id && isAudioPaused) {
+      // Resume
+      if (Platform.OS === "web") {
+        if (webAudioInstance.current && webAudioInstance.current.paused) {
+          webAudioInstance.current.play().catch(() => {});
+        } else {
+          window.speechSynthesis?.resume();
+        }
+      } else {
+        player.play();
+      }
+      setIsAudioPaused(false);
+      return;
+    }
+
+    // New dua — stop previous
     if (Platform.OS === "web") {
       if (webAudioInstance.current) {
         webAudioInstance.current.pause();
+        webAudioInstance.current.src = "";
+        webAudioInstance.current = null;
       }
       window.speechSynthesis?.cancel();
-      
-      try {
-        const audio = new Audio();
-        (audio as any).referrerPolicy = "no-referrer";
-        audio.src = audioUrl;
-        audio.playbackRate = playbackSpeed;
-        audio.loop = isLooping;
-        webAudioInstance.current = audio;
+    }
 
-        audio.onplay = () => {
-          setPlayingId(d.id);
-        };
-        audio.onended = () => {
-          setPlayingId(null);
-          handleAudioFinished();
-        };
-        audio.onerror = () => {
-          console.warn("Audio element failed, falling back to SpeechSynthesis");
-          fallbackToSpeechSynthesis(cleanText, d.id);
-        };
+    setIsAudioPaused(false);
+    const cleanText = d.arabic.replace(/[^\u0600-\u06FF\s]/g, "");
 
-        audio.ontimeupdate = () => {
-          setWebCurrentTime(audio.currentTime);
-        };
-        audio.onloadedmetadata = () => {
-          setWebDuration(audio.duration);
-        };
+    if (Platform.OS === "web") {
+      const audioUrl = d.audio || `https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
+      const audio = new Audio();
+      let fallbackStarted = false;
 
-        await audio.play();
-      } catch (err) {
-        console.warn("Audio play promise rejected, trying SpeechSynthesis fallback:", err);
+      const startFallback = () => {
+        if (fallbackStarted) return;
+        fallbackStarted = true;
+        if (webAudioInstance.current === audio) {
+          webAudioInstance.current = null;
+        }
         fallbackToSpeechSynthesis(cleanText, d.id);
+      };
+
+      // Restore the previously working browser path: play the actual recording
+      // immediately while this function is still inside the user's click/tap.
+      (audio as HTMLAudioElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+      audio.src = audioUrl;
+      audio.playbackRate = playbackSpeed;
+      audio.loop = isLooping;
+      webAudioInstance.current = audio;
+      setWebCurrentTime(0);
+      setWebDuration(0);
+
+      audio.onplay = () => {
+        setPlayingId(d.id);
+        setIsAudioPaused(false);
+      };
+      audio.onloadedmetadata = () => {
+        setWebDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+      };
+      audio.ontimeupdate = () => {
+        setWebCurrentTime(audio.currentTime);
+      };
+      audio.onended = () => {
+        setPlayingId(null);
+        handleAudioFinished();
+      };
+      audio.onerror = () => {
+        console.warn("Dua recording failed; using browser speech fallback.");
+        startFallback();
+      };
+
+      try {
+        await audio.play();
+      } catch (error) {
+        console.warn("Dua recording could not start; using browser speech fallback.", error);
+        startFallback();
       }
     } else {
+      const audioUrl = d.audio || `https://translate.google.com/translate_tts?ie=UTF-8&tl=ar&client=tw-ob&q=${encodeURIComponent(cleanText.slice(0, 100))}`;
       player.replace({ uri: audioUrl });
       player.loop = isLooping;
       player.setPlaybackRate(playbackSpeed);
@@ -298,16 +474,82 @@ export default function DuaCategoryScreen() {
     }
   };
 
-  const handleSeek = (e: any) => {
-    if (progressWidth > 0 && duration) {
-      const pct = Math.max(0, Math.min(1, e.nativeEvent.locationX / progressWidth));
-      const targetSeconds = pct * duration;
-      if (Platform.OS === "web") {
-        if (webAudioInstance.current) {
-          webAudioInstance.current.currentTime = targetSeconds;
+  const seekTrackRef = useRef<View>(null);
+  const [isDraggingSeek, setIsDraggingSeek] = useState(false);
+  const [dragPercent, setDragPercent] = useState<number | null>(null);
+
+  const handleSeekFromX = (pageX: number) => {
+    if (!progressWidth || progressWidth <= 0) return;
+    if (seekTrackRef.current) {
+      seekTrackRef.current.measure((fx, fy, width, height, px, py) => {
+        if (width > 0) {
+          const relativeX = Math.max(0, Math.min(width, pageX - px));
+          const pct = relativeX / width;
+          setDragPercent(pct * 100);
+          
+          const validDuration = Platform.OS === "web" 
+            ? (webAudioInstance.current && Number.isFinite(webAudioInstance.current.duration) ? webAudioInstance.current.duration : 0)
+            : (typeof duration === "number" && Number.isFinite(duration) ? duration : 0);
+
+          if (validDuration > 0) {
+            const targetSeconds = pct * validDuration;
+            if (Number.isFinite(targetSeconds)) {
+              if (Platform.OS === "web") {
+                if (webAudioInstance.current) {
+                  webAudioInstance.current.currentTime = Math.min(validDuration, Math.max(0, targetSeconds));
+                }
+              } else {
+                player.seekTo(targetSeconds);
+              }
+            }
+          }
         }
-      } else {
-        player.seekTo(targetSeconds);
+      });
+    }
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        setIsDraggingSeek(true);
+        handleSeekFromX(evt.nativeEvent.pageX);
+      },
+      onPanResponderMove: (evt) => {
+        handleSeekFromX(evt.nativeEvent.pageX);
+      },
+      onPanResponderRelease: (evt) => {
+        handleSeekFromX(evt.nativeEvent.pageX);
+        setIsDraggingSeek(false);
+        setDragPercent(null);
+      },
+      onPanResponderTerminate: () => {
+        setIsDraggingSeek(false);
+        setDragPercent(null);
+      },
+    })
+  ).current;
+
+  const handleSeek = (e: any) => {
+    const validDuration = Platform.OS === "web" 
+      ? (webAudioInstance.current && Number.isFinite(webAudioInstance.current.duration) ? webAudioInstance.current.duration : 0)
+      : (typeof duration === "number" && Number.isFinite(duration) ? duration : 0);
+
+    if (progressWidth > 0 && validDuration > 0) {
+      const locationX = e.nativeEvent?.locationX ?? e.nativeEvent?.offsetX ?? 0;
+      if (typeof locationX === "number" && Number.isFinite(locationX)) {
+        const pct = Math.max(0, Math.min(1, locationX / progressWidth));
+        const targetSeconds = pct * validDuration;
+        if (Number.isFinite(targetSeconds)) {
+          if (Platform.OS === "web") {
+            if (webAudioInstance.current) {
+              webAudioInstance.current.currentTime = Math.min(validDuration, Math.max(0, targetSeconds));
+            }
+          } else {
+            player.seekTo(targetSeconds);
+          }
+        }
       }
     }
   };
@@ -325,13 +567,14 @@ export default function DuaCategoryScreen() {
             } catch (e) {}
           }
           // Auto advance to the next dua after 800ms
-          setTimeout(() => {
+          autoAdvanceTimeoutRef.current = setTimeout(() => {
             if (activeDuaIndex + 1 < cat.duas.length) {
               const nextIdx = activeDuaIndex + 1;
               setActiveDuaIndex(nextIdx);
               flatListRef.current?.scrollToIndex({ index: nextIdx, animated: true });
             }
           }, 800);
+          // Cleanup on unmount handled by separate useEffect
         }
         return { ...prev, [id]: next };
       } else {
@@ -366,7 +609,7 @@ export default function DuaCategoryScreen() {
       const newTranslations: Record<string, { translation: string; transliteration?: string }> = {};
       try {
         await Promise.all(
-          cat.duas.map(async (d) => {
+          cat.duas.map(async (d: any) => {
             const resTrans = await fetch(
               `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${language}&dt=t&q=${encodeURIComponent(d.translation)}`
             );
@@ -457,16 +700,68 @@ export default function DuaCategoryScreen() {
     }
   };
 
+  const navigateToDua = (nextIndex: number) => {
+    if (!cat || nextIndex < 0 || nextIndex >= cat.duas.length || nextIndex === activeDuaIndex) return;
+    setActiveDuaIndex(nextIndex);
+    flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+  };
+
+  const webHorizontalGestureHandlers = Platform.OS === "web" ? ({
+    onPointerDown: (e: any) => {
+      const event = e.nativeEvent;
+      webSwipeStartRef.current = {
+        x: event.clientX ?? event.pageX ?? 0,
+        y: event.clientY ?? event.pageY ?? 0,
+      };
+    },
+    onPointerUp: (e: any) => {
+      const start = webSwipeStartRef.current;
+      webSwipeStartRef.current = null;
+      if (!start) return;
+      const event = e.nativeEvent;
+      const deltaX = (event.clientX ?? event.pageX ?? start.x) - start.x;
+      const deltaY = (event.clientY ?? event.pageY ?? start.y) - start.y;
+      if (Math.abs(deltaX) < 55 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+      navigateToDua(deltaX < 0 ? activeDuaIndex + 1 : activeDuaIndex - 1);
+    },
+    onPointerCancel: () => {
+      webSwipeStartRef.current = null;
+    },
+    onWheel: (e: any) => {
+      const event = e.nativeEvent;
+      const deltaX = Number(event.deltaX || 0);
+      const shiftedDelta = event.shiftKey ? Number(event.deltaY || 0) : 0;
+      const horizontalDelta = Math.abs(deltaX) >= Math.abs(shiftedDelta) ? deltaX : shiftedDelta;
+      if (Math.abs(horizontalDelta) < 30 || Date.now() - webWheelNavigationAtRef.current < 450) return;
+      webWheelNavigationAtRef.current = Date.now();
+      navigateToDua(horizontalDelta > 0 ? activeDuaIndex + 1 : activeDuaIndex - 1);
+    },
+  } as any) : {};
+
   const renderDuaCard = ({ item, index }: { item: any; index: number }) => {
     const targetRepeat = item.repeat || 1;
     const currentCount = counts[item.id] !== undefined ? counts[item.id] : targetRepeat;
     const isCompleted = currentCount === 0;
 
     return (
-      <View style={{ width: SCREEN_WIDTH, padding: theme.spacing.lg }}>
-        <ScrollView contentContainerStyle={styles.readerCardScroll} showsVerticalScrollIndicator={false}>
+      <View
+        {...webHorizontalGestureHandlers}
+        style={[{ width: SCREEN_WIDTH, flex: 1, height: "100%", minHeight: 0, paddingHorizontal: theme.spacing.lg }, Platform.OS === "web" ? ({ overflow: "hidden", minHeight: 0, touchAction: "pan-y" } as any) : null]}
+      >
+        <ScrollView
+          {...webHorizontalGestureHandlers}
+          contentContainerStyle={[
+            styles.readerCardScroll,
+            Platform.OS === "web" ? ({ flexGrow: 0 } as any) : null,
+          ]}
+          showsVerticalScrollIndicator={true}
+          style={[
+            { flex: 1, minHeight: 0 },
+            Platform.OS === "web" ? ({ flex: "none", flexGrow: 0, flexShrink: 0, height: readerViewportHeight || 500, maxHeight: "none", minHeight: 0, overflowY: "auto", overflowX: "hidden" } as any) : null
+          ]}
+        >
           <View style={styles.readerContent}>
-            <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight(), fontFamily: arabicFontFamily, letterSpacing: -0.3 }]}>
+            <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight(), fontFamily: arabicFontFamily, letterSpacing: -0.3, marginTop: 10 }]}>
               {item.arabic}
             </Text>
             
@@ -479,29 +774,6 @@ export default function DuaCategoryScreen() {
             <Text style={[styles.translation, { color: getTextColor(), fontSize: getTranslationSize(), lineHeight: getTranslationLineHeight(), letterSpacing: 0.15 }]}>
               {translatedTexts[item.id]?.translation || item.translation}
             </Text>
-
-            {/* Large Circular Count Tracker */}
-            <View style={styles.counterContainer}>
-              <Pressable
-                style={[
-                  styles.circularCounter,
-                  { 
-                    borderColor: isCompleted ? "#10B981" : colors.brand, 
-                    backgroundColor: isCompleted ? "#10B9811A" : colors.surface 
-                  }
-                ]}
-                onPress={() => decrementCounter(item.id, targetRepeat)}
-              >
-                {isCompleted ? (
-                  <MaterialCommunityIcons name="check" size={32} color="#10B981" />
-                ) : (
-                  <Text style={[styles.counterText, { color: colors.brand }]}>{currentCount}</Text>
-                )}
-              </Pressable>
-              <Text style={[styles.counterSubText, { color: colors.onSurfaceMuted }]}>
-                {isCompleted ? "Completed" : `Target: ${targetRepeat} times`}
-              </Text>
-            </View>
           </View>
         </ScrollView>
       </View>
@@ -511,7 +783,6 @@ export default function DuaCategoryScreen() {
   const imgSource = CATEGORY_IMAGES[cat.id] || { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" };
   const categorySwitcher = (
     <View style={styles.categorySwitcher}>
-      <Text style={[styles.categorySwitcherTitle, { color: colors.onSurfaceMuted }]}>Dua Categories</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -569,40 +840,52 @@ export default function DuaCategoryScreen() {
 
     return (
       <View style={[StyleSheet.absoluteFillObject, styles.readerContainer, { backgroundColor: colors.surface }]}>
-        {/* Reading progress bar */}
-        <View style={{ height: 3, backgroundColor: colors.surfaceSecondary, width: "100%" }}>
-          <View style={{ height: 3, backgroundColor: colors.brand, width: `${readerPct}%` }} />
-        </View>
+        <SafeAreaView style={{ flex: 1, minHeight: 0 }} edges={["top", "bottom"]}>
+          {/* Vibrant Brand Green Hero Banner Header */}
+          <View style={{ backgroundColor: colors.brand, paddingBottom: 16 }}>
+            {/* Reading progress bar line */}
+            <View style={{ height: 3, backgroundColor: "rgba(255,255,255,0.3)", width: "100%" }}>
+              <View style={{ height: 3, backgroundColor: "#FFFFFF", width: `${readerPct}%` }} />
+            </View>
 
-        <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-          {/* Header */}
-          <View style={styles.readerHeader}>
-            <Pressable onPress={() => setViewMode('list')} hitSlop={10}>
-              <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
-            </Pressable>
-            <Text style={[styles.readerHeaderTitle, { color: colors.onSurface }]}>{t(cat.id)}</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <View style={[styles.pageIndicator, { backgroundColor: colors.brand + "22" }]}>
-                <Text style={[styles.pageIndicatorText, { color: colors.brand }]}>
+            {/* Navigation Icons Row */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 10 }}>
+              <Pressable onPress={() => setViewMode('list')} hitSlop={10}>
+                <MaterialCommunityIcons name="arrow-left" size={26} color="#FFFFFF" />
+              </Pressable>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="dua-reader-home">
+                  <MaterialCommunityIcons name="home-outline" size={24} color="#FFFFFF" />
+                </Pressable>
+                <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
+                  <MaterialCommunityIcons name="cog-outline" size={24} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Active Du'a Title & Pill Progress */}
+            <View style={{ paddingHorizontal: 20, marginTop: 14 }}>
+              <Text numberOfLines={2} style={{ fontSize: 20, fontWeight: "700", color: "#FFFFFF", lineHeight: 28 }}>
+                {activeItem.title}
+              </Text>
+              
+              <View style={{ alignSelf: "flex-start", backgroundColor: "#FFFFFF", paddingHorizontal: 14, paddingVertical: 4, borderRadius: 16, marginTop: 10 }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.brand }}>
                   {activeDuaIndex + 1}/{cat.duas.length} · {readerPct}% {t("readPercent")}
                 </Text>
               </View>
-              <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="dua-reader-home">
-                <MaterialCommunityIcons name="home-outline" size={22} color={colors.onSurface} />
-              </Pressable>
-              <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
-                <MaterialCommunityIcons name="cog-outline" size={22} color={colors.onSurface} />
-              </Pressable>
             </View>
           </View>
 
-          <View style={styles.readerCategorySwitcher}>
+          {/* Image 1 Gap: Top margin added to category switcher */}
+          <View style={[styles.readerCategorySwitcher, { marginTop: 10, marginBottom: 6 }]}>
             {categorySwitcher}
           </View>
 
           {/* Carousel */}
           <FlatList
             ref={flatListRef}
+            style={[{ flex: 1, minHeight: 0 }, Platform.OS === "web" ? ({ height: "100%", minHeight: 0, overflow: "hidden" } as any) : null]}
             data={cat.duas}
             renderItem={renderDuaCard}
             keyExtractor={(item) => item.id}
@@ -611,34 +894,197 @@ export default function DuaCategoryScreen() {
             showsHorizontalScrollIndicator={false}
             onScroll={onScrollFlatList}
             scrollEventThrottle={16}
+            onLayout={(e) => {
+              const height = e.nativeEvent.layout.height;
+              if (height > 0 && height !== readerViewportHeight) setReaderViewportHeight(height);
+            }}
             getItemLayout={(data, index) => (
               { length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index }
             )}
           />
 
-          {/* Bottom Detail Actions Toolbar */}
-          <View style={[styles.actionsToolbar, { backgroundColor: colors.surfaceSecondary }]}>
-            <Pressable onPress={() => playDua(activeItem)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name={playingId === activeItem.id ? "pause" : "play"} size={22} color={colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("play") || "Play"}</Text>
-            </Pressable>
-            <Pressable onPress={() => setShowInfo(!showInfo)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name="information" size={22} color={colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("info") || "Info"}</Text>
-            </Pressable>
-            <Pressable onPress={() => onShare(activeItem)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name="share-variant" size={22} color={colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("share") || "Share"}</Text>
-            </Pressable>
-            <Pressable onPress={() => onFav(activeDuaIndex)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name={isFav ? "heart" : "heart-outline"} size={22} color={isFav ? colors.error : colors.brand} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isFav ? t("liked") : t("like")}</Text>
-            </Pressable>
-            <Pressable onPress={() => onBookmark(activeDuaIndex)} style={styles.actionIconBtn}>
-              <MaterialCommunityIcons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color={isBookmarked ? colors.brand : colors.onSurfaceMuted} />
-              <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isBookmarked ? "Bookmarked" : "Bookmark"}</Text>
-            </Pressable>
-          </View>
+          {/* Constant Floating Circular Counter Button (Hidden during audio playback) */}
+          {!isPlayerBarOpen && (() => {
+            const targetRepeat = activeItem.repeat || 1;
+            const currentCount = counts[activeItem.id] !== undefined ? counts[activeItem.id] : targetRepeat;
+            const isCompleted = currentCount === 0;
+
+            return (
+              <View pointerEvents="box-none" style={{ position: "absolute", bottom: 62, left: 0, right: 0, alignItems: "center", zIndex: 100 }}>
+                <Pressable
+                  style={{
+                    width: 58,
+                    height: 58,
+                    borderRadius: 29,
+                    backgroundColor: isCompleted ? "#10B981" : colors.brand,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 6,
+                    elevation: 8,
+                    borderWidth: 2,
+                    borderColor: "#FFFFFF"
+                  }}
+                  onPress={() => decrementCounter(activeItem.id, targetRepeat)}
+                >
+                  {isCompleted ? (
+                    <MaterialCommunityIcons name="check" size={30} color="#FFFFFF" />
+                  ) : (
+                    <Text style={{ fontSize: 24, fontWeight: "800", color: "#FFFFFF" }}>
+                      {currentCount}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            );
+          })()}
+
+          {/* Bottom Toolbar: Default Actions (Image 1) OR Audio Player Toolbar (Image 2 & 3 with Drag Seek & Continuous Seek) */}
+          {isPlayerBarOpen ? (
+            <View style={{ backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 }}>
+              {/* Image 3: Interactive YouTube-Style Drag Seek Bar & Remaining Time Row */}
+              {(() => {
+                const displayPct = isDraggingSeek && dragPercent !== null ? dragPercent : progressPercent;
+                return (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                    <View 
+                      ref={seekTrackRef}
+                      {...panResponder.panHandlers}
+                      style={{ flex: 1, height: 26, justifyContent: "center", position: "relative", cursor: Platform.OS === "web" ? "pointer" : "default" } as any}
+                      onLayout={(e) => setProgressWidth(e.nativeEvent.layout.width)}
+                    >
+                      {/* Background Track Line */}
+                      <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.onSurfaceMuted + "33", width: "100%", overflow: "hidden" }}>
+                        {/* Active Filled Progress Line */}
+                        <View style={{ height: "100%", width: `${displayPct}%`, backgroundColor: colors.brand, borderRadius: 3 }} />
+                      </View>
+
+                      {/* YouTube-Style Circular Green Drag Knob */}
+                      <View 
+                        style={{
+                          position: "absolute",
+                          left: `${Math.max(0, Math.min(96, displayPct))}%`,
+                          width: 16,
+                          height: 16,
+                          borderRadius: 8,
+                          backgroundColor: colors.brand,
+                          borderWidth: 2,
+                          borderColor: "#FFFFFF",
+                          shadowColor: "#000",
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.3,
+                          shadowRadius: 3,
+                          elevation: 4,
+                          marginLeft: -8,
+                        }}
+                      />
+                    </View>
+                    <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurfaceMuted, minWidth: 44, textAlign: "right" }}>
+                      {formatTime(duration ? (duration - currentTime) : 0)}
+                    </Text>
+                  </View>
+                );
+              })()}
+
+              {/* Player Controls Row (6 Buttons with Image 2 Continuous 5s Seek on Hold) */}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 8 }}>
+                {/* 1. Stop Button (⏹) -> Returns cleanly to Default Mode */}
+                <Pressable onPress={stopCurrentAudio} hitSlop={10} style={{ padding: 4 }}>
+                  <MaterialCommunityIcons name="stop-circle-outline" size={26} color={colors.onSurfaceMuted} />
+                </Pressable>
+
+                {/* 2. Rewind 5s Button (⏮) -> Continuous rewind on hold */}
+                <Pressable 
+                  onPressIn={startContinuousRewind}
+                  onPressOut={stopContinuousSeek}
+                  onPress={rewind5Sec}
+                  hitSlop={10} 
+                  style={{ padding: 4 }}
+                >
+                  <MaterialCommunityIcons name="rewind-5" size={26} color={colors.onSurface} />
+                </Pressable>
+
+                {/* 3. Play / Pause Toggle (⏯) */}
+                <Pressable 
+                  onPress={() => {
+                    const activeItem = cat.duas[activeDuaIndex];
+                    if (playingId === activeItem.id && !isAudioPaused) {
+                      if (Platform.OS === "web") {
+                        webAudioInstance.current?.pause();
+                        window.speechSynthesis?.cancel();
+                      } else {
+                        player.pause();
+                      }
+                      setIsAudioPaused(true);
+                    } else {
+                      playDua(activeItem);
+                    }
+                  }} 
+                  hitSlop={10}
+                  style={{ padding: 4 }}
+                >
+                  <MaterialCommunityIcons 
+                    name={(playingId === activeItem.id && !isAudioPaused) ? "pause-circle" : "play-circle"} 
+                    size={40} 
+                    color={colors.brand} 
+                  />
+                </Pressable>
+
+                {/* 4. Fast Forward 5s Button (⏭) -> Continuous fast-forward on hold */}
+                <Pressable 
+                  onPressIn={startContinuousFastForward}
+                  onPressOut={stopContinuousSeek}
+                  onPress={fastForward5Sec}
+                  hitSlop={10} 
+                  style={{ padding: 4 }}
+                >
+                  <MaterialCommunityIcons name="fast-forward-5" size={26} color={colors.onSurface} />
+                </Pressable>
+
+                {/* 5. Playback Speed Button (0.25x -> 2x) */}
+                <Pressable 
+                  onPress={cycleSpeed}
+                  style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3, alignItems: "center" }}
+                  hitSlop={10}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurface }}>{playbackSpeed}x</Text>
+                </Pressable>
+
+                {/* 6. Loop Button (1x, 2x, 3x, ∞) */}
+                <Pressable onPress={cycleLoopMode} hitSlop={10} style={{ paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1, borderColor: loopMode !== "1x" ? colors.brand : colors.border, borderRadius: 12, alignItems: "center" }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: loopMode !== "1x" ? colors.brand : colors.onSurfaceMuted }}>
+                    {loopMode === "infinity" ? "∞" : loopMode}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            /* Default Actions Toolbar (Image 1) */
+            <View style={[styles.actionsToolbar, { backgroundColor: colors.surfaceSecondary }]}>
+              <Pressable onPress={() => playDua(activeItem)} style={styles.actionIconBtn}>
+                <MaterialCommunityIcons name="play" size={22} color={colors.brand} />
+                <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("play") || "Play"}</Text>
+              </Pressable>
+              <Pressable onPress={() => setShowInfo(!showInfo)} style={styles.actionIconBtn}>
+                <MaterialCommunityIcons name="information" size={22} color={colors.brand} />
+                <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("info") || "Info"}</Text>
+              </Pressable>
+              <Pressable onPress={() => onShare(activeItem)} style={styles.actionIconBtn}>
+                <MaterialCommunityIcons name="share-variant" size={22} color={colors.brand} />
+                <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{t("share") || "Share"}</Text>
+              </Pressable>
+              <Pressable onPress={() => onFav(activeDuaIndex)} style={styles.actionIconBtn}>
+                <MaterialCommunityIcons name={isFav ? "heart" : "heart-outline"} size={22} color={isFav ? colors.error : colors.brand} />
+                <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isFav ? t("liked") : t("like")}</Text>
+              </Pressable>
+              <Pressable onPress={() => onBookmark(activeDuaIndex)} style={styles.actionIconBtn}>
+                <MaterialCommunityIcons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color={isBookmarked ? colors.brand : colors.onSurfaceMuted} />
+                <Text style={[styles.actionIconLabel, { color: colors.onSurfaceMuted }]}>{isBookmarked ? "Bookmarked" : "Bookmark"}</Text>
+              </Pressable>
+            </View>
+          )}
 
           <Modal visible={showInfo} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowInfo(false)}>
             <SafeAreaView style={[styles.infoScreen, { backgroundColor: colors.surface }]} edges={["top", "bottom"]}>
@@ -679,94 +1125,7 @@ export default function DuaCategoryScreen() {
             </SafeAreaView>
           </Modal>
 
-          {/* Expanded controls appear only after the user starts this du'a. */}
-          {playingId === activeItem.id && <View style={styles.audioControlBar}>
-            {/* Seek Bar */}
-            <View style={styles.progressBarRow}>
-              <Text style={[styles.progressTimeText, { color: colors.onSurfaceMuted }]}>{formatTime(currentTime)}</Text>
-              <View 
-                style={[styles.progressBarTrack, { backgroundColor: colors.onSurfaceMuted + "22" }]}
-                onLayout={(e) => setProgressWidth(e.nativeEvent.layout.width)}
-              >
-                <Pressable style={StyleSheet.absoluteFill} onPress={handleSeek}>
-                  <View style={[styles.progressBarFill, { width: `${progressPercent}%`, backgroundColor: colors.brand }]} />
-                </Pressable>
-              </View>
-              <Text style={[styles.progressTimeText, { color: colors.onSurfaceMuted }]}>{formatTime(duration)}</Text>
-            </View>
-
-            {/* Row buttons */}
-            <View style={styles.audioButtonsRow}>
-              <Pressable onPress={() => setIsLooping(!isLooping)} hitSlop={10}>
-                <MaterialCommunityIcons 
-                  name={isLooping ? "repeat-once" : "repeat"} 
-                  size={24} 
-                  color={isLooping ? colors.brand : colors.onSurfaceMuted} 
-                />
-              </Pressable>
-
-              <Pressable 
-                onPress={() => {
-                  if (activeDuaIndex > 0) {
-                    const prevIdx = activeDuaIndex - 1;
-                    setActiveDuaIndex(prevIdx);
-                    flatListRef.current?.scrollToIndex({ index: prevIdx, animated: true });
-                  }
-                }}
-                disabled={activeDuaIndex === 0}
-                style={{ opacity: activeDuaIndex === 0 ? 0.3 : 1 }}
-                hitSlop={10}
-              >
-                <MaterialCommunityIcons name="skip-previous" size={28} color={colors.onSurface} />
-              </Pressable>
-
-              <Pressable onPress={() => playDua(activeItem)} hitSlop={10}>
-                <MaterialCommunityIcons 
-                  name={playingId === activeItem.id ? "pause-circle" : "play-circle"} 
-                  size={56} 
-                  color={colors.brand} 
-                />
-              </Pressable>
-
-              <Pressable 
-                onPress={() => {
-                  if (activeDuaIndex + 1 < cat.duas.length) {
-                    const nextIdx = activeDuaIndex + 1;
-                    setActiveDuaIndex(nextIdx);
-                    flatListRef.current?.scrollToIndex({ index: nextIdx, animated: true });
-                  }
-                }}
-                disabled={activeDuaIndex === cat.duas.length - 1}
-                style={{ opacity: activeDuaIndex === cat.duas.length - 1 ? 0.3 : 1 }}
-                hitSlop={10}
-              >
-                <MaterialCommunityIcons name="skip-next" size={28} color={colors.onSurface} />
-              </Pressable>
-
-              <Pressable 
-                onPress={() => {
-                  let nextSpeed = 1;
-                  if (playbackSpeed === 1) nextSpeed = 1.25;
-                  else if (playbackSpeed === 1.25) nextSpeed = 1.5;
-                  else if (playbackSpeed === 1.5) nextSpeed = 2;
-                  else nextSpeed = 1;
-                  
-                  setPlaybackSpeed(nextSpeed);
-                  if (Platform.OS === "web") {
-                    if (webAudioInstance.current) {
-                      webAudioInstance.current.playbackRate = nextSpeed;
-                    }
-                  } else {
-                    player.setPlaybackRate(nextSpeed);
-                  }
-                }}
-                style={[styles.speedSelector, { borderColor: colors.border }]}
-                hitSlop={10}
-              >
-                <Text style={[styles.speedSelectorText, { color: colors.onSurface }]}>{playbackSpeed}x</Text>
-              </Pressable>
-            </View>
-          </View>}
+          {/* End of Reader View */}
         </SafeAreaView>
       </View>
     );
@@ -782,7 +1141,7 @@ export default function DuaCategoryScreen() {
               <Pressable onPress={() => router.back()} hitSlop={10} testID="back-btn">
                 <MaterialCommunityIcons name="chevron-left" size={28} color="#fff" />
               </Pressable>
-              <Text style={styles.heroTitle}>{t(cat.id)}</Text>
+              <Text style={styles.heroTitle}>{(t(cat.id) && t(cat.id) !== cat.id ? t(cat.id) : cat.title)}</Text>
               <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
                 <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="dua-home">
                   <MaterialCommunityIcons name="home-outline" size={24} color="#fff" />
@@ -830,7 +1189,7 @@ export default function DuaCategoryScreen() {
         </Pressable>
 
         {/* Numbered Duas List Items */}
-        {cat.duas.map((d, i) => {
+        {cat.duas.map((d: any, i: number) => {
           return (
             <Pressable 
               key={d.id} 
@@ -948,7 +1307,7 @@ const styles = StyleSheet.create({
   pageIndicatorText: { fontSize: 13, fontWeight: "700" },
   
   readerCardScroll: { flexGrow: 1, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
-  readerContent: { paddingHorizontal: theme.spacing.sm, paddingBottom: theme.spacing.xl },
+  readerContent: { paddingHorizontal: theme.spacing.sm, paddingBottom: 160 },
   arabic: { fontFamily: "NotoNaskhArabic", textAlign: "right", marginTop: theme.spacing.md },
   translit: { fontStyle: "italic", marginTop: theme.spacing.md, lineHeight: 21 },
   translation: { marginTop: theme.spacing.sm, lineHeight: 22 },

@@ -17,10 +17,10 @@ import quranData from "@/src/data/quran/quranData.json";
 import pageMappingData from "@/src/data/quran/pageMapping.json";
 import { JUZ_DATA } from "@/src/data/juzData";
 import { SURAH_LIST, SurahMeta } from "@/src/data/surahList";
-import surahInfoDetailed from "@/src/data/quran/surahInfoDetailed.json";
-import transliterationWbw from "@/src/data/quran/transliterationWbw.json";
-import transliterationTajweedData from "@/src/data/quran/transliterationTajweed.json";
 import naqaaReciters from "@/src/data/quran/naqaaReciters.json";
+// surahInfoDetailed (6.9 MB), transliterationWbw (1.6 MB), and
+// transliterationTajweed (683 KB) are lazy-required inside useMemo below
+// so they are NOT parsed during app startup.
 import {
   addQuranBookmark, removeQuranBookmark, getQuranBookmarks, QuranBookmark,
 } from "@/src/storage";
@@ -51,7 +51,23 @@ type ApiReciter = {
 const QURAN: LocalSurah[] = quranData as LocalSurah[];
 const PAGE_MAPPING: PageMap[] = pageMappingData as PageMap[];
 const TOTAL_PAGES = 604;
-const WBW_DATA: Record<string, string> = transliterationWbw as any;
+// Heavy data — lazy-required so Metro defers parsing until first mount
+let _wbwData: Record<string, string> | null = null;
+const getWbwData = (): Record<string, string> => {
+  if (!_wbwData) _wbwData = require("@/src/data/quran/transliterationWbw.json") as Record<string, string>;
+  return _wbwData;
+};
+let _surahInfoDetailed: any[] | null = null;
+const getSurahInfoDetailed = (): any[] => {
+  if (!_surahInfoDetailed) _surahInfoDetailed = require("@/src/data/quran/surahInfoDetailed.json") as any[];
+  return _surahInfoDetailed;
+};
+let _tajweedData: any | null = null;
+const getTajweedData = (): any => {
+  if (!_tajweedData) _tajweedData = require("@/src/data/quran/transliterationTajweed.json");
+  return _tajweedData;
+};
+
 
 function getArabicFontFamily(script: string): string {
   switch (script) {
@@ -647,7 +663,7 @@ export default function QuranPageReader() {
       const surah = QURAN.find(s => s.number === a.surah);
       const ayah = surah?.ayahs.find(ay => ay.numberInSurah === a.ayah);
       const key = `${a.surah}:${a.ayah}`;
-      const highQualityTranslit = (transliterationTajweedData as Record<string, string>)[key] || ayah?.transliteration || "";
+      const highQualityTranslit = (getTajweedData() as Record<string, string>)[key] || ayah?.transliteration || "";
       const fullSurahName = surah?.name || SURAH_LIST.find(s => s.number === a.surah)?.englishName || `Surah ${a.surah}`;
 
       return {
@@ -1866,7 +1882,7 @@ export default function QuranPageReader() {
                           <Text style={[styles.wbwArabic, { fontSize: fontSizeArabic - 4, color: colors.onSurface }]}>{w.text_uthmani}</Text>
                           {wbwShowTranslitBelow && (
                             <Text style={[styles.wbwTranslit, { fontSize: fontSizeWbw, color: colors.brand }]}>
-                              {w.transliteration?.text || WBW_DATA[`${verse.surahNumber}:${verse.ayahNumber}:${w.position}`] || ""}
+                              {w.transliteration?.text || getWbwData()[`${verse.surahNumber}:${verse.ayahNumber}:${w.position}`] || ""}
                             </Text>
                           )}
                           {wbwShowTransBelow && (
@@ -2476,7 +2492,7 @@ export default function QuranPageReader() {
 
       {/* ─── Surah Info Modal (Image 3 Style: Arabic calligraphy, English title, pill tabs, bold headers) ──── */}
       {showInfo && (() => {
-        const infoData = (surahInfoDetailed as any)[String(showInfo.number)];
+        const infoData = (getSurahInfoDetailed() as any)[String(showInfo.number)];
         const ibnAshurText = infoData?.ibn_ashur || "";
         const maududiText = infoData?.en || "";
         const activeText = infoTab === "ibn_ashur" ? ibnAshurText : maududiText;

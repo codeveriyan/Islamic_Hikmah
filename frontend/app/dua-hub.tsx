@@ -23,6 +23,22 @@ const CATEGORY_IMAGES: Record<string, any> = {
   tahajjud: { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
   salah: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
   "after-salah": { uri: "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=500&auto=format&fit=crop&q=80" },
+  ruqyah: { uri: "https://images.unsplash.com/photo-1552089123-2d26226fc2b7?w=500&auto=format&fit=crop&q=80" },
+  praises: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
+  salawat: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
+  quranic: { uri: "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=500&auto=format&fit=crop&q=80" },
+  "sunnah-duas": { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
+  "names-of-allah": { uri: "https://images.unsplash.com/photo-1519817650390-64a93db51149?w=500&auto=format&fit=crop&q=80" },
+  istighfar: { uri: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=500&auto=format&fit=crop&q=80" },
+  "dhikr-all-times": { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
+  "waking-up": { uri: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop&q=80" },
+  nightmares: { uri: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=500&auto=format&fit=crop&q=80" },
+  clothes: { uri: "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=500&auto=format&fit=crop&q=80" },
+  "lavatory-wudu": { uri: "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=500&auto=format&fit=crop&q=80" },
+  home: { uri: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=500&auto=format&fit=crop&q=80" },
+  "adhan-masjid": { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
+  "food-drink": { uri: "https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=500&auto=format&fit=crop&q=80" },
+  exams: { uri: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=500&auto=format&fit=crop&q=80" },
   istikharah: { uri: "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500&auto=format&fit=crop&q=80" },
   gatherings: { uri: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=500&auto=format&fit=crop&q=80" },
   difficulties: { uri: "https://images.unsplash.com/photo-1428908728789-d2de25dbd4e2?w=500&auto=format&fit=crop&q=80" },
@@ -35,7 +51,6 @@ const CATEGORY_IMAGES: Record<string, any> = {
   death: { uri: "https://images.unsplash.com/photo-1453791052107-5c843da62d97?w=500&auto=format&fit=crop&q=80" },
   nature: { uri: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=500&auto=format&fit=crop&q=80" },
   ramadan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
-  ruqyah: { uri: "https://images.unsplash.com/photo-1552089123-2d26226fc2b7?w=500&auto=format&fit=crop&q=80" },
   "daily-life": { uri: "https://images.unsplash.com/photo-1517842645767-c639042777db?w=500&auto=format&fit=crop&q=80" },
   adhan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
   wudu: { uri: "https://images.unsplash.com/photo-1548813730-e8f20cc74a4a?w=500&auto=format&fit=crop&q=80" },
@@ -54,7 +69,11 @@ export default function DuaHubScreen() {
 
   const handleCategoryPress = useCallback((id: string) => {
     Haptics.selectionAsync().catch(() => {});
-    router.push(`/dua/${id}` as any);
+    if (id === "names-of-allah") {
+      router.push("/names" as any);
+    } else {
+      router.push(`/dua/${id}` as any);
+    }
   }, [router]);
 
   return (
@@ -95,7 +114,7 @@ export default function DuaHubScreen() {
               <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
                 <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
                   <View style={styles.cardLabelContainer}>
-                    <Text style={styles.cardTitle}>{t(c.id).toUpperCase()}</Text>
+                    <Text style={styles.cardTitle}>{((t(c.id) && t(c.id) !== c.id ? t(c.id) : c.title) || c.title).toUpperCase()}</Text>
                   </View>
                 </LinearGradient>
               </ImageBackground>

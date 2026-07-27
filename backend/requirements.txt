@@ -8,6 +8,9 @@ pyjwt>=2.10.1
 motor==3.3.1
 requests>=2.31.0
 python-multipart>=0.0.9
-# Real Quran ASR. ffmpeg must also be installed on the server.
-torch==2.13.0
+imageio-ffmpeg==0.6.0
+# Real Quran ASR. imageio-ffmpeg supplies the decoder when system FFmpeg is absent.
+# This PyPI pin is the portable CPU fallback. On an NVIDIA deployment, install
+# requirements-asr-gpu.txt after this file so Whisper can use CUDA.
+torch==2.12.0
 transformers==4.57.6

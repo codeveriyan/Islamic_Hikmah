@@ -35,20 +35,25 @@ generating synthetic scores when the model is unavailable.
 
 ## Localhost and phone deployment
 
-Install FFmpeg, then run these commands from the repository root:
+Run these commands from the repository root. `imageio-ffmpeg` supplies a
+portable decoder, so a separate system FFmpeg installation is optional:
 
 ```powershell
 backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+# NVIDIA GPU deployments: install this CUDA overlay after requirements.txt.
+backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-asr-gpu.txt
 backend/.venv/Scripts/python.exe backend/scripts/warm_quran_asr.py
 cd backend
 .venv/Scripts/python.exe -m uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 The local backend configuration enables ASR and preloads the pinned model.
+After the model is cached, `LEARN_QURAN_ASR_LOCAL_FILES_ONLY=true` prevents
+slow network checks during startup. Keep it false for the initial warm command.
 Check readiness from the computer or another device on the same Wi-Fi:
 
 ```text
-http://192.168.1.35:8000/api/learn/status
+http://<computer-wifi-ip>:8000/api/learn/status
 ```
 
 `frontend/.env` already points `EXPO_PUBLIC_API_BASE_URL` at that LAN address.
@@ -60,6 +65,8 @@ The first verified smoke test used Al-Fatihah 1:1 recited by Mishary Alafasy:
 - transcript: `بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ`
 - word match: 100%
 - CPU inference: 22.6 seconds
+- RTX 5050 CUDA first inference: 3.0 seconds
+- RTX 5050 CUDA warm inference: 1.7 seconds
 
 As a negative control, the app's Shahadah audio scored against Al-Fatihah 1:1
 produced a 9% match because only the shared word `الله` aligned. This confirms

@@ -21,11 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
 import { auth } from "@/src/firebase";
-
-const API_BASE_URL = (
-  process.env.EXPO_PUBLIC_API_BASE_URL ||
-  process.env.EXPO_PUBLIC_HADITH_API_BASE_URL
-)?.replace(/\/$/, "");
+import { API_BASE_URL } from "@/src/apiBaseUrl";
 
 export default function PremiumScreen() {
   const router = useRouter();
