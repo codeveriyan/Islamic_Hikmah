@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   View, 
   Text, 
@@ -22,6 +22,7 @@ import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
 import { auth } from "@/src/firebase";
 import { API_BASE_URL } from "@/src/apiBaseUrl";
+import { initPurchaseService, purchasePlan, restorePurchases } from "@/src/services/purchaseService";
 
 export default function PremiumScreen() {
   const router = useRouter();
@@ -33,6 +34,11 @@ export default function PremiumScreen() {
   const [utr, setUtr] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [purchasingNative, setPurchasingNative] = useState(false);
+
+  useEffect(() => {
+    initPurchaseService(auth.currentUser?.uid).catch(() => {});
+  }, []);
 
   const handleStartTrial = async () => {
     if (isGuest) {
@@ -67,21 +73,49 @@ export default function PremiumScreen() {
     }
   };
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     if (isGuest || !auth.currentUser) {
       Alert.alert(
         "Sign In Required",
-        "Sign in with a verified account before submitting a payment.",
+        "Sign in with a verified account before subscribing.",
         [{ text: "Log In", onPress: () => router.push("/auth/login") }]
       );
       return;
     }
-    if (!API_BASE_URL) {
-      Alert.alert("Payments Unavailable", "The payment service is not configured for this build.");
+
+    setPurchasingNative(true);
+    const result = await purchasePlan(selectedPlan, profile?.email);
+    setPurchasingNative(false);
+
+    if (result.success) {
+      await refreshEntitlements();
+      Alert.alert("Welcome to Pro! 🎉", "Your subscription is active. Enjoy all premium features!", [
+        { text: "Continue", onPress: () => router.back() },
+      ]);
       return;
     }
+
+    if (result.error) {
+      Alert.alert("Purchase Notice", result.error);
+      return;
+    }
+
+    // Fallback to UPI flow if native store billing isn't configured
     setUpiModalVisible(true);
+  };
+
+  const handleRestorePurchases = async () => {
+    setPurchasingNative(true);
+    const result = await restorePurchases();
+    setPurchasingNative(false);
+
+    if (result.success) {
+      await refreshEntitlements();
+      Alert.alert("Purchases Restored! 🎉", "Your Pro subscription has been restored successfully.");
+    } else {
+      Alert.alert("Restore Notice", result.error || "No active purchases found to restore.");
+    }
   };
 
   const handlePayViaUPI = async () => {
@@ -165,12 +199,7 @@ export default function PremiumScreen() {
 
   const handleRestore = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    try {
-      await refreshEntitlements();
-      Alert.alert("Account Refreshed", "Your subscription status has been refreshed from the server.");
-    } catch (error: any) {
-      Alert.alert("Refresh Failed", error.message || "Unable to refresh your subscription status.");
-    }
+    await handleRestorePurchases();
   };
 
   return (
