@@ -14,8 +14,9 @@ import * as Haptics from "expo-haptics";
 import { HADITH_BOOKS } from "./index";
 import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
 import { HADITH_INTRODUCTIONS } from "@/src/data/hadithIntroductions";
-// hadithFallback (19.3 MB) is lazy-required inside getFallbackData() below
-// so it is NOT parsed during app startup.
+import { getHadithFallback } from "@/src/services/cdnContentService";
+// hadithFallback.json (19.3 MB) is no longer bundled.
+// It is fetched from Cloudflare R2 CDN on first use and cached to disk.
 import { 
   toggleFavourite, 
   getFavourites, 
@@ -225,18 +226,17 @@ export default function HadithDetailScreen() {
     let isMounted = true;
 
     // ── helpers ────────────────────────────────────────────────────────────────
-    const getFallbackData = (): Hadith[] => {
-      try {
-        const fallbackObj = require("@/src/data/quran/hadithFallback.json");
-        return ((fallbackObj as any)[book] || []).map((h: any) => ({
-          hadithnumber: h.hadithnumber,
-          bookNumber: h.bookNumber,
-          text: toPlainText(h.text),
-          arabicText: toPlainText(h.arabicText || ""),
-        }));
-      } catch {
-        return [];
-      }
+    // Fetches hadith fallback from CDN (cached on disk after first download).
+    // Returns empty array if CDN not configured or offline with no cache.
+    const getFallbackData = async (): Promise<Hadith[]> => {
+      const result = await getHadithFallback(book);
+      if (!result.success || !result.data) return [];
+      return result.data.map((h: any) => ({
+        hadithnumber: h.hadithnumber,
+        bookNumber: h.bookNumber,
+        text: toPlainText(h.text),
+        arabicText: toPlainText(h.arabicText || ""),
+      }));
     };
 
     const loadOfflineCache = async (): Promise<Hadith[] | null> => {
@@ -294,8 +294,8 @@ export default function HadithDetailScreen() {
         return offline;
       }
 
-      // 1c. bundled fallback JSON (always available, no network needed)
-      const fallback = getFallbackData();
+      // 1c. CDN fallback (disk-cached after first fetch, never bundled)
+      const fallback = await getFallbackData();
       if (fallback.length > 0) {
         hadithMemoryCache.set(cacheKey, fallback);
         if (isMounted) { setHadiths(fallback); setLoading(false); }

@@ -22,7 +22,7 @@ import transliterationSyllablesData from "@/src/data/quran/transliterationSyllab
 import transliterationWbwData from "@/src/data/quran/transliterationWbw.json";
 import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 import { QURAN_AUDIO_CATALOG, QURAN_AUDIO_CATEGORIES, QuranAudioCategory } from "@/src/data/quran/quranAudioCatalog";
-import { getTafsirSurah, prefetchNextSurahTafsir } from "@/src/services/cdnContentService";
+import { getTafsirSurah, prefetchNextSurahTafsir, downloadTafsirAllSurahs } from "@/src/services/cdnContentService";
 
 type Ayah = {
   number: number;
@@ -376,38 +376,29 @@ export default function SurahDetail() {
   }, [availableTafsirs]);
 
   const downloadTafsirOffline = async (tafsirId: number) => {
-    const isWeb = Platform.OS === 'web' || !FileSystem.documentDirectory;
-    if (isWeb) {
+    if (Platform.OS === 'web' || !FileSystem.documentDirectory) {
       Alert.alert("Offline Mode", "Offline downloads are supported on mobile devices.");
       return;
     }
-    
+
     setTafsirLoading(true);
     try {
-      const localUri = `${FileSystem.documentDirectory}tafsirs/${tafsirId}.json`;
-      const dirUri = `${FileSystem.documentDirectory}tafsirs/`;
-      
-      const dirInfo = await FileSystem.getInfoAsync(dirUri);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
-      }
-      
-      const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-      if (__DEV__) console.log("Downloading Tafsir to offline cache:", downloadUrl);
-      const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
-      if (dlResult.status === 200) {
+      const result = await downloadTafsirAllSurahs(tafsirId, (downloaded, total) => {
+        if (__DEV__) console.log(`[Offline] Surah ${downloaded}/${total} cached`);
+      });
+
+      if (result.success) {
         setDownloadedTafsirs(prev => ({ ...prev, [tafsirId]: true }));
-        Alert.alert("Success", "Tafsir downloaded successfully for offline use.");
-        // Reload current Tafsir content
+        Alert.alert("Downloaded", "All 114 Surah chapters cached for offline use.");
         if (tafsirRef.ayah > 0) {
           openTafsirModal(tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, tafsirId);
         }
       } else {
-        throw new Error(`Download failed with status ${dlResult.status}`);
+        throw new Error(result.error || "Download failed");
       }
-    } catch (err) {
-      console.error(err);
-      Alert.alert("Download Failed", "Please check your internet connection.");
+    } catch (err: any) {
+      if (__DEV__) console.error(err);
+      Alert.alert("Download Failed", err?.message || "Please check your internet connection.");
     } finally {
       setTafsirLoading(false);
     }

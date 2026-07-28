@@ -1,4 +1,4 @@
-﻿# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
 node_modules/
@@ -37,6 +37,12 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Content that lives on Cloudflare R2 CDN — never commit these
+# Run `node scripts/chunkTafsirs.js` to regenerate locally,
+# then `node scripts/uploadToR2.js` to push to the CDN.
+public/tafsirs/
+public/tafsirs_chunked/
 
 app-example
 
