@@ -97,7 +97,7 @@ export async function getDhikrHistory(): Promise<DhikrDay[]> {
 
 export async function recordDhikrSession(count: number): Promise<void> {
   if (count <= 0) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const history = await getDhikrHistory();
   const idx = history.findIndex(d => d.date === today);
   if (idx >= 0) { history[idx].total += count; }
@@ -107,11 +107,11 @@ export async function recordDhikrSession(count: number): Promise<void> {
 
 export async function getDhikrStreak(): Promise<{ streak: number; todayTotal: number; weekHistory: DhikrDay[] }> {
   const history = await getDhikrHistory();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   const weekHistory: DhikrDay[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
+    const dateStr = localDateKey(d);
     const found = history.find(h => h.date === dateStr);
     weekHistory.push({ date: dateStr, total: found?.total ?? 0 });
   }
@@ -120,7 +120,7 @@ export async function getDhikrStreak(): Promise<{ streak: number; todayTotal: nu
   if (!active.length) return { streak: 0, todayTotal, weekHistory };
   const latest = active[0].date;
   const yd = new Date(); yd.setDate(yd.getDate() - 1);
-  const ydStr = yd.toISOString().slice(0, 10);
+  const ydStr = localDateKey(yd);
   if (latest !== today && latest !== ydStr) return { streak: 0, todayTotal, weekHistory };
   let streak = 0; let check = new Date(latest);
   for (const entry of active) {

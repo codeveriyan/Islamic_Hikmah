@@ -22,6 +22,7 @@ import { PremiumModalProvider } from "@/src/PremiumModalContext";
 import PremiumModal from "@/src/components/PremiumModal";
 import { QuranPlayerProvider } from "@/src/QuranPlayerContext";
 import { MiniPlayerBar } from "@/src/components/MiniPlayerBar";
+import { getPrayerTimingsCache, savePrayerTimingsCache } from "@/src/storage";
 
 async function checkPrayerNotificationExpired(notification: Notifications.Notification): Promise<boolean> {
   try {
@@ -36,32 +37,29 @@ async function checkPrayerNotificationExpired(notification: Notifications.Notifi
     if (!prayer) return false;
 
     // Check cached prayer timings for end of prayer window
-    const rawCache = await AsyncStorage.getItem("hikmah:prayer-timings-cache:v1");
-    if (rawCache) {
-      const parsed = JSON.parse(rawCache);
-      const timings = parsed?.timings;
-      if (timings) {
-        const now = new Date();
-        const parseTimeToday = (timeStr: string) => {
-          const [h, m] = timeStr.split(":").map(Number);
-          const d = new Date();
-          d.setHours(h, m, 0, 0);
-          return d;
-        };
+    const cache = await getPrayerTimingsCache();
+    if (cache?.timings) {
+      const timings = cache.timings;
+      const now = new Date();
+      const parseTimeToday = (timeStr: string) => {
+        const [h, m] = timeStr.split(":").map(Number);
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        return d;
+      };
 
-        if (prayer === "Fajr" && timings.Sunrise) {
-          const sunriseTime = parseTimeToday(timings.Sunrise);
-          if (now >= sunriseTime) return true; // Fajr prayer time ends at Sunrise!
-        } else if (prayer === "Dhuhr" && timings.Asr) {
-          const asrTime = parseTimeToday(timings.Asr);
-          if (now >= asrTime) return true;
-        } else if (prayer === "Asr" && timings.Maghrib) {
-          const maghribTime = parseTimeToday(timings.Maghrib);
-          if (now >= maghribTime) return true;
-        } else if (prayer === "Maghrib" && timings.Isha) {
-          const ishaTime = parseTimeToday(timings.Isha);
-          if (now >= ishaTime) return true;
-        }
+      if (prayer === "Fajr" && timings.Sunrise) {
+        const sunriseTime = parseTimeToday(timings.Sunrise);
+        if (now >= sunriseTime) return true; // Fajr prayer time ends at Sunrise!
+      } else if (prayer === "Dhuhr" && timings.Asr) {
+        const asrTime = parseTimeToday(timings.Asr);
+        if (now >= asrTime) return true;
+      } else if (prayer === "Asr" && timings.Maghrib) {
+        const maghribTime = parseTimeToday(timings.Maghrib);
+        if (now >= maghribTime) return true;
+      } else if (prayer === "Maghrib" && timings.Isha) {
+        const ishaTime = parseTimeToday(timings.Isha);
+        if (now >= ishaTime) return true;
       }
     }
     return false;

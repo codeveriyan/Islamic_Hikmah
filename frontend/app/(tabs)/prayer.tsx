@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator,
 } from "react-native";
@@ -8,6 +8,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getPrayerTimingsCache } from "@/src/storage";
 import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { format12Hour } from "@/src/utils/time";
@@ -83,14 +84,11 @@ export default function PrayerTab() {
   useFocusEffect(useCallback(() => {
     (async () => {
       try {
-        const [raw, prayedRaw] = await Promise.all([
-          AsyncStorage.getItem("hikmah:prayer-timings-cache:v1"),
+        const [cache, prayedRaw] = await Promise.all([
+          getPrayerTimingsCache(),
           AsyncStorage.getItem(todayKey),
         ]);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed?.timings) { setTimes(parsed.timings); setCity(parsed.city || ""); }
-        }
+        if (cache?.timings) { setTimes(cache.timings); setCity((cache as any).city || ""); }
         if (prayedRaw) setPrayedToday(new Set(JSON.parse(prayedRaw)));
       } catch {}
     })();
