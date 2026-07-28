@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Platform, Modal, Switch, Alert, TextInput, RefreshControl, FlatList,
 } from "react-native";
@@ -32,6 +32,7 @@ import {
   getDailyDhikrCounts, saveDailyDhikrCounts,
   getPrayerCompletions, savePrayerCompletions,
   saveActiveGoalIds, getGoalNotifTimes, scheduleGoalNotifications,
+  getPrayerTimingsCache,
 } from "@/src/storage";
 
 import { Image as ExpoImage } from "expo-image";
@@ -76,19 +77,72 @@ const RADIUS = (RING - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
 // ── Islamic Event Calendar (approximate Gregorian dates for 2025–2026) ─────────
-const ISLAMIC_EVENTS = [
-  { name: "Eid al-Adha 1446",    date: new Date("2025-06-06"), emoji: "🕌", grad: ["#78350F", "#B45309"] as [string,string] },
-  { name: "Islamic New Year 1447",date: new Date("2025-06-26"), emoji: "⭐", grad: ["#4C1D95", "#7C3AED"] as [string,string] },
-  { name: "Mawlid al-Nabi ﷺ",   date: new Date("2025-09-04"), emoji: "💚", grad: ["#065F46", "#047857"] as [string,string] },
-  { name: "Ramadan 1447",         date: new Date("2026-02-17"), emoji: "🌙", grad: ["#0F2D5A", "#1D4ED8"] as [string,string] },
-  { name: "Eid al-Fitr 1447",     date: new Date("2026-03-20"), emoji: "🌙", grad: ["#065F46", "#10B981"] as [string,string] },
-  { name: "Dhul Hijjah 1447",     date: new Date("2026-05-17"), emoji: "🕋", grad: ["#78350F", "#B45309"] as [string,string] },
-  { name: "Eid al-Adha 1447",     date: new Date("2026-05-27"), emoji: "🌙", grad: ["#065F46", "#047857"] as [string,string] },
+// B3: Islamic events — fetched from Aladhan API, cached 30 days.
+// No longer hardcoded so they stay accurate beyond 2026.
+const ISLAMIC_EVENTS_CACHE_KEY = 'hikmah:islamic-events-cache:v1';
+const EVENTS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+// Known Hijri events to look for in the Aladhan calendar response
+const HIJRI_EVENT_KEYWORDS: { keyword: string; emoji: string; grad: [string, string] }[] = [
+  { keyword: 'Ramadan',      emoji: '🌙', grad: ['#0F2D5A', '#1D4ED8'] },
+  { keyword: 'Eid al-Fitr',  emoji: '🌙', grad: ['#065F46', '#10B981'] },
+  { keyword: 'Eid al-Adha',  emoji: '🕌', grad: ['#78350F', '#B45309'] },
+  { keyword: 'Dhul Hijjah',  emoji: '🕋', grad: ['#78350F', '#B45309'] },
+  { keyword: 'Mawlid',       emoji: '💚', grad: ['#065F46', '#047857'] },
+  { keyword: 'Laylat al-Qadr', emoji: '⭐', grad: ['#4C1D95', '#7C3AED'] },
+  { keyword: 'New Year',     emoji: '⭐', grad: ['#4C1D95', '#7C3AED'] },
+  { keyword: 'Ashura',       emoji: '📿', grad: ['#1E3A5F', '#2563EB'] },
 ];
-function getNextIslamicEvent() {
+
+async function fetchIslamicEvents(): Promise<{ name: string; date: Date; emoji: string; grad: [string, string] }[]> {
+  try {
+    const raw = await AsyncStorage.getItem(ISLAMIC_EVENTS_CACHE_KEY);
+    if (raw) {
+      const { events, cachedAt } = JSON.parse(raw);
+      if (Date.now() - cachedAt < EVENTS_TTL_MS) {
+        return events.map((e: any) => ({ ...e, date: new Date(e.date) }));
+      }
+    }
+  } catch {}
+
+  try {
+    const year = new Date().getFullYear();
+    const res = await fetch(`https://api.aladhan.com/v1/calendar/${year}?annual=true`);
+    if (!res.ok) throw new Error('API error');
+    const json = await res.json();
+    const found: { name: string; date: Date; emoji: string; grad: [string, string] }[] = [];
+    const seen = new Set<string>();
+    for (const month of Object.values(json.data || {}) as any[]) {
+      for (const day of month) {
+        const dateStr = day.gregorian?.date; // DD-MM-YYYY
+        const holidays: string[] = day.hijri?.holidays || [];
+        for (const holiday of holidays) {
+          const match = HIJRI_EVENT_KEYWORDS.find(k => holiday.toLowerCase().includes(k.keyword.toLowerCase()));
+          if (match && dateStr && !seen.has(holiday)) {
+            seen.add(holiday);
+            const [d, m, y] = dateStr.split('-').map(Number);
+            found.push({ name: holiday, date: new Date(y, m - 1, d), emoji: match.emoji, grad: match.grad });
+          }
+        }
+      }
+    }
+    if (found.length) {
+      await AsyncStorage.setItem(ISLAMIC_EVENTS_CACHE_KEY, JSON.stringify({ events: found, cachedAt: Date.now() }));
+      return found;
+    }
+  } catch {}
+
+  // Static fallback for the current cycle — only used if API is unreachable
+  return [
+    { name: 'Ramadan 1447',     date: new Date('2026-02-17'), emoji: '🌙', grad: ['#0F2D5A', '#1D4ED8'] },
+    { name: 'Eid al-Fitr 1447', date: new Date('2026-03-20'), emoji: '🌙', grad: ['#065F46', '#10B981'] },
+    { name: 'Eid al-Adha 1447', date: new Date('2026-05-27'), emoji: '🕌', grad: ['#78350F', '#B45309'] },
+  ];
+}
+
+function getNextIslamicEvent(events: { name: string; date: Date; emoji: string; grad: [string, string] }[]) {
   const now = new Date();
-  const future = ISLAMIC_EVENTS.filter(e => e.date > now)
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const future = events.filter(e => e.date > now).sort((a, b) => a.date.getTime() - b.date.getTime());
   if (!future.length) return null;
   const next = future[0];
   const daysLeft = Math.ceil((next.date.getTime() - now.getTime()) / 86400000);
@@ -288,7 +342,15 @@ export default function HomeScreen() {
   const { t } = useTranslation(language);
   const greeting = useMemo(() => getGreeting(), []);
   const hijri = useMemo(() => getHijriDate(), []);
-  const nextIslamicEvent = useMemo(() => getNextIslamicEvent(), []);
+  const nextIslamicEvent = useMemo(() => getNextIslamicEvent([]), []);
+  const [dynamicIslamicEvent, setDynamicIslamicEvent] = useState(nextIslamicEvent);
+  useEffect(() => {
+    fetchIslamicEvents().then(events => {
+      const next = getNextIslamicEvent(events);
+      if (next) setDynamicIslamicEvent(next);
+    }).catch(() => {});
+  }, []);
+
 
   // Time-aware greeting gradient + Arabic phrase
   const greetingGrad = useMemo((): [string, string] => {
@@ -396,7 +458,10 @@ export default function HomeScreen() {
       const r = await fetch(url);
       const j = await r.json();
       if (j?.data?.timings) setTimes(j.data.timings);
-    } catch {}
+    } catch {
+      // On refresh failure, keep showing whatever is already on screen
+      if (__DEV__) console.warn('[Home] Refresh fetch failed — keeping current times');
+    }
     setRefreshing(false);
   }, []);
   const orderedQuickActions = useMemo(() => {
@@ -458,7 +523,7 @@ export default function HomeScreen() {
     drift: Math.random() * 100 - 50
   }))).current;
 
-  // Load prayer times
+  // Load prayer times — network first, cache fallback for offline/travel
   useEffect(() => {
     (async () => {
       try {
@@ -476,7 +541,13 @@ export default function HomeScreen() {
           await schedulePrayerNotifications(fetchedTimings, settings.adhanEnabled);
         }
       } catch (e) {
-        console.error("Failed to load home page timings:", e);
+        if (__DEV__) console.warn('[Home] Aladhan fetch failed — loading from cache:', e);
+        // A3: Offline fallback — show cached timings so the prayer card is never blank
+        const cached = await getPrayerTimingsCache();
+        if (cached?.timings) {
+          setTimes(cached.timings);
+          if ((cached as any).city) setCity((cached as any).city);
+        }
       }
     })();
   }, []);
@@ -1479,13 +1550,13 @@ export default function HomeScreen() {
         )}
 
         {/* ── Islamic Event Countdown ── */}
-        {nextIslamicEvent && (
+        {dynamicIslamicEvent && (
           <AnimatedCard
             onPress={() => router.push('/articles' as any)}
             style={{ marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: 'hidden' }}
           >
             <LinearGradient
-              colors={nextIslamicEvent.grad}
+              colors={dynamicIslamicEvent.grad}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 }}
             >
@@ -1494,17 +1565,17 @@ export default function HomeScreen() {
                 backgroundColor: 'rgba(255,255,255,0.18)',
                 alignItems: 'center', justifyContent: 'center',
               }}>
-                <Text style={{ fontSize: 26 }}>{nextIslamicEvent.emoji}</Text>
+                <Text style={{ fontSize: 26 }}>{dynamicIslamicEvent.emoji}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', fontFamily: 'Figtree_400Regular' }}>Coming Soon</Text>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', fontFamily: 'Outfit_600SemiBold', marginTop: 3 }}>{nextIslamicEvent.name}</Text>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', fontFamily: 'Outfit_600SemiBold', marginTop: 3 }}>{dynamicIslamicEvent.name}</Text>
               </View>
               <View style={{
                 alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.18)',
                 borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
               }}>
-                <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', fontFamily: 'Outfit_600SemiBold', lineHeight: 32 }}>{nextIslamicEvent.daysLeft}</Text>
+                <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', fontFamily: 'Outfit_600SemiBold', lineHeight: 32 }}>{dynamicIslamicEvent.daysLeft}</Text>
                 <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: '700', letterSpacing: 0.5 }}>DAYS</Text>
               </View>
             </LinearGradient>

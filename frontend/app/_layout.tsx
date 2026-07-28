@@ -22,7 +22,7 @@ import { PremiumModalProvider } from "@/src/PremiumModalContext";
 import PremiumModal from "@/src/components/PremiumModal";
 import { QuranPlayerProvider } from "@/src/QuranPlayerContext";
 import { MiniPlayerBar } from "@/src/components/MiniPlayerBar";
-import { getPrayerTimingsCache, savePrayerTimingsCache } from "@/src/storage";
+import { getPrayerTimingsCache, savePrayerTimingsCache, localDateKey } from "@/src/storage";
 
 async function checkPrayerNotificationExpired(notification: Notifications.Notification): Promise<boolean> {
   try {
@@ -246,6 +246,40 @@ export default function RootLayout() {
       }
     };
     requestPermissions();
+
+    // A4: One-shot migration — promote v1 prayer cache to v2 for existing users.
+    // After this runs once, all readers (prayer.tsx, _layout.tsx) find data in v2.
+    const migrateV1Cache = async () => {
+      try {
+        const [v1Raw, v2Raw] = await AsyncStorage.multiGet([
+          'hikmah:prayer-timings-cache:v1',
+          'hikmah:prayer-timings-cache:v2',
+        ]);
+        const v1 = v1Raw[1];
+        const v2 = v2Raw[1];
+        if (v1 && !v2) {
+          // Copy v1 data into v2 format and persist via the canonical helper
+          const parsed = JSON.parse(v1);
+          if (parsed?.timings) {
+            await savePrayerTimingsCache({
+              timings: parsed.timings,
+              date: parsed.date || localDateKey(),
+              latitude: parsed.lat ?? parsed.latitude ?? 0,
+              longitude: parsed.lon ?? parsed.longitude ?? 0,
+              method: parsed.method ?? 2,
+              juristic: parsed.juristic ?? 0,
+              source: 'calculated',
+              savedAt: Date.now(),
+            });
+            if (__DEV__) console.log('[Migration] Promoted prayer cache v1 → v2');
+          }
+          await AsyncStorage.removeItem('hikmah:prayer-timings-cache:v1');
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[Migration] v1→v2 prayer cache migration error:', e);
+      }
+    };
+    migrateV1Cache();
   }, []);
 
   useEffect(() => {

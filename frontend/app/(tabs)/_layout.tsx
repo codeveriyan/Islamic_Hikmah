@@ -8,6 +8,7 @@ import Animated, {
   withTiming,
   interpolate,
 } from "react-native-reanimated";
+import { useEffect } from "react";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
@@ -24,8 +25,8 @@ function TabIcon({
   color: string;
   focused: boolean;
 }) {
-  const scale = useSharedValue(1);
-  const dotOpacity = useSharedValue(0);
+  const scale = useSharedValue(focused ? 1.18 : 1);
+  const dotOpacity = useSharedValue(focused ? 1 : 0);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -35,11 +36,11 @@ function TabIcon({
     width: interpolate(dotOpacity.value, [0, 1], [0, 4]),
   }));
 
-  // Trigger once on focus change
-  if (focused !== (scale.value > 1)) {
+  // C1 fix: drive animations from useEffect, never during render
+  useEffect(() => {
     scale.value = withSpring(focused ? 1.18 : 1, { damping: 12, stiffness: 260 });
     dotOpacity.value = withTiming(focused ? 1 : 0, { duration: 200 });
-  }
+  }, [focused]);
 
   return (
     <View style={{ alignItems: "center", gap: 4 }}>
