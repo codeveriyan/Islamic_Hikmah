@@ -22,6 +22,7 @@ import transliterationSyllablesData from "@/src/data/quran/transliterationSyllab
 import transliterationWbwData from "@/src/data/quran/transliterationWbw.json";
 import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 import { QURAN_AUDIO_CATALOG, QURAN_AUDIO_CATEGORIES, QuranAudioCategory } from "@/src/data/quran/quranAudioCatalog";
+import { getTafsirSurah, prefetchNextSurahTafsir } from "@/src/services/cdnContentService";
 
 type Ayah = {
   number: number;
@@ -302,89 +303,45 @@ export default function SurahDetail() {
   const [tafsirLoading, setTafsirLoading] = useState(false);
   const [tafsirContent, setTafsirContent] = useState("");
   const [tafsirRef, setTafsirRef] = useState({ surah: 0, ayah: 0, arabic: "", trans: "" });
-  const [activeTafsirId, setActiveTafsirId] = useState<number>(169); // 169 = Ibn Kathir (English), 160 = Al-Jalalayn (English by F. Hamza)
+  const [activeTafsirId, setActiveTafsirId] = useState<number>(169); // 169 = Ibn Kathir (English)
+  const [selectedTafsirLang, setSelectedTafsirLang] = useState<string>("english");
 
-  const availableTafsirs = useMemo(() => {
-    // Maps standard translation ISO codes to language tags in tarteel JSON
-    const langMap: Record<string, string> = {
-      en: "english",
-      ta: "tamil",
-      hi: "hindi",
-      ur: "urdu",
-      bn: "bengali",
-      te: "telugu",
-      kn: "kannada",
-      ml: "malayalam",
-      es: "spanish",
-      fr: "french",
-      de: "german",
-      tr: "turkish",
-      id: "indones", // matches indonesian and indoniesua
-      ru: "russian",
-      fa: "persian",
-      so: "somali",
-      ms: "malay",
-      uz: "uzbek",
-      yo: "yoruba",
-      ps: "pashto",
-      gu: "gujarati",
-      mr: "marathi",
-      pa: "punjabi",
-      sq: "albanian",
-      bs: "bosnian",
-      ro: "romanian",
-      sw: "swahili",
-      tg: "tajik",
-      az: "azeri",
-      zh: "chinese",
-      ja: "japanese",
-      ko: "korean",
-      ku: "kurdish",
-      pt: "portuguese",
-      th: "thai",
-      vi: "vietnamese",
-      si: "sinhalese",
-      tl: "tagalog",
-      ug: "uyghur",
-      ar: "arabic"
-    };
+  useEffect(() => {
+    AsyncStorage.getItem("quran_tafsir_lang").then(l => {
+      if (l) setSelectedTafsirLang(l);
+    }).catch(() => {});
+  }, []);
 
-    const targetLang = langMap[quranTransLang] || "english";
-    let filtered = (tafsirIndexData as any[]).filter((t) => {
-      const l = t.language.toLowerCase();
-      if (targetLang === "indones") {
-        return l.includes("indones") || l.includes("indoniesua");
+  const allTafsirs = useMemo(() => {
+    const list: { id: string | number; title: string; language: string }[] = [
+      { id: "169", title: "Ibn Kathir (Eng)", language: "english" },
+      { id: "160", title: "Al-Jalalayn (Eng)", language: "english" },
+      { id: "16", title: "Tafsir Muyassar", language: "arabic" },
+      { id: "91", title: "Tafsir Al-Sa'di", language: "arabic" },
+    ];
+
+    (tafsirIndexData as any[]).forEach(t => {
+      const exists = list.some(l => String(l.id) === String(t.id));
+      if (!exists) {
+        list.push({
+          id: t.id,
+          title: t.title,
+          language: (t.language || "english").toLowerCase(),
+        });
       }
-      return l.includes(targetLang) || targetLang.includes(l);
     });
 
-    // Merge quran.com Tafsirs for specific major languages to offer more rich commentary
-    if (targetLang === "english") {
-      filtered = [
-        { id: "169", title: "Ibn Kathir (Eng)", language: "english" },
-        { id: "160", title: "Al-Jalalayn (Eng)", language: "english" },
-        ...filtered
-      ];
-    } else if (targetLang === "arabic") {
-      filtered = [
-        { id: "16", title: "Tafsir Muyassar", language: "arabic" },
-        { id: "91", title: "Tafsir Al-Sa'di", language: "arabic" },
-        ...filtered
-      ];
-    } else if (targetLang === "urdu") {
-      filtered = [
-        { id: "160", title: "Ibn Kathir (Urdu)", language: "urdu" },
-        ...filtered
-      ];
-    }
+    return list;
+  }, []);
 
-    if (filtered.length === 0) {
-      filtered = [
-        { id: "266", title: "English Al-Mukhtasar", language: "english" }
-      ];
+  const availableTafsirs = useMemo(() => {
+    if (selectedTafsirLang === "all") return allTafsirs;
+    if (selectedTafsirLang === "other") {
+      const mainLangs = ["english", "arabic", "urdu", "tamil", "hindi", "bengali", "turkish", "persian", "spanish", "telugu", "malayalam", "kurdish"];
+      return allTafsirs.filter(t => !mainLangs.includes(t.language.toLowerCase()));
     }
-    return filtered;
-  }, [quranTransLang]);
+    return allTafsirs.filter(t => t.language.toLowerCase().includes(selectedTafsirLang.toLowerCase()));
+  }, [allTafsirs, selectedTafsirLang]);
 
   // Keep activeTafsirId synced when availableTafsirs changes
   useEffect(() => {
@@ -478,72 +435,17 @@ export default function SurahDetail() {
         return;
       }
 
-      // Check if this tafsirId is one of the local Tarteel Tafsirs
       const isLocalTafsir = (tafsirIndexData as any[]).some(t => String(t.id) === String(tafsirId));
-
+      let jsonContent: any = null;
       if (isLocalTafsir) {
-        const isWeb = Platform.OS === 'web' || !FileSystem.documentDirectory;
-        let jsonContent = tafsirMemoryCache.get(`json_${tafsirId}`) || null;
-
-        if (!jsonContent) {
-          if (isWeb) {
-            // On Web, first try to fetch from local server's public folder, then fall back to GitHub
-            let response = null;
-            try {
-              const localUrl = window.location.origin + '/tafsirs/' + tafsirId + '.json';
-              if (__DEV__) console.log("Attempting local fetch:", localUrl);
-              response = await fetch(localUrl);
-            } catch (localErr) {
-              console.warn("Local fetch failed, falling back to GitHub:", localErr);
-            }
-
-            if (!response || !response.ok) {
-              const githubUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-              if (__DEV__) console.log("Fetching from GitHub:", githubUrl);
-              response = await fetch(githubUrl);
-            }
-
-            if (response && response.ok) {
-              jsonContent = await response.json();
-              tafsirMemoryCache.set(`json_${tafsirId}`, jsonContent);
-            } else {
-              throw new Error(`Failed to load Tafsir: ${response ? response.status : 'network error'}`);
-            }
-          } else {
-            // On Native (iOS/Android), read from local file system or download if not exists
-            const localUri = `${FileSystem.documentDirectory}tafsirs/${tafsirId}.json`;
-            const dirUri = `${FileSystem.documentDirectory}tafsirs/`;
-
-            try {
-              const dirInfo = await FileSystem.getInfoAsync(dirUri);
-              if (!dirInfo.exists) {
-                await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true });
-              }
-
-              const fileInfo = await FileSystem.getInfoAsync(localUri);
-              if (fileInfo.exists) {
-                const raw = await FileSystem.readAsStringAsync(localUri);
-                jsonContent = JSON.parse(raw);
-                tafsirMemoryCache.set(`json_${tafsirId}`, jsonContent);
-              }
-            } catch (fsErr) {
-              console.warn("FS read error:", fsErr);
-            }
-
-            if (!jsonContent) {
-              // Download JSON from raw GitHub
-              const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${tafsirId}.json`;
-              if (__DEV__) console.log("Downloading Tafsir from:", downloadUrl);
-              const dlResult = await FileSystem.downloadAsync(downloadUrl, localUri);
-              if (dlResult.status === 200) {
-                const raw = await FileSystem.readAsStringAsync(localUri);
-                jsonContent = JSON.parse(raw);
-                tafsirMemoryCache.set(`json_${tafsirId}`, jsonContent);
-              } else {
-                throw new Error(`Download failed with status ${dlResult.status}`);
-              }
-            }
-          }
+        // Load chunked Surah data via CDN service (0ms from disk cache, network fetch if missing)
+        const result = await getTafsirSurah(tafsirId, id as string);
+        if (result.success && result.data) {
+          jsonContent = result.data;
+          // Background prefetch next Surah for seamless reading
+          prefetchNextSurahTafsir(tafsirId, Number(id));
+        } else {
+          throw new Error(result.error || "Failed to load Tafsir chunk");
         }
 
         const key = `${id}:${ayahNum}`;
@@ -1660,34 +1562,57 @@ export default function SurahDetail() {
         <View style={styles.modalOverlay}>
           <View style={[styles.tafsirModalContent, { backgroundColor: rc.bg, borderColor: colors.border }]}>
             <View style={styles.tafsirModalHeader}>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ flexDirection: "row", gap: 12, alignItems: "center" }}
-              >
-                {availableTafsirs.map((taf) => {
-                  const isActive = String(activeTafsirId) === String(taf.id);
+              {/* Language filter pills */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 36, marginBottom: 8, marginTop: 4 }} contentContainerStyle={{ gap: 6, paddingHorizontal: 4 }}>
+                {[
+                  { id: "all", label: "All Languages" },
+                  { id: "english", label: "English" },
+                  { id: "arabic", label: "Arabic" },
+                  { id: "urdu", label: "Urdu" },
+                  { id: "tamil", label: "Tamil" },
+                  { id: "hindi", label: "Hindi" },
+                  { id: "bengali", label: "Bengali" },
+                  { id: "turkish", label: "Turkish" },
+                  { id: "persian", label: "Persian" },
+                  { id: "spanish", label: "Spanish" },
+                  { id: "telugu", label: "Telugu" },
+                  { id: "malayalam", label: "Malayalam" },
+                  { id: "kurdish", label: "Kurdish" },
+                  { id: "other", label: "Other" },
+                ].map(lang => {
+                  const isLangActive = selectedTafsirLang === lang.id;
                   return (
                     <Pressable
-                      key={taf.id}
-                      onPress={() => {
-                        setActiveTafsirId(Number(taf.id));
-                        openTafsirModal(tafsirRef.ayah, tafsirRef.arabic, tafsirRef.trans, Number(taf.id));
-                      }}
+                      key={lang.id}
+                      onPress={() => setSelectedTafsirLang(lang.id)}
                       style={{
-                        borderBottomWidth: isActive ? 2 : 0,
-                        borderBottomColor: colors.brand,
-                        paddingBottom: 4,
-                        paddingHorizontal: 4,
+                        paddingVertical: 4,
+                        paddingHorizontal: 10,
+                        borderRadius: 12,
+                        backgroundColor: isLangActive ? colors.brand : colors.surfaceSecondary,
+                        borderWidth: 1,
+                        borderColor: isLangActive ? colors.brand : colors.border,
                       }}
                     >
-                      <Text style={[styles.tafsirModalTitle, { color: isActive ? colors.brand : rc.trans, fontSize: 14 }]}>
-                        {taf.title}
+                      <Text style={{ fontSize: 11, fontWeight: "600", color: isLangActive ? "#fff" : colors.onSurface }}>
+                        {lang.label}
                       </Text>
                     </Pressable>
                   );
                 })}
               </ScrollView>
+
+              {(() => {
+                const currentTaf = allTafsirs.find(t => String(t.id) === String(activeTafsirId)) || availableTafsirs[0];
+                if (!currentTaf) return null;
+                return (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={[styles.tafsirModalTitle, { color: colors.brand, fontSize: 15, fontWeight: "700" }]}>
+                      {currentTaf.title}
+                    </Text>
+                  </View>
+                );
+              })()}
               {(() => {
                 const isLocal = tafsirIndexData.some(t => String(t.id) === String(activeTafsirId));
                 if (!isLocal) return null;

@@ -15,9 +15,12 @@ import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as FileSystem from "expo-file-system";
 import quranData from "@/src/data/quran/quranData.json";
 import pageMappingData from "@/src/data/quran/pageMapping.json";
+import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 import { JUZ_DATA } from "@/src/data/juzData";
 import { SURAH_LIST, SurahMeta } from "@/src/data/surahList";
 import naqaaReciters from "@/src/data/quran/naqaaReciters.json";
+
+const tafsirMemoryCache = new Map<string, any>();
 // surahInfoDetailed (6.9 MB), transliterationWbw (1.6 MB), and
 // transliterationTajweed (683 KB) are lazy-required inside useMemo below
 // so they are NOT parsed during app startup.
@@ -543,7 +546,7 @@ export default function QuranPageReader() {
 
   // ─── Modals ────────────────────────────────────────────────────────────────
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"arabic" | "translation" | "wbw">("arabic");
+  const [settingsTab, setSettingsTab] = useState<"arabic" | "translation" | "wbw" | "tafsir">("arabic");
   const [showInfo, setShowInfo] = useState<LocalSurah | null>(null);
   const [apiSurahInfo, setApiSurahInfo] = useState<{ short_text: string; text: string; source: string } | null>(null);
   const [infoTab, setInfoTab] = useState<"ibn_ashur" | "maududi">("ibn_ashur");
@@ -561,7 +564,8 @@ export default function QuranPageReader() {
   // ─── Tafsir (Feature 3) ───────────────────────────────────────────────────
   const [showTafsir, setShowTafsir] = useState<{ surah: number; ayah: number } | null>(null);
   const [tafsirSources, setTafsirSources] = useState<TafsirSource[]>([]);
-  const [selectedTafsirId, setSelectedTafsirId] = useState(169); // Ibn Kathir default
+  const [selectedTafsirId, setSelectedTafsirId] = useState<number | string>(169); // Ibn Kathir default
+  const [selectedTafsirLang, setSelectedTafsirLang] = useState<string>("all");
   const [tafsirText, setTafsirText] = useState("");
   const [tafsirLoading, setTafsirLoading] = useState(false);
 
@@ -847,7 +851,10 @@ export default function QuranPageReader() {
         if (wbwTransBelow) setWbwShowTransBelow(wbwTransBelow === "true");
 
         const tid = await AsyncStorage.getItem("quran_selected_tafsir");
-        if (tid) setSelectedTafsirId(parseInt(tid));
+        if (tid) setSelectedTafsirId(tid);
+
+        const tlang = await AsyncStorage.getItem("quran_tafsir_lang");
+        if (tlang) setSelectedTafsirLang(tlang);
 
         // Load per-verse bookmarks for current page
         const allBm = await getQuranBookmarks();
@@ -990,12 +997,95 @@ export default function QuranPageReader() {
     if (!showTafsir) return;
     const fetchTafsir = async () => {
       setTafsirLoading(true);
+      const surah = showTafsir.surah;
+      const ayah = showTafsir.ayah;
+      const cacheKey = `hikmah:tafsir:${selectedTafsirId}:${surah}:${ayah}`;
+
+      if (tafsirMemoryCache.has(cacheKey)) {
+        setTafsirText(tafsirMemoryCache.get(cacheKey));
+        setTafsirLoading(false);
+        return;
+      }
+
       try {
-        const r = await fetch(`https://api.quran.com/api/v4/tafsirs/${selectedTafsirId}/by_ayah/${showTafsir.surah}:${showTafsir.ayah}`);
-        const d = await r.json();
-        setTafsirText(d.tafsir?.text?.replace(/<[^>]*>/g, "") || "No tafsir available for this verse.");
-      } catch { setTafsirText("Could not load tafsir. Check your internet connection."); }
-      finally { setTafsirLoading(false); }
+        const isLocalTafsir = (tafsirIndexData as any[]).some(t => String(t.id) === String(selectedTafsirId));
+
+        if (isLocalTafsir) {
+          let jsonContent = tafsirMemoryCache.get(`json_${selectedTafsirId}`) || null;
+
+          if (!jsonContent) {
+            const isWeb = Platform.OS === 'web' || !(FileSystem as any).documentDirectory;
+            if (isWeb) {
+              let response = null;
+              try {
+                const localUrl = (typeof window !== "undefined" ? window.location.origin : "") + '/tafsirs/' + selectedTafsirId + '.json';
+                response = await fetch(localUrl);
+              } catch (err) {}
+
+              if (!response || !response.ok) {
+                const githubUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${selectedTafsirId}.json`;
+                response = await fetch(githubUrl);
+              }
+
+              if (response && response.ok) {
+                jsonContent = await response.json();
+                tafsirMemoryCache.set(`json_${selectedTafsirId}`, jsonContent);
+              }
+            } else {
+              const localUri = `${(FileSystem as any).documentDirectory}tafsirs/${selectedTafsirId}.json`;
+              const dirUri = `${(FileSystem as any).documentDirectory}tafsirs/`;
+
+              try {
+                const dirInfo = await (FileSystem as any).getInfoAsync(dirUri);
+                if (!dirInfo.exists) {
+                  await (FileSystem as any).makeDirectoryAsync(dirUri, { intermediates: true });
+                }
+                const fileInfo = await (FileSystem as any).getInfoAsync(localUri);
+                if (fileInfo.exists) {
+                  const raw = await (FileSystem as any).readAsStringAsync(localUri);
+                  jsonContent = JSON.parse(raw);
+                  tafsirMemoryCache.set(`json_${selectedTafsirId}`, jsonContent);
+                }
+              } catch (fsErr) {}
+
+              if (!jsonContent) {
+                const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${selectedTafsirId}.json`;
+                const dlResult = await (FileSystem as any).downloadAsync(downloadUrl, localUri);
+                if (dlResult.status === 200) {
+                  const raw = await (FileSystem as any).readAsStringAsync(localUri);
+                  jsonContent = JSON.parse(raw);
+                  tafsirMemoryCache.set(`json_${selectedTafsirId}`, jsonContent);
+                }
+              }
+            }
+          }
+
+          const key = `${surah}:${ayah}`;
+          if (jsonContent && jsonContent[key]) {
+            let text = jsonContent[key].text || "";
+            text = text.replace(/<\/?[^>]+(>|$)/g, "").trim();
+            tafsirMemoryCache.set(cacheKey, text);
+            setTafsirText(text);
+          } else {
+            setTafsirText("Commentary not available for this verse.");
+          }
+        } else {
+          // Quran.com API fallback
+          const r = await fetch(`https://api.quran.com/api/v4/tafsirs/${selectedTafsirId}/by_ayah/${surah}:${ayah}`);
+          const d = await r.json();
+          if (d && d.tafsir && d.tafsir.text) {
+            let cleanText = d.tafsir.text.replace(/<\/?[^>]+(>|$)/g, "").trim();
+            tafsirMemoryCache.set(cacheKey, cleanText);
+            setTafsirText(cleanText);
+          } else {
+            setTafsirText("Commentary not available for this verse.");
+          }
+        }
+      } catch {
+        setTafsirText("Could not load tafsir. Check your internet connection.");
+      } finally {
+        setTafsirLoading(false);
+      }
     };
     fetchTafsir();
   }, [showTafsir, selectedTafsirId]);
@@ -1111,7 +1201,7 @@ export default function QuranPageReader() {
 
   useEffect(() => {
     if (focusedVerse && focusedVerseTab === "tafsirs") {
-      fetchFocusedTafsir(focusedVerse.surahNumber, focusedVerse.ayahNumber, selectedTafsirId);
+      fetchFocusedTafsir(focusedVerse.surahNumber, focusedVerse.ayahNumber, Number(selectedTafsirId));
     }
   }, [focusedVerse, focusedVerseTab, selectedTafsirId, fetchFocusedTafsir]);
 
@@ -1567,11 +1657,42 @@ export default function QuranPageReader() {
     );
   }, [surahSearchQuery]);
 
-  // English tafsir sources only
-  const englishTafsirs = useMemo(() => {
-    const main = tafsirSources.filter(t => t.language_name === "english");
-    return main.length > 0 ? main : [{ id: 169, name: "Tafsir Ibn Kathir", author_name: "Ibn Kathir", slug: "en-tafisr-ibn-kathir", language_name: "english" }];
+  // All local & remote tafsir sources
+  const allTafsirs = useMemo(() => {
+    const list: { id: string | number; title: string; language: string }[] = [];
+
+    // Add local dataset tafsirs
+    (tafsirIndexData as any[]).forEach(t => {
+      list.push({
+        id: t.id,
+        title: t.title,
+        language: (t.language || "english").toLowerCase(),
+      });
+    });
+
+    // Add quran.com API tafsirs if not already present
+    tafsirSources.forEach(apiTaf => {
+      const exists = list.some(l => String(l.id) === String(apiTaf.id));
+      if (!exists) {
+        list.push({
+          id: apiTaf.id,
+          title: apiTaf.name,
+          language: (apiTaf.language_name || "english").toLowerCase(),
+        });
+      }
+    });
+
+    return list;
   }, [tafsirSources]);
+
+  const filteredTafsirs = useMemo(() => {
+    if (selectedTafsirLang === "all") return allTafsirs;
+    if (selectedTafsirLang === "other") {
+      const mainLangs = ["english", "arabic", "urdu", "tamil", "hindi", "bengali", "turkish", "persian", "spanish", "telugu", "malayalam", "kurdish"];
+      return allTafsirs.filter(t => !mainLangs.includes(t.language.toLowerCase()));
+    }
+    return allTafsirs.filter(t => t.language.toLowerCase().includes(selectedTafsirLang.toLowerCase()));
+  }, [allTafsirs, selectedTafsirLang]);
 
   // Progress bar fraction
   const progressFraction = status.duration > 0 ? status.currentTime / status.duration : 0;
@@ -2090,11 +2211,11 @@ export default function QuranPageReader() {
 
             {/* Tab Selector */}
             <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
-              {(["arabic", "translation", "wbw"] as const).map(tab => (
+              {(["arabic", "translation", "wbw", "tafsir"] as const).map(tab => (
                 <Pressable key={tab} onPress={() => setSettingsTab(tab)}
                   style={[styles.tabBtn, settingsTab === tab && { borderBottomColor: colors.brand, borderBottomWidth: 2 }]}>
                   <Text style={[styles.tabBtnText, { color: settingsTab === tab ? colors.brand : colors.onSurfaceMuted }]}>
-                    {tab === "arabic" ? "Arabic" : tab === "translation" ? "Translation" : "Word By Word"}
+                    {tab === "arabic" ? "Arabic" : tab === "translation" ? "Translation" : tab === "wbw" ? "Word By Word" : "Tafsir"}
                   </Text>
                 </Pressable>
               ))}
@@ -2348,6 +2469,86 @@ export default function QuranPageReader() {
                     style={[styles.resetBtn, { borderColor: colors.border, marginTop: 16 }]}>
                     <Text style={[styles.resetBtnText, { color: colors.onSurfaceMuted }]}>Reset</Text>
                   </Pressable>
+                </View>
+              )}
+
+              {/* Tafsir Tab */}
+              {settingsTab === "tafsir" && (
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.onSurface, marginBottom: 4 }]}>Preferred Tafsir Language</Text>
+                  <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginBottom: 12 }}>
+                    Select your preferred language. The verse Tafsir viewer will show commentary in this language.
+                  </Text>
+                  
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+                    {[
+                      { id: "english", label: "English" },
+                      { id: "arabic", label: "Arabic" },
+                      { id: "urdu", label: "Urdu" },
+                      { id: "tamil", label: "Tamil" },
+                      { id: "hindi", label: "Hindi" },
+                      { id: "bengali", label: "Bengali" },
+                      { id: "turkish", label: "Turkish" },
+                      { id: "persian", label: "Persian" },
+                      { id: "spanish", label: "Spanish" },
+                      { id: "telugu", label: "Telugu" },
+                      { id: "malayalam", label: "Malayalam" },
+                      { id: "kurdish", label: "Kurdish" },
+                      { id: "all", label: "All Languages" },
+                    ].map(lang => {
+                      const isSel = selectedTafsirLang === lang.id;
+                      return (
+                        <Pressable
+                          key={lang.id}
+                          onPress={async () => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                            setSelectedTafsirLang(lang.id);
+                            await AsyncStorage.setItem("quran_tafsir_lang", lang.id);
+                          }}
+                          style={{
+                            paddingVertical: 8,
+                            paddingHorizontal: 14,
+                            borderRadius: 16,
+                            backgroundColor: isSel ? colors.brand : colors.surfaceSecondary,
+                            borderWidth: 1,
+                            borderColor: isSel ? colors.brand : colors.border,
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "600", color: isSel ? "#fff" : colors.onSurface }}>
+                            {lang.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <Text style={[styles.settingLabel, { color: colors.onSurface, marginBottom: 4 }]}>Default Tafsir Commentary</Text>
+                  <View style={{ gap: 8, marginBottom: 16 }}>
+                    {filteredTafsirs.slice(0, 15).map(taf => {
+                      const isSel = String(selectedTafsirId) === String(taf.id);
+                      return (
+                        <Pressable
+                          key={taf.id}
+                          onPress={async () => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                            setSelectedTafsirId(taf.id);
+                            await AsyncStorage.setItem("quran_selected_tafsir", String(taf.id));
+                          }}
+                          style={[
+                            styles.reciterRow,
+                            { borderColor: isSel ? colors.brand : colors.border, backgroundColor: isSel ? colors.brand + "10" : colors.surfaceSecondary }
+                          ]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.reciterRowText, { color: isSel ? colors.brand : colors.onSurface, fontWeight: isSel ? "700" : "500" }]}>
+                              {taf.title}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2, textTransform: "capitalize" }}>{taf.language}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
               )}
             </ScrollView>
@@ -2749,20 +2950,37 @@ export default function QuranPageReader() {
       {showTafsir && (
         <Modal visible animationType="slide" transparent onRequestClose={() => setShowTafsir(null)}>
           <View style={styles.bottomSheetOverlay}>
-            <View style={[styles.bottomSheet, { backgroundColor: colors.surface, maxHeight: "80%" }]}>
+            <View style={[styles.bottomSheet, { backgroundColor: colors.surface, maxHeight: "85%" }]}>
               <View style={styles.sheetHeader}>
                 <Text style={[styles.sheetTitle, { color: colors.onSurface }]}>Tafsir — {showTafsir.surah}:{showTafsir.ayah}</Text>
-                <Pressable onPress={() => setShowTafsir(null)}><MaterialCommunityIcons name="close" size={24} color={colors.onSurface} /></Pressable>
-              </View>
-              {/* Tafsir source pills */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tafsirPillsRow} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-                {englishTafsirs.map(t => (
-                  <Pressable key={t.id} onPress={() => { setSelectedTafsirId(t.id); AsyncStorage.setItem("quran_selected_tafsir", String(t.id)); }}
-                    style={[styles.tafsirPill, selectedTafsirId === t.id ? { backgroundColor: colors.brand } : { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1 }]}>
-                    <Text style={[styles.tafsirPillText, { color: selectedTafsirId === t.id ? "#fff" : colors.onSurface }]}>{t.name?.substring(0, 20)}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  <Pressable onPress={() => { setShowTafsir(null); setSettingsTab("tafsir"); setShowSettings(true); }} hitSlop={10}>
+                    <MaterialCommunityIcons name="cog-outline" size={22} color={colors.brand} />
                   </Pressable>
-                ))}
-              </ScrollView>
+                  <Pressable onPress={() => setShowTafsir(null)} hitSlop={10}>
+                    <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Single currently selected Tafsir pill */}
+              {(() => {
+                const currentTafsir = allTafsirs.find(t => String(t.id) === String(selectedTafsirId)) || filteredTafsirs[0];
+                if (!currentTafsir) return null;
+                return (
+                  <View style={{ paddingHorizontal: 16, marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+                    <Pressable
+                      onPress={() => { setShowTafsir(null); setSettingsTab("tafsir"); setShowSettings(true); }}
+                      style={[styles.tafsirPill, { backgroundColor: colors.brand, flexDirection: "row", alignItems: "center", gap: 6 }]}
+                    >
+                      <Text style={[styles.tafsirPillText, { color: "#fff" }]}>
+                        {currentTafsir.title}
+                      </Text>
+                      <MaterialCommunityIcons name="chevron-down" size={16} color="#fff" />
+                    </Pressable>
+                  </View>
+                );
+              })()}
               <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
                 {tafsirLoading ? <ActivityIndicator color={colors.brand} style={{ marginTop: 20 }} /> : (
                   <Text style={[styles.tafsirBody, { color: colors.onSurfaceSecondary }]}>{tafsirText}</Text>

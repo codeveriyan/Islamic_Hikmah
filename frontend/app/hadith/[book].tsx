@@ -14,7 +14,8 @@ import * as Haptics from "expo-haptics";
 import { HADITH_BOOKS } from "./index";
 import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
 import { HADITH_INTRODUCTIONS } from "@/src/data/hadithIntroductions";
-import hadithFallback from "@/src/data/quran/hadithFallback.json";
+// hadithFallback (19.3 MB) is lazy-required inside getFallbackData() below
+// so it is NOT parsed during app startup.
 import { 
   toggleFavourite, 
   getFavourites, 
@@ -224,13 +225,19 @@ export default function HadithDetailScreen() {
     let isMounted = true;
 
     // ── helpers ────────────────────────────────────────────────────────────────
-    const getFallbackData = (): Hadith[] =>
-      ((hadithFallback as any)[book] || []).map((h: any) => ({
-        hadithnumber: h.hadithnumber,
-        bookNumber: h.bookNumber,
-        text: toPlainText(h.text),
-        arabicText: toPlainText(h.arabicText || ""),
-      }));
+    const getFallbackData = (): Hadith[] => {
+      try {
+        const fallbackObj = require("@/src/data/quran/hadithFallback.json");
+        return ((fallbackObj as any)[book] || []).map((h: any) => ({
+          hadithnumber: h.hadithnumber,
+          bookNumber: h.bookNumber,
+          text: toPlainText(h.text),
+          arabicText: toPlainText(h.arabicText || ""),
+        }));
+      } catch {
+        return [];
+      }
+    };
 
     const loadOfflineCache = async (): Promise<Hadith[] | null> => {
       try {

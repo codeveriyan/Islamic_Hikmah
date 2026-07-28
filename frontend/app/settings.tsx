@@ -55,6 +55,12 @@ const ITEMS: SettingItem[] = [
     icon: "translate",
   },
   {
+    id: "tafsir",
+    label: "Tafsir Preferences",
+    subtext: "Preferred Tafsir Language, Default Tafsir Commentary",
+    icon: "book-open-variant",
+  },
+  {
     id: "more",
     label: "More",
     subtext: "FAQ, Tutorial Terms & Condition",
@@ -81,6 +87,14 @@ export default function SettingsScreen() {
   const [tasbihVibe, setTasbihVibe] = useState(true);
 
   const [downloadWifi, setDownloadWifi] = useState(true);
+  const [tafsirLang, setTafsirLang] = useState("english");
+
+  useEffect(() => {
+    AsyncStorage.getItem("quran_tafsir_lang").then(l => {
+      if (l) setTafsirLang(l);
+    }).catch(() => {});
+  }, []);
+
   const { profile, logout } = useAuth();
   const { showPremiumModal } = usePremiumModal();
   const settingsSheetRef = useRef<AppBottomSheetRef>(null);
