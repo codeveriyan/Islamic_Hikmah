@@ -27,12 +27,15 @@ export type PrayerTimingsCache = {
   savedAt: number;
 };
 
+import { updateHomeScreenWidgetData } from "@/src/services/widgetService";
+
 export async function savePrayerTimingsCache(cache: PrayerTimingsCache) {
   await AsyncStorage.multiSet([
     [PRAYER_TIMINGS_CACHE_KEY, JSON.stringify(cache)],
     // Kept for existing goal and notification settings readers during migration.
     ['last_fetched_timings', JSON.stringify(cache.timings)],
   ]);
+  updateHomeScreenWidgetData().catch(() => {});
 }
 
 export async function getPrayerTimingsCache(): Promise<PrayerTimingsCache | null> {
