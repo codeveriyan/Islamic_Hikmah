@@ -2,7 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ALLAH_NAMES } from "@/src/data/names";
 import { HADITH_BOOKS } from "@/app/hadith/index";
 import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
-import hadithFallback from "@/src/data/quran/hadithFallback.json";
+import { getHadithFallback } from "@/src/services/cdnContentService";
+// hadithFallback.json (19.3 MB) is no longer bundled — served from CDN.
 
 const OFFLINE_INIT_KEY = "hikmah:offline_content_initialized:v2";
 const QURAN_CHAPTERS_CACHE_KEY = "hikmah:quran_chapters_cache";
@@ -83,18 +84,20 @@ class BackgroundDownloadManager {
     try {
       await AsyncStorage.setItem("hikmah:hadith_books_meta", JSON.stringify(HADITH_BOOKS));
       await AsyncStorage.setItem("hikmah:hadith_chapters_meta", JSON.stringify(HADITH_CHAPTERS));
-      
-      // Cache primary offline books from hadithFallback
+
+      // Pre-warm CDN cache for primary offline books.
+      // getHadithFallback fetches from Cloudflare R2 and saves to device disk —
+      // subsequent opens of the Hadith screen will load from disk at 0ms.
       for (const bookId of ["bukhari", "mishkat_almasabih"]) {
         const cacheKey = `hikmah:hadith:sunnah:${bookId}`;
         const existing = await AsyncStorage.getItem(cacheKey);
         if (!existing) {
-          const data = (hadithFallback as any)[bookId] || [];
-          if (data.length > 0) {
+          const result = await getHadithFallback(bookId);
+          if (result.success && result.data && result.data.length > 0) {
             await AsyncStorage.setItem(cacheKey, JSON.stringify({
               savedAt: Date.now(),
-              source: "sunnah.com",
-              data
+              source: "cdn",
+              data: result.data,
             }));
           }
         }
