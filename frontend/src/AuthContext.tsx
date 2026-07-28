@@ -17,6 +17,7 @@ import { auth } from "./firebase";
 import { API_BASE_URL } from "./apiBaseUrl";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
+import { performFullCloudSync } from "@/src/services/cloudSyncService";
 // GoogleSignin is a native module — it is NOT available in Expo Go.
 // We lazy-load it with a try-catch so Expo Go doesn't crash at startup.
 let GoogleSignin: any = null;
