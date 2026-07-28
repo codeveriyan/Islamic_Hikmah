@@ -195,6 +195,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setProfile(buildUserProfile(firebaseUser, backendProfile));
+        // Perform cloud sync asynchronously on login (bookmarks, last read, qadha)
+        performFullCloudSync(firebaseUser.uid).catch((err) =>
+          console.warn("[AuthContext] Cloud sync error:", err)
+        );
       } else {
         const guestRaw = await AsyncStorage.getItem("hikmah:auth:guest");
         if (guestRaw === "true") {

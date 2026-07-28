@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
+import { pushKeyToCloud } from "@/src/services/cloudSyncService";
 
 const FAV_KEY = 'hikmah:favourites:v1';
 const DHIKR_KEY = 'hikmah:dhikr-counts:v1';
@@ -61,14 +62,16 @@ export async function getFavourites(): Promise<Favourite[]> {
 export async function toggleFavourite(fav: Favourite): Promise<boolean> {
   const list = await getFavourites();
   const idx = list.findIndex((f) => f.id === fav.id);
+  let isFav = false;
   if (idx >= 0) {
     list.splice(idx, 1);
-    await AsyncStorage.setItem(FAV_KEY, JSON.stringify(list));
-    return false;
+  } else {
+    list.unshift({ ...fav, addedAt: Date.now() });
+    isFav = true;
   }
-  list.unshift({ ...fav, addedAt: Date.now() });
   await AsyncStorage.setItem(FAV_KEY, JSON.stringify(list));
-  return true;
+  pushKeyToCloud("favourites", list).catch(() => {});
+  return isFav;
 }
 
 export async function isFavourite(id: string): Promise<boolean> {
@@ -1092,14 +1095,16 @@ export async function getHadithBookmarks(): Promise<HadithBookmark[]> {
 export async function toggleHadithBookmark(bm: HadithBookmark): Promise<boolean> {
   const list = await getHadithBookmarks();
   const idx = list.findIndex((b) => b.id === bm.id);
+  let isBm = false;
   if (idx >= 0) {
     list.splice(idx, 1);
-    await AsyncStorage.setItem(HADITH_BOOKMARKS_KEY, JSON.stringify(list));
-    return false;
+  } else {
+    list.unshift({ ...bm, addedAt: Date.now() });
+    isBm = true;
   }
-  list.unshift({ ...bm, addedAt: Date.now() });
   await AsyncStorage.setItem(HADITH_BOOKMARKS_KEY, JSON.stringify(list));
-  return true;
+  pushKeyToCloud("hadith_bookmarks", list).catch(() => {});
+  return isBm;
 }
 
 export async function isHadithBookmarked(id: string): Promise<boolean> {
@@ -1117,14 +1122,16 @@ export async function getSeerahBookmarks(): Promise<SeerahBookmark[]> {
 export async function toggleSeerahBookmark(bm: SeerahBookmark): Promise<boolean> {
   const list = await getSeerahBookmarks();
   const idx = list.findIndex((b) => b.id === bm.id);
+  let isBm = false;
   if (idx >= 0) {
     list.splice(idx, 1);
-    await AsyncStorage.setItem(SEERAH_BOOKMARKS_KEY, JSON.stringify(list));
-    return false;
+  } else {
+    list.unshift({ ...bm, addedAt: Date.now() });
+    isBm = true;
   }
-  list.unshift({ ...bm, addedAt: Date.now() });
   await AsyncStorage.setItem(SEERAH_BOOKMARKS_KEY, JSON.stringify(list));
-  return true;
+  pushKeyToCloud("seerah_bookmarks", list).catch(() => {});
+  return isBm;
 }
 
 export async function isSeerahBookmarked(id: string): Promise<boolean> {
@@ -1155,14 +1162,16 @@ export async function getDhikrBookmarks(): Promise<DhikrBookmark[]> {
 export async function toggleDhikrBookmark(bm: DhikrBookmark): Promise<boolean> {
   const list = await getDhikrBookmarks();
   const idx = list.findIndex((b) => b.id === bm.id);
+  let isBm = false;
   if (idx >= 0) {
     list.splice(idx, 1);
-    await AsyncStorage.setItem(DHIKR_BOOKMARKS_KEY, JSON.stringify(list));
-    return false;
+  } else {
+    list.unshift({ ...bm, addedAt: Date.now() });
+    isBm = true;
   }
-  list.unshift({ ...bm, addedAt: Date.now() });
   await AsyncStorage.setItem(DHIKR_BOOKMARKS_KEY, JSON.stringify(list));
-  return true;
+  pushKeyToCloud("dhikr_bookmarks", list).catch(() => {});
+  return isBm;
 }
 
 export async function isDhikrBookmarked(id: string): Promise<boolean> {
@@ -1202,6 +1211,7 @@ export async function getQadhaCounts(): Promise<QadhaCounts> {
 
 export async function saveQadhaCounts(counts: QadhaCounts): Promise<void> {
   await AsyncStorage.setItem(QADHA_KEY, JSON.stringify(counts));
+  pushKeyToCloud("qadha_counts", counts).catch(() => {});
 }
 
 // ─── Ramadan Fasting Tracker Storage ───────────────────────────────────────────
