@@ -3,16 +3,26 @@ import * as Network from "expo-network";
 import { Platform } from "react-native";
 import contentRelease from "../../content-version.json";
 
-const CDN_BASE_URL = process.env.EXPO_PUBLIC_CONTENT_CDN_URL?.replace(/\/$/, "");
+const RAW_CDN = process.env.EXPO_PUBLIC_CONTENT_CDN_URL?.replace(/\/$/, "");
+const IS_PLACEHOLDER = !RAW_CDN || RAW_CDN.includes("YOUR_R2_BUCKET");
+
+const DEV_ORIGIN = Platform.OS === "web" && typeof window !== "undefined"
+  ? window.location.origin
+  : "http://localhost:8081";
+
+const CDN_BASE_URL = IS_PLACEHOLDER
+  ? (__DEV__ ? DEV_ORIGIN : "")
+  : RAW_CDN;
+
 export const CONTENT_VERSION = contentRelease.version;
 const CONTENT_BASE_URL = CDN_BASE_URL
-  ? `${CDN_BASE_URL}/${encodeURIComponent(CONTENT_VERSION)}`
+  ? (IS_PLACEHOLDER ? CDN_BASE_URL : `${CDN_BASE_URL}/${encodeURIComponent(CONTENT_VERSION)}`)
   : "";
 
-if (__DEV__ && !CDN_BASE_URL) {
-  console.warn(
-    "[CDNContentService] EXPO_PUBLIC_CONTENT_CDN_URL is not configured. " +
-      "CDN-backed Tafsir and Hadith content will be unavailable."
+if (__DEV__ && IS_PLACEHOLDER) {
+  console.log(
+    "[CDNContentService] EXPO_PUBLIC_CONTENT_CDN_URL not set — using local dev server fallback:",
+    DEV_ORIGIN
   );
 }
 
