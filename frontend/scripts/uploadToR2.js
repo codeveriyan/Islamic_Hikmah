@@ -48,8 +48,10 @@ function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+const ALLOWED_EXT = [".json", ".png", ".jpg", ".jpeg", ".pdf", ".mp3"];
+
 const contentFiles = listFiles(generatedDir).filter(
-  (file) => file.endsWith(".json") && path.basename(file) !== "manifest.json"
+  (file) => ALLOWED_EXT.some((ext) => file.endsWith(ext)) && path.basename(file) !== "manifest.json"
 );
 const manifest = {
   version: release.version,
@@ -70,7 +72,7 @@ fs.writeFileSync(
 );
 
 const filesToUpload = listFiles(generatedDir).filter((file) =>
-  file.endsWith(".json")
+  ALLOWED_EXT.some((ext) => file.endsWith(ext))
 );
 if (dryRun) {
   const totalBytes = manifest.files.reduce((sum, file) => sum + file.bytes, 0);
@@ -138,17 +140,30 @@ async function uploadFile(filePath) {
     if (status !== 404 && error?.name !== "NotFound") throw error;
   }
 
-  await sendWithRetry(
-    new PutObjectCommand({
-      Bucket: bucketName,
-      Key: key,
-      Body: zlib.gzipSync(rawBody, { level: 9 }),
-      ContentType: "application/json; charset=utf-8",
-      ContentEncoding: "gzip",
-      CacheControl: "public, max-age=31536000, immutable",
-      Metadata: { sha256: hash },
-    })
-  );
+  const isJson = relativePath.endsWith(".json");
+  const isImage = relativePath.endsWith(".png") || relativePath.endsWith(".jpg") || relativePath.endsWith(".jpeg");
+  const isPdf = relativePath.endsWith(".pdf");
+  const isMp3 = relativePath.endsWith(".mp3");
+  const contentType = isImage
+    ? relativePath.endsWith(".png") ? "image/png" : "image/jpeg"
+    : isPdf
+    ? "application/pdf"
+    : isMp3
+    ? "audio/mpeg"
+    : "application/json; charset=utf-8";
+
+  const body = isJson ? zlib.gzipSync(rawBody, { level: 9 }) : rawBody;
+  const putParams = {
+    Bucket: bucketName,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+    CacheControl: "public, max-age=31536000, immutable",
+    Metadata: { sha256: hash },
+  };
+  if (isJson) putParams.ContentEncoding = "gzip";
+
+  await sendWithRetry(new PutObjectCommand(putParams));
   return `Uploaded ${key}`;
 }
 

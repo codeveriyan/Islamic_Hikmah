@@ -8,38 +8,40 @@ import { useTranslation } from "@/src/localization";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 import { theme } from "@/src/theme";
 
+import { getCdnAssetUrl } from "@/src/utils/cdnAsset";
+
 export const HADITH_BOOKS = [
   // --- The Nine Books ---
-  { id: "bukhari", name: "Sahih al-Bukhari", compiler: "Imam Bukhari", total: 7563, group: "nine_books", color: "#10B981", source: "fawazahmed", cover: require("../../assets/images/hadith_bukhari_cover.jpg") },
-  { id: "muslim", name: "Sahih Muslim", compiler: "Imam Muslim", total: 7563, group: "nine_books", color: "#3B82F6", source: "fawazahmed", cover: require("../../assets/images/hadith_muslim_cover.jpg") },
-  { id: "nasai", name: "Sunan an-Nasa'i", compiler: "Imam An-Nasa'i", total: 5758, group: "nine_books", color: "#EC4899", source: "fawazahmed", cover: require("../../assets/images/hadith_nasai_cover.jpg") },
-  { id: "abudawud", name: "Sunan Abi Dawud", compiler: "Imam Abu Dawud", total: 5274, group: "nine_books", color: '#F59E0B', source: "fawazahmed", cover: require("../../assets/images/hadith_abudawud_cover.jpg") },
-  { id: "tirmidhi", name: "Jami' at-Tirmidhi", compiler: "Imam Al-Tirmidhi", total: 3956, group: "nine_books", color: "#8B5CF6", source: "fawazahmed", cover: require("../../assets/images/hadith_tirmidhi_cover.jpg") },
-  { id: "ibnmajah", name: "Sunan Ibn Majah", compiler: "Imam Ibn Majah", total: 4341, group: "nine_books", color: "#EF4444", source: "fawazahmed", cover: require("../../assets/images/hadith_ibnmajah_cover.jpg") },
-  { id: "malik", name: "Muwatta Malik", compiler: "Imam Malik", total: 1861, group: "nine_books", color: "#0D9488", source: "fawazahmed", cover: require("../../assets/images/hadith_malik_cover.jpg") },
-  { id: "ahmad", name: "Musnad Ahmad", compiler: "Imam Ahmad bin Hanbal", total: 26363, group: "nine_books", color: "#2563EB", source: "ahmedbaset_nine", cover: require("../../assets/images/hadith_ahmad_cover.jpg") },
-  { id: "darimi", name: "Sunan ad-Darimi", compiler: "Imam ad-Darimi", total: 3503, group: "nine_books", color: "#D97706", source: "ahmedbaset_nine", cover: require("../../assets/images/hadith_darimi_cover.jpg") },
+  { id: "bukhari", name: "Sahih al-Bukhari", compiler: "Imam Bukhari", total: 7563, group: "nine_books", color: "#10B981", source: "fawazahmed", cover: { uri: getCdnAssetUrl("images/hadith_bukhari_cover.jpg") } },
+  { id: "muslim", name: "Sahih Muslim", compiler: "Imam Muslim", total: 7563, group: "nine_books", color: "#3B82F6", source: "fawazahmed", cover: { uri: getCdnAssetUrl("images/hadith_muslim_cover.jpg") } },
+  { id: "nasai", name: "Sunan an-Nasa'i", compiler: "Imam An-Nasa'i", total: 5758, group: "nine_books", color: "#EC4899", source: "fawazahmed", cover: { uri: getCdnAssetUrl("images/hadith_nasai_cover.jpg") } },
+  { id: "abudawud", name: "Sunan Abi Dawud", compiler: "Imam Abu Dawud", total: 5274, group: "nine_books", color: '#F59E0B', source: "fawazahmed", cover: { uri: getCdnAssetUrl("images/hadith_abudawud_cover.jpg") } },
+  { id: "tirmidhi", name: "Jami' at-Tirmidhi", compiler: "Imam Al-Tirmidhi", total: 3956, group: "nine_books", color: "#8B5CF6", source: "fawazahmed", cover: { uri: getCdnAssetUrl("images/hadith_tirmidhi_cover.jpg") } },
+  { id: "ibnmajah", name: "Sunan Ibn Majah", compiler: "Imam Ibn Majah", total: 4341, group: "nine_books", color: "#EF4444", source: "fawazahmed", cover: { uri: getCdnAssetUrl("images/hadith_ibnmajah_cover.jpg") } },
+  { id: "malik", name: "Muwatta Malik", compiler: "Imam Malik", total: 1861, group: "nine_books", color: "#0D9488", source: "fawazahmed", cover: { uri: getCdnAssetUrl("images/hadith_malik_cover.jpg") } },
+  { id: "ahmad", name: "Musnad Ahmad", compiler: "Imam Ahmad bin Hanbal", total: 26363, group: "nine_books", color: "#2563EB", source: "ahmedbaset_nine", cover: { uri: getCdnAssetUrl("images/hadith_ahmad_cover.jpg") } },
+  { id: "darimi", name: "Sunan ad-Darimi", compiler: "Imam ad-Darimi", total: 3503, group: "nine_books", color: "#D97706", source: "ahmedbaset_nine", cover: { uri: getCdnAssetUrl("images/hadith_darimi_cover.jpg") } },
 
   // --- Other Primary Collections ---
-  { id: "khuzayma", name: "Sahih Ibn Khuzayma", compiler: "Imam Ibn Khuzayma", total: 8, isCurated: true, group: "primary", color: "#7C3AED", source: "fallback", cover: require("../../assets/images/hadith_khuzayma_cover.jpg") },
-  { id: "hibban", name: "Sahih Ibn Hibban", compiler: "Imam Ibn Hibban", total: 8, isCurated: true, group: "primary", color: "#DC2626", source: "fallback", cover: require("../../assets/images/hadith_hibban_cover.jpg") },
-  { id: "hakim", name: "Mustadrak al-Hakim", compiler: "Imam al-Hakim", total: 7, isCurated: true, group: "primary", color: "#059669", source: "fallback", cover: require("../../assets/images/hadith_hakim_cover.jpg") },
-  { id: "razzaq", name: "Musannaf 'Abd ar-Razzaq", compiler: "Imam Abd ar-Razzaq", total: 4, isCurated: true, group: "primary", color: "#0284C7", source: "fallback", cover: require("../../assets/images/hadith_razzaq_cover.jpg") },
-  { id: "ibnabishayba", name: "Musannaf Ibn Abi Shayba", compiler: "Imam Ibn Abi Shayba", total: 4, isCurated: true, group: "primary", color: "#DB2777", source: "fallback", cover: require("../../assets/images/hadith_ibnabishayba_cover.jpg") },
-  { id: "daraqutni", name: "Sunan ad-Daraqutni", compiler: "Imam ad-Daraqutni", total: 3, isCurated: true, group: "primary", color: "#EA580C", source: "fallback", cover: require("../../assets/images/hadith_daraqutni_cover.jpg") },
-  { id: "bayhaqi", name: "As-Sunan al-Kubra li al-Bayhaqi", compiler: "Imam al-Bayhaqi", total: 3, isCurated: true, group: "primary", color: "#6D28D9", source: "fallback", cover: require("../../assets/images/hadith_bayhaqi_cover.jpg") },
-  { id: "nasai_kubra", name: "Sunan an-Nasa'i al-Kubra", compiler: "Imam An-Nasa'i", total: 3, isCurated: true, group: "primary", color: "#BE123C", source: "fallback", cover: require("../../assets/images/hadith_nasai_kubra_cover.jpg") },
-  { id: "aladab_almufrad", name: "Al-Adab Al-Mufrad", compiler: "Imam Bukhari", total: 1329, group: "primary", color: "#047857", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_aladab_almufrad_cover.jpg") },
-  { id: "shamail_muhammadiyah", name: "Ash-Shama'il Al-Muhammadiyah", compiler: "Imam Al-Tirmidhi", total: 415, group: "primary", color: "#1D4ED8", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_shamail_cover.jpg") },
+  { id: "khuzayma", name: "Sahih Ibn Khuzayma", compiler: "Imam Ibn Khuzayma", total: 8, isCurated: true, group: "primary", color: "#7C3AED", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_khuzayma_cover.jpg") } },
+  { id: "hibban", name: "Sahih Ibn Hibban", compiler: "Imam Ibn Hibban", total: 8, isCurated: true, group: "primary", color: "#DC2626", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_hibban_cover.jpg") } },
+  { id: "hakim", name: "Mustadrak al-Hakim", compiler: "Imam al-Hakim", total: 7, isCurated: true, group: "primary", color: "#059669", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_hakim_cover.jpg") } },
+  { id: "razzaq", name: "Musannaf 'Abd ar-Razzaq", compiler: "Imam Abd ar-Razzaq", total: 4, isCurated: true, group: "primary", color: "#0284C7", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_razzaq_cover.jpg") } },
+  { id: "ibnabishayba", name: "Musannaf Ibn Abi Shayba", compiler: "Imam Ibn Abi Shayba", total: 4, isCurated: true, group: "primary", color: "#DB2777", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_ibnabishayba_cover.jpg") } },
+  { id: "daraqutni", name: "Sunan ad-Daraqutni", compiler: "Imam ad-Daraqutni", total: 3, isCurated: true, group: "primary", color: "#EA580C", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_daraqutni_cover.jpg") } },
+  { id: "bayhaqi", name: "As-Sunan al-Kubra li al-Bayhaqi", compiler: "Imam al-Bayhaqi", total: 3, isCurated: true, group: "primary", color: "#6D28D9", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_bayhaqi_cover.jpg") } },
+  { id: "nasai_kubra", name: "Sunan an-Nasa'i al-Kubra", compiler: "Imam An-Nasa'i", total: 3, isCurated: true, group: "primary", color: "#BE123C", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_nasai_kubra_cover.jpg") } },
+  { id: "aladab_almufrad", name: "Al-Adab Al-Mufrad", compiler: "Imam Bukhari", total: 1329, group: "primary", color: "#047857", source: "ahmedbaset_other", cover: { uri: getCdnAssetUrl("images/hadith_aladab_almufrad_cover.jpg") } },
+  { id: "shamail_muhammadiyah", name: "Ash-Shama'il Al-Muhammadiyah", compiler: "Imam Al-Tirmidhi", total: 415, group: "primary", color: "#1D4ED8", source: "ahmedbaset_other", cover: { uri: getCdnAssetUrl("images/hadith_shamail_cover.jpg") } },
 
   // --- Selections ---
-  { id: "nawawi40", name: "An-Nawawi's 40 Hadith", compiler: "Imam Al-Nawawi", total: 42, group: "selections", color: "#C084FC", source: "ahmedbaset_forties", cover: require("../../assets/images/hadith_nawawi40_cover.jpg") },
-  { id: "riyad_assalihin", name: "Riyadh as-Salihin", compiler: "Imam Al-Nawawi", total: 1896, group: "selections", color: '#F59E0B', source: "ahmedbaset_other", cover: require("../../assets/images/hadith_riyad_assalihin_cover.jpg") },
-  { id: "bulugh_almaram", name: "Bulugh al-Maram", compiler: "Imam Ibn Hajar al-Asqalani", total: 1568, group: "selections", color: "#818CF8", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_bulugh_almaram_cover.jpg") },
-  { id: "mishkat_almasabih", name: "Mishkat al-Masabih", compiler: "Khatib al-Tabrizi", total: 6285, group: "selections", color: "#F87171", source: "ahmedbaset_other", cover: require("../../assets/images/hadith_mishkat_almasabih_cover.jpg") },
-  { id: "hisn", name: "Hisn al-Muslim", compiler: "Sa'id bin Ali bin Wahf Al-Qahtani", total: 267, group: "selections", color: "#34D399", source: "fallback", cover: require("../../assets/images/hadith_hisn_cover.png") },
-  { id: "qudsi40", name: "40 Hadith Qudsi", compiler: "Imam Al-Nawawi", total: 40, group: "selections", color: "#60A5FA", source: "ahmedbaset_forties", cover: require("../../assets/images/hadith_qudsi40_cover.png") },
-  { id: "shahwaliullah40", name: "40 Hadith of Shah Waliullah", compiler: "Shah Waliullah Dehlawi", total: 40, group: "selections", color: "#FBBF24", source: "ahmedbaset_forties", cover: require("../../assets/images/hadith_shahwaliullah40_cover.png") }
+  { id: "nawawi40", name: "An-Nawawi's 40 Hadith", compiler: "Imam Al-Nawawi", total: 42, group: "selections", color: "#C084FC", source: "ahmedbaset_forties", cover: { uri: getCdnAssetUrl("images/hadith_nawawi40_cover.jpg") } },
+  { id: "riyad_assalihin", name: "Riyadh as-Salihin", compiler: "Imam Al-Nawawi", total: 1896, group: "selections", color: '#F59E0B', source: "ahmedbaset_other", cover: { uri: getCdnAssetUrl("images/hadith_riyad_assalihin_cover.jpg") } },
+  { id: "bulugh_almaram", name: "Bulugh al-Maram", compiler: "Imam Ibn Hajar al-Asqalani", total: 1568, group: "selections", color: "#818CF8", source: "ahmedbaset_other", cover: { uri: getCdnAssetUrl("images/hadith_bulugh_almaram_cover.jpg") } },
+  { id: "mishkat_almasabih", name: "Mishkat al-Masabih", compiler: "Khatib al-Tabrizi", total: 6285, group: "selections", color: "#F87171", source: "ahmedbaset_other", cover: { uri: getCdnAssetUrl("images/hadith_mishkat_almasabih_cover.jpg") } },
+  { id: "hisn", name: "Hisn al-Muslim", compiler: "Sa'id bin Ali bin Wahf Al-Qahtani", total: 267, group: "selections", color: "#34D399", source: "fallback", cover: { uri: getCdnAssetUrl("images/hadith_hisn_cover.png") } },
+  { id: "qudsi40", name: "40 Hadith Qudsi", compiler: "Imam Al-Nawawi", total: 40, group: "selections", color: "#60A5FA", source: "ahmedbaset_forties", cover: { uri: getCdnAssetUrl("images/hadith_qudsi40_cover.png") } },
+  { id: "shahwaliullah40", name: "40 Hadith of Shah Waliullah", compiler: "Shah Waliullah Dehlawi", total: 40, group: "selections", color: "#FBBF24", source: "ahmedbaset_forties", cover: { uri: getCdnAssetUrl("images/hadith_shahwaliullah40_cover.png") } }
 ];
 
 const DynamicBookCover = ({ name, color }: { name: string; color: string }) => {
