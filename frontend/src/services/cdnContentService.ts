@@ -1,30 +1,28 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Network from "expo-network";
+import { Platform } from "react-native";
+import contentRelease from "../../content-version.json";
 
-// ─── Configuration ────────────────────────────────────────────────────────────
-// This MUST be set via EXPO_PUBLIC_CONTENT_CDN_URL in your .env before building.
-// See .env.example for Cloudflare R2 setup instructions.
-// There is NO raw.githubusercontent.com fallback — that would force large static
-// files back into the main repo, defeating the purpose of this architecture.
 const CDN_BASE_URL = process.env.EXPO_PUBLIC_CONTENT_CDN_URL?.replace(/\/$/, "");
+export const CONTENT_VERSION = contentRelease.version;
+const CONTENT_BASE_URL = CDN_BASE_URL
+  ? `${CDN_BASE_URL}/${encodeURIComponent(CONTENT_VERSION)}`
+  : "";
 
 if (__DEV__ && !CDN_BASE_URL) {
   console.warn(
-    "[CDNContentService] EXPO_PUBLIC_CONTENT_CDN_URL is not set.\n" +
-    "Tafsir and Hadith CDN loading will fail until you:\n" +
-    "  1. Set up a Cloudflare R2 bucket (free, see .env.example)\n" +
-    "  2. Run: node scripts/chunkTafsirs.js\n" +
-    "  3. Run: node scripts/uploadToR2.js\n" +
-    "  4. Add EXPO_PUBLIC_CONTENT_CDN_URL=https://your-bucket.r2.dev to .env"
+    "[CDNContentService] EXPO_PUBLIC_CONTENT_CDN_URL is not configured. " +
+      "CDN-backed Tafsir and Hadith content will be unavailable."
   );
 }
 
-const CACHE_DIR = `${FileSystem.documentDirectory || ""}content_cache/`;
-
-// In-memory cache — fast tab-switching within same session (0ms)
-const memoryCache = new Map<string, any>();
+const CACHE_ROOT = `${FileSystem.documentDirectory || ""}content_cache/`;
+const CACHE_DIR = `${CACHE_ROOT}${CONTENT_VERSION}/`;
+const MAX_MEMORY_CACHE_BYTES = 32 * 1024 * 1024;
+const memoryCache = new Map<string, { data: unknown; bytes: number }>();
+const inFlight = new Map<string, Promise<ContentFetchResult<any>>>();
+let memoryCacheBytes = 0;
+let cacheReadyPromise: Promise<void> | null = null;
 
 export type ContentFetchResult<T = any> = {
   success: boolean;
@@ -33,226 +31,311 @@ export type ContentFetchResult<T = any> = {
   error?: string;
 };
 
-// ─── Internal: Ensure directory exists ───────────────────────────────────────
-async function ensureDirExists(dirPath: string): Promise<void> {
-  if (Platform.OS === "web" || !FileSystem.documentDirectory) return;
-  try {
-    const info = await FileSystem.getInfoAsync(dirPath);
-    if (!info.exists) {
-      await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true });
-    }
-  } catch {}
+type TafsirRecord = Record<string, any>;
+type SplitChunkIndex = { __chunked: true; parts: string[] };
+
+function isObjectRecord(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-// ─── Internal: Is the device on Wi-Fi? ───────────────────────────────────────
-// Used to guard background prefetching so we never burn mobile data silently.
+function isSplitChunkIndex(value: unknown): value is SplitChunkIndex {
+  return (
+    isObjectRecord(value) &&
+    value.__chunked === true &&
+    Array.isArray(value.parts) &&
+    value.parts.every((part) => typeof part === "string")
+  );
+}
+
+function estimateBytes(data: unknown): number {
+  try {
+    return JSON.stringify(data).length * 2;
+  } catch {
+    return 0;
+  }
+}
+
+function getMemory<T>(key: string): T | undefined {
+  const entry = memoryCache.get(key);
+  if (!entry) return undefined;
+  memoryCache.delete(key);
+  memoryCache.set(key, entry);
+  return entry.data as T;
+}
+
+function setMemory(key: string, data: unknown): void {
+  const bytes = estimateBytes(data);
+  if (bytes <= 0 || bytes > MAX_MEMORY_CACHE_BYTES) return;
+  const previous = memoryCache.get(key);
+  if (previous) memoryCacheBytes -= previous.bytes;
+  memoryCache.delete(key);
+  memoryCache.set(key, { data, bytes });
+  memoryCacheBytes += bytes;
+  while (memoryCacheBytes > MAX_MEMORY_CACHE_BYTES) {
+    const oldest = memoryCache.entries().next().value as
+      | [string, { data: unknown; bytes: number }]
+      | undefined;
+    if (!oldest) break;
+    memoryCache.delete(oldest[0]);
+    memoryCacheBytes -= oldest[1].bytes;
+  }
+}
+
+async function ensureDirExists(dirPath: string): Promise<void> {
+  if (Platform.OS === "web" || !FileSystem.documentDirectory) return;
+  const info = await FileSystem.getInfoAsync(dirPath);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true });
+  }
+}
+
+async function ensureCurrentCacheVersion(): Promise<void> {
+  if (Platform.OS === "web" || !FileSystem.documentDirectory) return;
+  if (cacheReadyPromise) return cacheReadyPromise;
+  cacheReadyPromise = (async () => {
+    const markerPath = `${CACHE_ROOT}version.txt`;
+    let current = "";
+    try {
+      const marker = await FileSystem.getInfoAsync(markerPath);
+      if (marker.exists) current = await FileSystem.readAsStringAsync(markerPath);
+    } catch {}
+    if (current.trim() !== CONTENT_VERSION) {
+      await FileSystem.deleteAsync(CACHE_ROOT, { idempotent: true });
+    }
+    await ensureDirExists(CACHE_DIR);
+    await FileSystem.writeAsStringAsync(markerPath, CONTENT_VERSION);
+  })();
+  return cacheReadyPromise;
+}
+
+async function writeJsonAtomically(path: string, data: unknown): Promise<void> {
+  const tempPath = `${path}.tmp`;
+  await FileSystem.writeAsStringAsync(tempPath, JSON.stringify(data));
+  await FileSystem.deleteAsync(path, { idempotent: true });
+  await FileSystem.moveAsync({ from: tempPath, to: path });
+}
+
+async function readJsonFile<T>(
+  path: string,
+  validator: (value: unknown) => value is T
+): Promise<T | null> {
+  try {
+    const info = await FileSystem.getInfoAsync(path);
+    if (!info.exists) return null;
+    const parsed = JSON.parse(await FileSystem.readAsStringAsync(path));
+    if (!validator(parsed)) throw new Error("Invalid cached content");
+    return parsed;
+  } catch {
+    await FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
+    return null;
+  }
+}
+
+async function fetchJson(url: string): Promise<unknown> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status} from CDN`);
+  return response.json();
+}
+
+async function fetchTafsirChunk(remoteUrl: string): Promise<TafsirRecord> {
+  const initial = await fetchJson(remoteUrl);
+  if (isObjectRecord(initial) && !isSplitChunkIndex(initial)) return initial;
+  if (!isSplitChunkIndex(initial)) throw new Error("Invalid Tafsir chunk");
+
+  const base = remoteUrl.slice(0, remoteUrl.lastIndexOf("/") + 1);
+  const merged: TafsirRecord = {};
+  for (let index = 0; index < initial.parts.length; index += 4) {
+    const batch = initial.parts.slice(index, index + 4);
+    const parts = await Promise.all(
+      batch.map((part) => fetchJson(`${base}${encodeURIComponent(part)}`))
+    );
+    for (const part of parts) {
+      if (!isObjectRecord(part)) throw new Error("Invalid Tafsir chunk part");
+      Object.assign(merged, part);
+    }
+  }
+  return merged;
+}
+
 async function isOnWifi(): Promise<boolean> {
   try {
     const state = await Network.getNetworkStateAsync();
     return state.type === Network.NetworkStateType.WIFI;
   } catch {
-    // If we can't tell, default to false (conservative — don't prefetch)
     return false;
   }
 }
 
-// ─── Fetch Tafsir Chunk (Surah level) ────────────────────────────────────────
-/**
- * Loads Tafsir commentary for a specific surah from the CDN.
- * Lookup order: Memory cache (0ms) → FileSystem disk cache (0ms) → CDN fetch.
- * On first load the surah chunk (~200KB–12MB) is downloaded and saved to disk.
- * All subsequent opens of that surah are instant and work fully offline.
- */
 export async function getTafsirSurah(
   tafsirId: number | string,
-  surahId: number | string
-): Promise<ContentFetchResult<Record<string, any>>> {
-  const cacheKey = `tafsir_${tafsirId}_${surahId}`;
+  surahId: number | string,
+  options: { useMemoryCache?: boolean } = {}
+): Promise<ContentFetchResult<TafsirRecord>> {
+  const useMemoryCache = options.useMemoryCache !== false;
+  const safeTafsirId = encodeURIComponent(String(tafsirId));
+  const safeSurahId = encodeURIComponent(String(surahId));
+  const cacheKey = `${CONTENT_VERSION}:tafsir:${safeTafsirId}:${safeSurahId}`;
 
-  // 1. Memory cache
-  if (memoryCache.has(cacheKey)) {
-    return { success: true, data: memoryCache.get(cacheKey), isCached: true };
+  if (useMemoryCache) {
+    const cached = getMemory<TafsirRecord>(cacheKey);
+    if (cached) return { success: true, data: cached, isCached: true };
   }
 
   const isNative = Platform.OS !== "web" && !!FileSystem.documentDirectory;
-  const localDir = `${CACHE_DIR}tafsirs/${tafsirId}/`;
-  const localFilePath = `${localDir}${surahId}.json`;
-
-  // 2. Disk cache (native only)
+  const localDir = `${CACHE_DIR}tafsirs/${safeTafsirId}/`;
+  const localFilePath = `${localDir}${safeSurahId}.json`;
   if (isNative) {
+    await ensureCurrentCacheVersion();
+    const diskData = await readJsonFile(localFilePath, isObjectRecord);
+    if (diskData) {
+      if (useMemoryCache) setMemory(cacheKey, diskData);
+      return { success: true, data: diskData, isCached: true };
+    }
+  }
+
+  if (!CONTENT_BASE_URL) {
+    return { success: false, error: "Content CDN is not configured." };
+  }
+
+  const existing = inFlight.get(cacheKey);
+  if (existing) return existing;
+  const request = (async (): Promise<ContentFetchResult<TafsirRecord>> => {
     try {
-      const fileInfo = await FileSystem.getInfoAsync(localFilePath);
-      if (fileInfo.exists) {
-        const rawText = await FileSystem.readAsStringAsync(localFilePath);
-        const parsed = JSON.parse(rawText);
-        memoryCache.set(cacheKey, parsed);
-        return { success: true, data: parsed, isCached: true };
+      const remoteUrl = `${CONTENT_BASE_URL}/tafsirs_chunked/${safeTafsirId}/${safeSurahId}.json`;
+      const data = await fetchTafsirChunk(remoteUrl);
+      if (useMemoryCache) setMemory(cacheKey, data);
+      if (isNative) {
+        await ensureDirExists(localDir);
+        await writeJsonAtomically(localFilePath, data);
       }
-    } catch (err) {
-      if (__DEV__) console.warn("[CDNContentService] Disk cache read error:", err);
+      return { success: true, data, isCached: false };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.message || "Failed to load Tafsir content.",
+      };
+    } finally {
+      inFlight.delete(cacheKey);
     }
-  }
-
-  // 3. CDN fetch
-  if (!CDN_BASE_URL) {
-    return {
-      success: false,
-      error:
-        "Content CDN is not configured. Please set EXPO_PUBLIC_CONTENT_CDN_URL in your .env file.",
-    };
-  }
-
-  const remoteUrl = `${CDN_BASE_URL}/tafsirs_chunked/${tafsirId}/${surahId}.json`;
-  try {
-    if (__DEV__) console.log("[CDNContentService] Fetching:", remoteUrl);
-    const response = await fetch(remoteUrl);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} from CDN`);
-    }
-    const data = await response.json();
-    memoryCache.set(cacheKey, data);
-
-    // Save to disk in background — don't await so UI renders immediately
-    if (isNative) {
-      ensureDirExists(localDir).then(() => {
-        FileSystem.writeAsStringAsync(localFilePath, JSON.stringify(data)).catch(
-          (err) => {
-            if (__DEV__) console.warn("[CDNContentService] Disk write error:", err);
-          }
-        );
-      });
-    }
-
-    return { success: true, data, isCached: false };
-  } catch (error: any) {
-    const msg =
-      error?.message || "Failed to load content. Please check your internet connection.";
-    if (__DEV__) console.error("[CDNContentService] Fetch error:", msg);
-    return { success: false, error: msg };
-  }
+  })();
+  inFlight.set(cacheKey, request);
+  return request;
 }
 
-// ─── Download all Surah chunks for a Tafsir (offline download) ───────────────
-/**
- * Downloads all 114 Surah chunks for a given Tafsir ID to local disk.
- * Called by the "Download for offline" button — replaces the old single 68MB file download.
- * onProgress(downloaded, total) fires after each chunk so you can show a progress bar.
- */
+export async function isTafsirDownloaded(
+  tafsirId: number | string
+): Promise<boolean> {
+  if (Platform.OS === "web" || !FileSystem.documentDirectory) return false;
+  await ensureCurrentCacheVersion();
+  const safeTafsirId = encodeURIComponent(String(tafsirId));
+  const marker = await readJsonFile(
+    `${CACHE_DIR}tafsirs/${safeTafsirId}/complete.json`,
+    (value): value is { version: string; total: number } =>
+      isObjectRecord(value) &&
+      value.version === CONTENT_VERSION &&
+      value.total === 114
+  );
+  return !!marker;
+}
+
 export async function downloadTafsirAllSurahs(
   tafsirId: number | string,
   onProgress?: (downloaded: number, total: number) => void
 ): Promise<ContentFetchResult<void>> {
-  if (!CDN_BASE_URL) {
-    return {
-      success: false,
-      error: "Content CDN is not configured. Set EXPO_PUBLIC_CONTENT_CDN_URL in .env.",
-    };
+  if (!CONTENT_BASE_URL) {
+    return { success: false, error: "Content CDN is not configured." };
   }
 
   const total = 114;
-  let downloaded = 0;
-
-  for (let surahId = 1; surahId <= total; surahId++) {
-    const result = await getTafsirSurah(tafsirId, surahId);
-    if (!result.success) {
-      return {
-        success: false,
-        error: `Failed at Surah ${surahId}: ${result.error}`,
-      };
+  let nextSurah = 1;
+  let completed = 0;
+  let firstError = "";
+  const worker = async () => {
+    while (!firstError) {
+      const surahId = nextSurah++;
+      if (surahId > total) return;
+      const result = await getTafsirSurah(tafsirId, surahId, {
+        useMemoryCache: false,
+      });
+      if (!result.success) {
+        firstError = `Failed at Surah ${surahId}: ${result.error}`;
+        return;
+      }
+      completed += 1;
+      onProgress?.(completed, total);
     }
-    downloaded++;
-    onProgress?.(downloaded, total);
-  }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  if (firstError) return { success: false, error: firstError };
 
+  if (Platform.OS !== "web" && FileSystem.documentDirectory) {
+    await ensureCurrentCacheVersion();
+    const safeTafsirId = encodeURIComponent(String(tafsirId));
+    const localDir = `${CACHE_DIR}tafsirs/${safeTafsirId}/`;
+    await ensureDirExists(localDir);
+    await writeJsonAtomically(`${localDir}complete.json`, {
+      version: CONTENT_VERSION,
+      total,
+      completedAt: new Date().toISOString(),
+    });
+  }
   return { success: true };
 }
 
-// ─── Fetch Hadith Fallback from CDN ──────────────────────────────────────────
-/**
- * Loads hadith fallback data for a given book from CDN.
- * CDN path: <CDN_BASE_URL>/hadith/<bookId>.json
- * Follows the same memory → disk → CDN layered caching pattern.
- */
 export async function getHadithFallback(
   bookId: string
 ): Promise<ContentFetchResult<any[]>> {
-  const cacheKey = `hadith_fallback_${bookId}`;
-
-  if (memoryCache.has(cacheKey)) {
-    return { success: true, data: memoryCache.get(cacheKey), isCached: true };
-  }
+  const safeBookId = encodeURIComponent(bookId);
+  const cacheKey = `${CONTENT_VERSION}:hadith:${safeBookId}`;
+  const cached = getMemory<any[]>(cacheKey);
+  if (cached) return { success: true, data: cached, isCached: true };
 
   const isNative = Platform.OS !== "web" && !!FileSystem.documentDirectory;
   const localDir = `${CACHE_DIR}hadith/`;
-  const localFilePath = `${localDir}${bookId}.json`;
-
+  const localFilePath = `${localDir}${safeBookId}.json`;
   if (isNative) {
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(localFilePath);
-      if (fileInfo.exists) {
-        const rawText = await FileSystem.readAsStringAsync(localFilePath);
-        const parsed = JSON.parse(rawText);
-        memoryCache.set(cacheKey, parsed);
-        return { success: true, data: parsed, isCached: true };
-      }
-    } catch {}
-  }
-
-  if (!CDN_BASE_URL) {
-    // CDN not configured — return empty so the app gracefully shows API results only
-    return { success: true, data: [], isCached: false };
-  }
-
-  const remoteUrl = `${CDN_BASE_URL}/hadith/${bookId}.json`;
-  try {
-    if (__DEV__) console.log("[CDNContentService] Fetching hadith fallback:", remoteUrl);
-    const response = await fetch(remoteUrl);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    memoryCache.set(cacheKey, data);
-
-    if (isNative) {
-      ensureDirExists(localDir).then(() => {
-        FileSystem.writeAsStringAsync(localFilePath, JSON.stringify(data)).catch(() => {});
-      });
+    await ensureCurrentCacheVersion();
+    const diskData = await readJsonFile(
+      localFilePath,
+      (value): value is any[] => Array.isArray(value)
+    );
+    if (diskData) {
+      setMemory(cacheKey, diskData);
+      return { success: true, data: diskData, isCached: true };
     }
+  }
 
+  if (!CONTENT_BASE_URL) return { success: true, data: [], isCached: false };
+  try {
+    const data = await fetchJson(`${CONTENT_BASE_URL}/hadith/${safeBookId}.json`);
+    if (!Array.isArray(data)) throw new Error("Invalid Hadith fallback");
+    setMemory(cacheKey, data);
+    if (isNative) {
+      await ensureDirExists(localDir);
+      await writeJsonAtomically(localFilePath, data);
+    }
     return { success: true, data, isCached: false };
   } catch (error: any) {
-    if (__DEV__) console.warn("[CDNContentService] Hadith fallback fetch error:", error?.message);
     return { success: false, error: error?.message, data: [] };
   }
 }
 
-// ─── Wi-Fi-guarded Background Prefetch ───────────────────────────────────────
-/**
- * Pre-fetches the next Surah's tafsir chunk in the background.
- * ONLY runs on Wi-Fi — never silently uses mobile data.
- */
 export async function prefetchNextSurahTafsir(
   tafsirId: number | string,
   currentSurahId: number
 ): Promise<void> {
   const nextSurahId = currentSurahId + 1;
-  if (nextSurahId > 114) return;
-
-  // Hard network check — only prefetch on Wi-Fi
-  const wifi = await isOnWifi();
-  if (!wifi) {
-    if (__DEV__) console.log("[CDNContentService] Not on Wi-Fi — skipping prefetch.");
-    return;
-  }
-
-  // Non-blocking background fetch
+  if (nextSurahId > 114 || !(await isOnWifi())) return;
   getTafsirSurah(tafsirId, nextSurahId).catch(() => {});
 }
 
-// ─── Cache Management ─────────────────────────────────────────────────────────
 export async function clearContentCache(): Promise<void> {
   memoryCache.clear();
+  memoryCacheBytes = 0;
+  cacheReadyPromise = null;
   if (Platform.OS !== "web" && FileSystem.documentDirectory) {
-    try {
-      await FileSystem.deleteAsync(CACHE_DIR, { idempotent: true });
-    } catch {}
+    await FileSystem.deleteAsync(CACHE_ROOT, { idempotent: true }).catch(
+      () => {}
+    );
   }
 }

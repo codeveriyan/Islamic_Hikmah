@@ -43,6 +43,9 @@ yarn-error.*
 # then `node scripts/uploadToR2.js` to push to the CDN.
 public/tafsirs/
 public/tafsirs_chunked/
+content-source/
+.generated/
+.env.content.local
 
 app-example
 

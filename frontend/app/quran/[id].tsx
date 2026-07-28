@@ -22,7 +22,12 @@ import transliterationSyllablesData from "@/src/data/quran/transliterationSyllab
 import transliterationWbwData from "@/src/data/quran/transliterationWbw.json";
 import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 import { QURAN_AUDIO_CATALOG, QURAN_AUDIO_CATEGORIES, QuranAudioCategory } from "@/src/data/quran/quranAudioCatalog";
-import { getTafsirSurah, prefetchNextSurahTafsir, downloadTafsirAllSurahs } from "@/src/services/cdnContentService";
+import {
+  downloadTafsirAllSurahs,
+  getTafsirSurah,
+  isTafsirDownloaded,
+  prefetchNextSurahTafsir,
+} from "@/src/services/cdnContentService";
 
 type Ayah = {
   number: number;
@@ -364,10 +369,8 @@ export default function SurahDetail() {
       for (const taf of availableTafsirs) {
         const isLocal = (tafsirIndexData as any[]).some(t => String(t.id) === String(taf.id));
         if (!isLocal) continue;
-        const localUri = `${FileSystem.documentDirectory}tafsirs/${taf.id}.json`;
         try {
-          const fileInfo = await FileSystem.getInfoAsync(localUri);
-          newMap[Number(taf.id)] = fileInfo.exists;
+          newMap[Number(taf.id)] = await isTafsirDownloaded(taf.id);
         } catch {}
       }
       setDownloadedTafsirs(newMap);

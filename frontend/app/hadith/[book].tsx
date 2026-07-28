@@ -15,6 +15,7 @@ import { HADITH_BOOKS } from "./index";
 import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
 import { HADITH_INTRODUCTIONS } from "@/src/data/hadithIntroductions";
 import { getHadithFallback } from "@/src/services/cdnContentService";
+import { API_BASE_URL } from "@/src/apiBaseUrl";
 // hadithFallback.json (19.3 MB) is no longer bundled.
 // It is fetched from Cloudflare R2 CDN on first use and cached to disk.
 import { 
@@ -30,8 +31,6 @@ type Hadith = {
   text: string;
   arabicText?: string;
 };
-
-const HADITH_API_BASE_URL = process.env.EXPO_PUBLIC_HADITH_API_BASE_URL?.replace(/\/$/, "");
 
 // App ids differ slightly from the official Sunnah.com collection ids.
 const SUNNAH_COLLECTION_IDS: Record<string, string> = {
@@ -59,7 +58,7 @@ const SUNNAH_COLLECTION_IDS: Record<string, string> = {
   bulugh_almaram: "bulugh",
   mishkat_almasabih: "mishkat",
   hisn: "hisn",
-  qudsi40: "forty",
+  qudsi40: "qudsi40",
 };
 
 const toPlainText = (value: unknown): string => {
@@ -222,7 +221,6 @@ export default function HadithDetailScreen() {
     const offlineCacheKey = `${HADITH_OFFLINE_CACHE_PREFIX}${book}`;
     const bookMetaLocal = HADITH_BOOKS.find((b) => b.id === book);
     const sunnahCollection = SUNNAH_COLLECTION_IDS[book];
-    const SUNNAH_API_KEY = "Ono1lNmgt66jCtN4BNwWGvo0aIAbl0027ruMo6Mb";
     let isMounted = true;
 
     // ── helpers ────────────────────────────────────────────────────────────────
@@ -264,7 +262,7 @@ export default function HadithDetailScreen() {
     const fetchWithRetry = async (url: string): Promise<Response> => {
       for (let attempt = 1; attempt <= 5; attempt++) {
         try {
-          const res = await fetch(url, { headers: { "x-api-key": SUNNAH_API_KEY } });
+          const res = await fetch(url);
           if (res.status === 429) {
             await new Promise((r) => setTimeout(r, attempt * 400));
             continue;
@@ -274,7 +272,7 @@ export default function HadithDetailScreen() {
           await new Promise((r) => setTimeout(r, attempt * 400));
         }
       }
-      return fetch(url, { headers: { "x-api-key": SUNNAH_API_KEY } });
+      return fetch(url);
     };
 
     // ── step 1: show something instantly ──────────────────────────────────────
@@ -308,77 +306,54 @@ export default function HadithDetailScreen() {
 
     // ── step 2: background refresh from Sunnah.com (streams page by page) ────
     const backgroundRefresh = async (initialData: Hadith[]) => {
-      if (!sunnahCollection) return;
+      if (!sunnahCollection || !API_BASE_URL) return;
       if (!isMounted) return;
       setBgLoading(true);
 
       try {
-        // Fetch book list for this collection
-        let bookPage = 1;
-        const booksList: any[] = [];
+        const accumulated: Hadith[] = [...initialData];
+        const seenNums = new Set(initialData.map((h) => h.hadithnumber));
+        let page = 1;
+        let pendingUiItems = 0;
+
         while (true) {
           const res = await fetchWithRetry(
-            `https://api.sunnah.com/v1/collections/${sunnahCollection}/books?page=${bookPage}&limit=100`
+            `${API_BASE_URL}/api/hadith/${encodeURIComponent(sunnahCollection)}/hadiths?page=${page}&limit=100`
           );
           if (!res || !res.ok) break;
           const data = await res.json();
-          const pageBooks = data.data || [];
-          if (pageBooks.length === 0) break;
-          booksList.push(...pageBooks);
-          if (pageBooks.length < 100) break;
-          bookPage++;
-        }
+          const items: any[] = Array.isArray(data.data) ? data.data : [];
+          if (items.length === 0) break;
 
-        if (booksList.length === 0 || !isMounted) return;
-
-        // Stream hadiths book by book, updating state as each book arrives
-        const accumulated: Hadith[] = [...initialData];
-        const seenNums = new Set(initialData.map((h) => h.hadithnumber));
-        let newItemsCount = 0;
-
-        for (const b of booksList) {
-          if (!isMounted) break;
-          let page = 1;
-          while (true) {
-            if (!isMounted) break;
-            await new Promise((r) => setTimeout(r, 40)); // gentle rate-limit
-            const res = await fetchWithRetry(
-              `https://api.sunnah.com/v1/collections/${sunnahCollection}/books/${b.bookNumber}/hadiths?page=${page}&limit=100`
+          for (const item of items) {
+            const translations = Array.isArray(item.hadith) ? item.hadith : [];
+            const english = translations.find((entry: any) => entry.lang === "en") || translations[0] || {};
+            const arabic = translations.find((entry: any) => entry.lang === "ar") || {};
+            const text = toPlainText(english.body || item.text);
+            const arabicText = toPlainText(arabic.body || item.arabicText);
+            const hadithnum = Number(
+              item.hadithNumber || item.hadithNumberInBook || item.hadithnumber
             );
-            if (!res || !res.ok) break;
-            const data = await res.json();
-            const items: any[] = data.data || [];
-            if (items.length === 0) break;
-
-            const newBatch: Hadith[] = [];
-            items.forEach((item) => {
-              const translations = item.hadith || [];
-              const english = translations.find((e: any) => e.lang === "en") || translations[0] || {};
-              const arabic = translations.find((e: any) => e.lang === "ar") || {};
-              const text = toPlainText(english.body);
-              const arabicText = toPlainText(arabic.body);
-              const hadithnum = Number(item.hadithNumber || item.hadithNumberInBook || 1);
-              if ((text || arabicText) && !seenNums.has(hadithnum)) {
-                seenNums.add(hadithnum);
-                newBatch.push({ hadithnumber: hadithnum, bookNumber: Number(b.bookNumber), text, arabicText });
-              }
-            });
-
-            if (newBatch.length > 0) {
-              accumulated.push(...newBatch);
-              newItemsCount += newBatch.length;
-              // Stream update to UI every 50 new hadiths (or end of page)
-              if (newItemsCount >= 50) {
-                const snapshot = [...accumulated];
-                hadithMemoryCache.set(cacheKey, snapshot);
-                if (isMounted) setHadiths(snapshot);
-                newItemsCount = 0;
-              }
+            if (hadithnum && (text || arabicText) && !seenNums.has(hadithnum)) {
+              seenNums.add(hadithnum);
+              accumulated.push({
+                hadithnumber: hadithnum,
+                bookNumber: Number(item.bookNumber || 0) || undefined,
+                text,
+                arabicText,
+              });
+              pendingUiItems += 1;
             }
-
-            if (items.length < 100) break;
-            page++;
           }
+
+          if (pendingUiItems >= 50 && isMounted) {
+            const snapshot = [...accumulated];
+            hadithMemoryCache.set(cacheKey, snapshot);
+            setHadiths(snapshot);
+            pendingUiItems = 0;
+          }
+          if (items.length < 100) break;
+          page += 1;
         }
 
         if (!isMounted) return;

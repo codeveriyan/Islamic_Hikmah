@@ -19,6 +19,7 @@ import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 import { JUZ_DATA } from "@/src/data/juzData";
 import { SURAH_LIST, SurahMeta } from "@/src/data/surahList";
 import naqaaReciters from "@/src/data/quran/naqaaReciters.json";
+import { getTafsirSurah } from "@/src/services/cdnContentService";
 
 const tafsirMemoryCache = new Map<string, any>();
 // surahInfoDetailed (6.9 MB), transliterationWbw (1.6 MB), and
@@ -1011,57 +1012,13 @@ export default function QuranPageReader() {
         const isLocalTafsir = (tafsirIndexData as any[]).some(t => String(t.id) === String(selectedTafsirId));
 
         if (isLocalTafsir) {
-          let jsonContent = tafsirMemoryCache.get(`json_${selectedTafsirId}`) || null;
-
-          if (!jsonContent) {
-            const isWeb = Platform.OS === 'web' || !(FileSystem as any).documentDirectory;
-            if (isWeb) {
-              let response = null;
-              try {
-                const localUrl = (typeof window !== "undefined" ? window.location.origin : "") + '/tafsirs/' + selectedTafsirId + '.json';
-                response = await fetch(localUrl);
-              } catch (err) {}
-
-              if (!response || !response.ok) {
-                const githubUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${selectedTafsirId}.json`;
-                response = await fetch(githubUrl);
-              }
-
-              if (response && response.ok) {
-                jsonContent = await response.json();
-                tafsirMemoryCache.set(`json_${selectedTafsirId}`, jsonContent);
-              }
-            } else {
-              const localUri = `${(FileSystem as any).documentDirectory}tafsirs/${selectedTafsirId}.json`;
-              const dirUri = `${(FileSystem as any).documentDirectory}tafsirs/`;
-
-              try {
-                const dirInfo = await (FileSystem as any).getInfoAsync(dirUri);
-                if (!dirInfo.exists) {
-                  await (FileSystem as any).makeDirectoryAsync(dirUri, { intermediates: true });
-                }
-                const fileInfo = await (FileSystem as any).getInfoAsync(localUri);
-                if (fileInfo.exists) {
-                  const raw = await (FileSystem as any).readAsStringAsync(localUri);
-                  jsonContent = JSON.parse(raw);
-                  tafsirMemoryCache.set(`json_${selectedTafsirId}`, jsonContent);
-                }
-              } catch (fsErr) {}
-
-              if (!jsonContent) {
-                const downloadUrl = `https://raw.githubusercontent.com/codeveriyan/Islamic_Hikmah/main/frontend/public/tafsirs/${selectedTafsirId}.json`;
-                const dlResult = await (FileSystem as any).downloadAsync(downloadUrl, localUri);
-                if (dlResult.status === 200) {
-                  const raw = await (FileSystem as any).readAsStringAsync(localUri);
-                  jsonContent = JSON.parse(raw);
-                  tafsirMemoryCache.set(`json_${selectedTafsirId}`, jsonContent);
-                }
-              }
-            }
+          const result = await getTafsirSurah(selectedTafsirId, surah);
+          if (!result.success || !result.data) {
+            throw new Error(result.error || "Could not load Tafsir");
           }
-
+          const jsonContent = result.data;
           const key = `${surah}:${ayah}`;
-          if (jsonContent && jsonContent[key]) {
+          if (jsonContent[key]) {
             let text = jsonContent[key].text || "";
             text = text.replace(/<\/?[^>]+(>|$)/g, "").trim();
             tafsirMemoryCache.set(cacheKey, text);

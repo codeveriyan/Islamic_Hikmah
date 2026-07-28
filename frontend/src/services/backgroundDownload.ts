@@ -89,18 +89,7 @@ class BackgroundDownloadManager {
       // getHadithFallback fetches from Cloudflare R2 and saves to device disk —
       // subsequent opens of the Hadith screen will load from disk at 0ms.
       for (const bookId of ["bukhari", "mishkat_almasabih"]) {
-        const cacheKey = `hikmah:hadith:sunnah:${bookId}`;
-        const existing = await AsyncStorage.getItem(cacheKey);
-        if (!existing) {
-          const result = await getHadithFallback(bookId);
-          if (result.success && result.data && result.data.length > 0) {
-            await AsyncStorage.setItem(cacheKey, JSON.stringify({
-              savedAt: Date.now(),
-              source: "cdn",
-              data: result.data,
-            }));
-          }
-        }
+        await getHadithFallback(bookId);
       }
     } catch (e) {
       console.warn("Hadith background cache notice:", e);
