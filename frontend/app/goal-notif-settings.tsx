@@ -5,10 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Modal,
-  TextInput,
-  Alert,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -25,6 +21,12 @@ import {
   getActiveGoalIds,
   GoalNotifTimes,
 } from "@/src/storage";
+import {
+  AppDialog,
+  AppIconButton,
+  AppTextInput,
+} from "@/src/components/ui";
+import { AppLoadingState } from "@/src/components/states";
 
 type GoalTimeEntry = {
   id: keyof GoalNotifTimes;
@@ -108,17 +110,33 @@ export default function GoalNotifSettingsScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, [editing, times, inputH, inputM]);
 
-  if (!times) return null;
+  if (!times) {
+    return (
+      <SafeAreaView
+        edges={["top"]}
+        style={[styles.container, { backgroundColor: colors.surface }]}
+      >
+        <View style={styles.loadingWrap}>
+          <AppLoadingState
+            description="Reading your saved reminder schedule."
+            title="Loading notification times"
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
-        </Pressable>
+        <AppIconButton
+          accessibilityLabel="Go back"
+          icon="chevron-left"
+          onPress={() => router.back()}
+        />
         <Text style={[styles.title, { color: colors.onSurface }]}>Goal Notification Times</Text>
-        <View style={{ width: 28 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}>
@@ -177,61 +195,53 @@ export default function GoalNotifSettingsScreen() {
         })}
       </ScrollView>
 
-      {/* Time edit modal */}
-      <Modal visible={!!editing} transparent animationType="fade" onRequestClose={() => setEditing(null)}>
-        <View style={styles.overlay}>
-          <View style={[styles.modal, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
-              Set notification time
-            </Text>
-            <Text style={[styles.modalSub, { color: colors.onSurfaceMuted }]}>
-              {GOAL_TIME_ENTRIES.find((e) => e.id === editing)?.label}
-            </Text>
-            <View style={styles.timeRow}>
-              <TextInput
-                value={inputH}
-                onChangeText={setInputH}
-                keyboardType="number-pad"
-                maxLength={2}
-                style={[styles.timeInput, { backgroundColor: colors.surfaceSecondary, color: colors.onSurface }]}
-                placeholder="HH"
-                placeholderTextColor={colors.onSurfaceMuted}
-              />
-              <Text style={[styles.colon, { color: colors.onSurface }]}>:</Text>
-              <TextInput
-                value={inputM}
-                onChangeText={setInputM}
-                keyboardType="number-pad"
-                maxLength={2}
-                style={[styles.timeInput, { backgroundColor: colors.surfaceSecondary, color: colors.onSurface }]}
-                placeholder="MM"
-                placeholderTextColor={colors.onSurfaceMuted}
-              />
-            </View>
-            <Text style={[styles.hint, { color: colors.onSurfaceMuted }]}>24-hour format (00–23 : 00–59)</Text>
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setEditing(null)}
-                style={[styles.modalBtn, { backgroundColor: colors.surfaceSecondary }]}
-              >
-                <Text style={[styles.modalBtnTxt, { color: colors.onSurface }]}>{t("cancel")}</Text>
-              </Pressable>
-              <Pressable
-                onPress={saveEdit}
-                style={[styles.modalBtn, { backgroundColor: colors.brand }]}
-              >
-                <Text style={[styles.modalBtnTxt, { color: "#fff" }]}>{t("save")}</Text>
-              </Pressable>
-            </View>
+      <AppDialog
+        cancelLabel={t("cancel")}
+        confirmLabel={t("save")}
+        onConfirm={saveEdit}
+        onDismiss={() => setEditing(null)}
+        title="Set notification time"
+        visible={Boolean(editing)}
+      >
+        <View style={styles.dialogContent}>
+          <Text style={[styles.modalSub, { color: colors.onSurfaceMuted }]}>
+            {GOAL_TIME_ENTRIES.find((entry) => entry.id === editing)?.label}
+          </Text>
+          <View style={styles.timeRow}>
+            <AppTextInput
+              containerStyle={styles.timeInputContainer}
+              keyboardType="number-pad"
+              label="Hour"
+              maxLength={2}
+              onChangeText={setInputH}
+              value={inputH}
+            />
+            <Text style={[styles.colon, { color: colors.onSurface }]}>:</Text>
+            <AppTextInput
+              containerStyle={styles.timeInputContainer}
+              keyboardType="number-pad"
+              label="Minute"
+              maxLength={2}
+              onChangeText={setInputM}
+              value={inputM}
+            />
           </View>
+          <Text style={[styles.hint, { color: colors.onSurfaceMuted }]}>
+            24-hour format (00–23 : 00–59)
+          </Text>
         </View>
-      </Modal>
+      </AppDialog>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  loadingWrap: {
+    flex: 1,
+    justifyContent: "center",
+    padding: theme.spacing.lg,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -253,27 +263,14 @@ const styles = StyleSheet.create({
   rowNote: { fontSize: 11, marginTop: 2 },
   timeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   timeText: { fontSize: 13, fontWeight: "700" },
-  overlay: { flex: 1, backgroundColor: "#00000066", justifyContent: "center", alignItems: "center" },
-  modal: {
-    width: "80%",
-    borderRadius: 20,
-    padding: theme.spacing.xl,
+  dialogContent: {
     gap: theme.spacing.md,
   },
-  modalTitle: { fontSize: 17, fontWeight: "700", textAlign: "center" },
   modalSub: { fontSize: 13, textAlign: "center", marginTop: -4 },
   timeRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginVertical: 8 },
-  timeInput: {
-    width: 72,
-    textAlign: "center",
-    fontSize: 28,
-    fontWeight: "700",
-    padding: 10,
-    borderRadius: theme.radius.md,
+  timeInputContainer: {
+    width: 104,
   },
   colon: { fontSize: 32, fontWeight: "700" },
   hint: { fontSize: 11, textAlign: "center", marginTop: -4 },
-  modalActions: { flexDirection: "row", gap: theme.spacing.md, marginTop: 8 },
-  modalBtn: { flex: 1, padding: 14, borderRadius: theme.radius.md, alignItems: "center" },
-  modalBtnTxt: { fontWeight: "700", fontSize: 15 },
 });

@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SkeletonList } from "@/src/components/SkeletonLoader";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -90,6 +90,12 @@ import MutashabihatView from "./mutashabihat";
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function QuranIndex() {
   const router = useRouter();
+  const { mode: requestedModeParam } = useLocalSearchParams<{ mode?: string | string[] }>();
+  const requestedMode = Array.isArray(requestedModeParam) ? requestedModeParam[0] : requestedModeParam;
+  const initialMode =
+    requestedMode === "listen" || requestedMode === "learn" || requestedMode === "mutashabihat"
+      ? requestedMode
+      : "read";
   const { profile } = useAuth();
   const { showPremiumModal } = usePremiumModal();
   const { colors, language } = useTheme();
@@ -99,10 +105,10 @@ export default function QuranIndex() {
   const [loading] = useState(false);
 
   // Selector state
-  const [modeSelected, setModeSelected] = useState<boolean>(false);
+  const [modeSelected, setModeSelected] = useState<boolean>(Boolean(requestedMode));
 
   // Top tabs
-  const [activeTab, setActiveTab] = useState<"read" | "listen" | "learn" | "mutashabihat">("read");
+  const [activeTab, setActiveTab] = useState<"read" | "listen" | "learn" | "mutashabihat">(initialMode);
 
   const handleBack = () => {
     if (modeSelected) {
@@ -121,6 +127,14 @@ export default function QuranIndex() {
         icon: "book-open-variant",
         color: "#10B981",
         description: "Open chapters, Juz, page numbers, and custom translations."
+      },
+      {
+        id: "mushaf",
+        title: "Mushaf Mode",
+        subtitle: "Traditional 15-line Madani pages",
+        icon: "book-open-page-variant-outline",
+        color: "#C5A880",
+        description: "A focused Arabic-only layout with authentic Mushaf line breaks."
       },
       {
         id: "listen",
@@ -173,10 +187,17 @@ export default function QuranIndex() {
             return (
               <Pressable
                 key={item.id}
-                onPress={() => {
+                testID={`quran-mode-${item.id}`}
+                onPress={async () => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
                   if (isLocked) {
                     showPremiumModal(item.title);
+                    return;
+                  }
+                  if (item.id === "mushaf") {
+                    await AsyncStorage.setItem("quran_reading_mode_pref", "mushaf");
+                    const savedPage = Number(await AsyncStorage.getItem(READ_LAST_KEY)) || 1;
+                    router.push(`/quran/read/${savedPage}` as any);
                     return;
                   }
                   if (item.id === "learn-ai") {

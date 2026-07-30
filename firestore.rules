@@ -12,6 +12,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // User sync subcollection (bookmarks, last read, qadha, favourites)
+    match /users/{userId}/userData/{key} {
+      allow read, write: if ownsDocument(userId);
+    }
+
     // Payment records must only be created and updated by trusted server code.
     match /payments/{paymentId} {
       allow read, write: if false;

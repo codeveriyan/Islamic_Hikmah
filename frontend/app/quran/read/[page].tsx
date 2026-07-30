@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, Pressable, ScrollView, Modal, ActivityIndicator,
-  Platform, Alert, TextInput, Share, FlatList, Switch
+  Platform, Alert, TextInput, Share, FlatList, Switch, useWindowDimensions
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -15,9 +15,9 @@ import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as FileSystem from "expo-file-system";
 import quranData from "@/src/data/quran/quranData.json";
 import pageMappingData from "@/src/data/quran/pageMapping.json";
+import qpcV4LayoutData from "@/src/data/quran/qpcV4Layout.json";
 import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
-import { JUZ_DATA } from "@/src/data/juzData";
-import { SURAH_LIST, SurahMeta } from "@/src/data/surahList";
+import { SURAH_LIST } from "@/src/data/surahList";
 import naqaaReciters from "@/src/data/quran/naqaaReciters.json";
 import { getTafsirSurah } from "@/src/services/cdnContentService";
 
@@ -35,6 +35,25 @@ type LocalAyah = { numberInSurah: number; arabic: string; translation: string; t
 type LocalSurah = { number: number; name: string; englishName: string; arabicName: string; type: string; totalAyahs: number; ayahs: LocalAyah[] };
 type MappedAyah = { surah: number; ayah: number };
 type PageMap = { page: number; ayahs: MappedAyah[] };
+type QpcLayoutLine = {
+  line: number;
+  type: "surah_name" | "basmallah" | "ayah";
+  centered: boolean;
+  firstWord: number | null;
+  lastWord: number | null;
+  surah: number | null;
+};
+type MushafToken = {
+  kind: "word" | "marker";
+  text: string;
+  surahNumber: number;
+  ayahNumber: number;
+  absoluteNumber: number;
+};
+type MushafRenderLine =
+  | { type: "surah_name"; line: number; surah: number }
+  | { type: "basmallah"; line: number }
+  | { type: "ayah"; line: number; centered: boolean; tokens: MushafToken[] };
 type WbwWord = { position: number; text_uthmani: string; translation: { text: string }; transliteration: { text: string }; char_type_name: string };
 type VerseTiming = { verse_key: string; timestamp_from: number; timestamp_to: number };
 type TafsirSource = { id: number; name: string; author_name: string; slug: string; language_name: string };
@@ -54,7 +73,13 @@ type ApiReciter = {
 // ─── Constants ───────────────────────────────────────────────────────────────
 const QURAN: LocalSurah[] = quranData as LocalSurah[];
 const PAGE_MAPPING: PageMap[] = pageMappingData as PageMap[];
+const QPC_LAYOUT = qpcV4LayoutData as Record<string, QpcLayoutLine[]>;
 const TOTAL_PAGES = 604;
+const JUZ_START_PAGES = [
+  1, 22, 42, 62, 82, 102, 122, 142, 162, 182,
+  202, 222, 242, 262, 282, 302, 322, 342, 362, 382,
+  402, 422, 442, 462, 482, 502, 522, 542, 562, 582,
+];
 // Heavy data — lazy-required so Metro defers parsing until first mount
 let _wbwData: Record<string, string> | null = null;
 const getWbwData = (): Record<string, string> => {
@@ -85,6 +110,72 @@ function getArabicFontFamily(script: string): string {
     default:
       return "ScheherazadeNew";
   }
+}
+
+function toArabicIndic(value: number): string {
+  return String(value).replace(/\d/g, digit => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]);
+}
+
+/**
+ * QPC V4 follows the printed Mushaf's word boundaries. A few orthographic
+ * forms are joined differently in our local verse text, so normalize just
+ * those forms before applying the canonical global word indexes.
+ */
+function tokenizeMushafVerse(surah: number, ayah: number, text: string): string[] {
+  const words = text.trim().split(/ +/u).filter(Boolean);
+  const verseKey = `${surah}:${ayah}`;
+
+  const splitWord = (joined: string, parts: string[]) => {
+    const index = words.indexOf(joined);
+    if (index >= 0) words.splice(index, 1, ...parts);
+  };
+
+  if (verseKey === "15:7") splitWord("لَّوۡمَا", ["لَّوۡ", "مَا"]);
+  if (verseKey === "27:20") splitWord("مَالِيَ", ["مَا", "لِيَ"]);
+  if (verseKey === "36:22") splitWord("وَمَالِيَ", ["وَمَا", "لِيَ"]);
+  if (verseKey === "37:164") splitWord("وَمَامِنَّآ", ["وَمَا", "مِنَّآ"]);
+  if (verseKey === "41:47") splitWord("مَامِنَّا", ["مَا", "مِنَّا"]);
+
+  if (verseKey === "37:130") {
+    const first = words.indexOf("إِلۡ");
+    if (first >= 0 && words[first + 1] === "يَاسِينَ") {
+      words.splice(first, 2, "إِلۡ يَاسِينَ");
+    }
+  }
+
+  return words;
+}
+
+let _mushafTokenStream: MushafToken[] | null = null;
+function getMushafTokenStream(): MushafToken[] {
+  if (_mushafTokenStream) return _mushafTokenStream;
+
+  const tokens: MushafToken[] = [];
+  let absoluteNumber = 0;
+  QURAN.forEach(surah => {
+    surah.ayahs.forEach(ayah => {
+      absoluteNumber += 1;
+      tokenizeMushafVerse(surah.number, ayah.numberInSurah, ayah.arabic).forEach(word => {
+        tokens.push({
+          kind: "word",
+          text: word,
+          surahNumber: surah.number,
+          ayahNumber: ayah.numberInSurah,
+          absoluteNumber,
+        });
+      });
+      tokens.push({
+        kind: "marker",
+        text: `۝${toArabicIndic(ayah.numberInSurah)}`,
+        surahNumber: surah.number,
+        ayahNumber: ayah.numberInSurah,
+        absoluteNumber,
+      });
+    });
+  });
+
+  _mushafTokenStream = tokens;
+  return tokens;
 }
 
 /** QuranicAudio offers complete chapter files, which also makes these recitations
@@ -520,12 +611,13 @@ const FALLBACK_RECITERS: ApiReciter[] = [
 export default function QuranPageReader() {
   const router = useRouter();
   const { colors, mode } = useTheme();
+  const { width: viewportWidth } = useWindowDimensions();
   const { page } = useLocalSearchParams<{ page: string }>();
   const currentPageNum = Math.max(1, Math.min(TOTAL_PAGES, parseInt(page || "1", 10)));
   const scrollRef = useRef<ScrollView>(null);
 
   // ─── Core UI State ─────────────────────────────────────────────────────────
-  const [readingMode, setReadingMode] = useState<"arabic" | "verseByVerse" | "translation">("arabic");
+  const [readingMode, setReadingMode] = useState<"mushaf" | "arabic" | "verseByVerse" | "translation">("arabic");
   
   // Font scale sizes mapped dynamically (Quran.com style scales 1-10)
   const [fontSizeArabicScale, setFontSizeArabicScale] = useState(4); // Default level 4
@@ -535,6 +627,10 @@ export default function QuranPageReader() {
   // Dynamic font sizes computed from scales
   const fontSizeArabic = useMemo(() => 16 + fontSizeArabicScale * 2, [fontSizeArabicScale]);
   const fontSizeTrans = useMemo(() => 10 + fontSizeTransScale * 1.5, [fontSizeTransScale]);
+  const mushafResponsiveFontCap = useMemo(
+    () => Math.min(fontSizeArabic, Math.max(16, Math.min(30, (viewportWidth - 42) / 19.2))),
+    [fontSizeArabic, viewportWidth]
+  );
 
   // ─── Quran.com settings options (Screenshot settings incorporated) ───────
   const [quranScript, setQuranScript] = useState<"uthmani" | "king_fahad" | "indopak" | "tajweed">("uthmani");
@@ -681,6 +777,48 @@ export default function QuranPageReader() {
     });
   }, [currentPageNum]);
 
+  const mushafLines = useMemo<MushafRenderLine[]>(() => {
+    const tokenStream = getMushafTokenStream();
+    return (QPC_LAYOUT[String(currentPageNum)] || []).map(layoutLine => {
+      if (layoutLine.type === "surah_name") {
+        return {
+          type: "surah_name" as const,
+          line: layoutLine.line,
+          surah: layoutLine.surah || pageVerses[0]?.surahNumber || 1,
+        };
+      }
+      if (layoutLine.type === "basmallah") {
+        return { type: "basmallah" as const, line: layoutLine.line };
+      }
+
+      return {
+        type: "ayah" as const,
+        line: layoutLine.line,
+        centered: layoutLine.centered,
+        tokens: tokenStream.slice(
+          Math.max(0, (layoutLine.firstWord || 1) - 1),
+          Math.max(0, layoutLine.lastWord || 0)
+        ),
+      };
+    });
+  }, [currentPageNum, pageVerses]);
+
+  const mushafFontSize = useMemo(() => {
+    const longestLine = mushafLines.reduce((longest, line) => {
+      if (line.type !== "ayah") return longest;
+      const baseCharacterCount = line.tokens
+        .map(token => token.text)
+        .join(" ")
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .length;
+      return Math.max(longest, baseCharacterCount);
+    }, 1);
+    const availableWidth = Math.max(250, viewportWidth - 48);
+    const fitToCanonicalLine = availableWidth / (longestLine * 0.43);
+    return Math.max(12, Math.min(mushafResponsiveFontCap, fitToCanonicalLine));
+  }, [mushafLines, mushafResponsiveFontCap, viewportWidth]);
+
   // Tajweed markup is supplied per ayah by Al Quran Cloud. Keep the plain
   // local Mushaf text as the fallback so the reader remains usable offline.
   useEffect(() => {
@@ -737,13 +875,14 @@ export default function QuranPageReader() {
 
   const pageInfo = useMemo(() => {
     let currentJuz = 1;
-    for (const juz of JUZ_DATA) {
-      if (pageVerses.some(v => v.surahNumber === juz.surahNumber && v.ayahNumber >= juz.ayahNumber)) {
-        currentJuz = juz.juz;
+    for (let index = JUZ_START_PAGES.length - 1; index >= 0; index -= 1) {
+      if (currentPageNum >= JUZ_START_PAGES[index]) {
+        currentJuz = index + 1;
+        break;
       }
     }
-    return { juz: currentJuz, hizb: Math.ceil(currentJuz * 4) };
-  }, [pageVerses]);
+    return { juz: currentJuz };
+  }, [currentPageNum]);
 
   // Current surah on this page (for header display)
   const currentSurah = useMemo(() => {
@@ -1707,6 +1846,11 @@ export default function QuranPageReader() {
   // ─── Navigation ───────────────────────────────────────────────────────────
   const handlePrevPage = () => { if (currentPageNum > 1) router.replace(`/quran/read/${currentPageNum - 1}`); };
   const handleNextPage = () => { if (currentPageNum < TOTAL_PAGES) router.replace(`/quran/read/${currentPageNum + 1}`); };
+  const exitMushafMode = () => {
+    setReadingMode("verseByVerse");
+    AsyncStorage.setItem("quran_reading_mode_pref", "verseByVerse").catch(() => {});
+    Haptics.selectionAsync().catch(() => {});
+  };
 
   // Swipe Navigation
   const handleTouchStart = (e: any) => {
@@ -1740,54 +1884,83 @@ export default function QuranPageReader() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
 
       {/* ─── Header ─────────────────────────────────────────────────────────── */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onSurface} />
-        </Pressable>
-
-        {/* Surah Name + Dropdown */}
-        <Pressable onPress={() => { setShowSurahSelector(true); setSurahSearchQuery(""); }} style={styles.surahSelectorBtn}>
-          <Text style={[styles.headerTitle, { color: colors.onSurface }]} numberOfLines={1}>
-            {currentSurah ? `${currentSurah.number}. ${currentSurah.englishName}` : `Page ${currentPageNum}`}
-          </Text>
-          <MaterialCommunityIcons name="chevron-down" size={18} color={colors.onSurfaceMuted} />
-        </Pressable>
-
-        <View style={headerStyle.headerActions}>
-          <Pressable onPress={togglePageBookmark} hitSlop={10}>
-            <MaterialCommunityIcons name={isPageBookmarked ? "bookmark" : "bookmark-outline"} size={24} color={isPageBookmarked ? colors.brand : colors.onSurface} />
+      {readingMode === "mushaf" ? (
+        <View style={[styles.header, styles.mushafHeader, { borderBottomColor: colors.border }]}>
+          <Pressable testID="exit-mushaf-mode" onPress={exitMushafMode} hitSlop={10} style={styles.exitMushafBtn}>
+            <MaterialCommunityIcons name="close" size={22} color={colors.onSurface} />
+            <Text style={[styles.exitMushafText, { color: colors.onSurface }]}>Exit Mushaf</Text>
           </Pressable>
-          <Pressable onPress={() => { setShowSettings(true); setSettingsTab("arabic"); }} hitSlop={10}>
-            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
-          </Pressable>
+
+          <View style={styles.mushafHeaderTitleWrap}>
+            <Text style={[styles.mushafHeaderTitle, { color: colors.onSurface }]}>Madani Mushaf</Text>
+            <Text style={[styles.mushafHeaderSubtitle, { color: colors.onSurfaceMuted }]}>
+              Page {currentPageNum} · Juz {pageInfo.juz}
+            </Text>
+          </View>
+
+          <View style={headerStyle.headerActions}>
+            <Pressable onPress={togglePageBookmark} hitSlop={10}>
+              <MaterialCommunityIcons name={isPageBookmarked ? "bookmark" : "bookmark-outline"} size={23} color={isPageBookmarked ? colors.brand : colors.onSurface} />
+            </Pressable>
+            <Pressable onPress={() => { setShowSettings(true); setSettingsTab("arabic"); }} hitSlop={10}>
+              <MaterialCommunityIcons name="format-font" size={23} color={colors.onSurface} />
+            </Pressable>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <Pressable onPress={() => router.back()} hitSlop={10}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onSurface} />
+          </Pressable>
+
+          {/* Surah Name + Dropdown */}
+          <Pressable onPress={() => { setShowSurahSelector(true); setSurahSearchQuery(""); }} style={styles.surahSelectorBtn}>
+            <Text style={[styles.headerTitle, { color: colors.onSurface }]} numberOfLines={1}>
+              {currentSurah ? `${currentSurah.number}. ${currentSurah.englishName}` : `Page ${currentPageNum}`}
+            </Text>
+            <MaterialCommunityIcons name="chevron-down" size={18} color={colors.onSurfaceMuted} />
+          </Pressable>
+
+          <View style={headerStyle.headerActions}>
+            <Pressable onPress={togglePageBookmark} hitSlop={10}>
+              <MaterialCommunityIcons name={isPageBookmarked ? "bookmark" : "bookmark-outline"} size={24} color={isPageBookmarked ? colors.brand : colors.onSurface} />
+            </Pressable>
+            <Pressable onPress={() => { setShowSettings(true); setSettingsTab("arabic"); }} hitSlop={10}>
+              <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {/* Page/Juz/Hizb sub-bar */}
-      <View style={[styles.locationBar, { borderBottomColor: colors.border }]}>
+      {readingMode !== "mushaf" && <View style={[styles.locationBar, { borderBottomColor: colors.border }]}>
         <Text style={[styles.locationText, { color: colors.onSurfaceMuted }]}>
-          📄 Page {currentPageNum}  ·  Juz {pageInfo.juz}  /  Hizb {pageInfo.hizb}
+          📄 Page {currentPageNum}  ·  Juz {pageInfo.juz}
         </Text>
-      </View>
+      </View>}
 
       {/* ─── Mode Toggle Pills ──────────────────────────────────────────────── */}
-      <View style={[styles.modeSelectorRow, { borderBottomColor: colors.border }]}>
-        {(["verseByVerse", "arabic", "translation"] as const).map(m => (
-          <Pressable key={m} onPress={() => { setReadingMode(m); AsyncStorage.setItem("quran_reading_mode_pref", m); }}
+      {readingMode !== "mushaf" && <View style={[styles.modeSelectorRow, { borderBottomColor: colors.border }]}>
+        {(["verseByVerse", "mushaf", "arabic", "translation"] as const).map(m => (
+          <Pressable key={m} testID={`quran-reading-mode-${m}`} onPress={() => { setReadingMode(m); AsyncStorage.setItem("quran_reading_mode_pref", m); }}
             style={[styles.modeBtn, readingMode === m && { backgroundColor: colors.brand + "18", borderColor: colors.brand }]}>
             <Text style={[styles.modeBtnText, { color: readingMode === m ? colors.brand : colors.onSurfaceMuted, fontWeight: readingMode === m ? "700" : "500" }]}>
-              {m === "verseByVerse" ? "Verse by Verse" : m === "arabic" ? "Arabic" : "Translation"}
+              {m === "verseByVerse" ? "Verse" : m === "mushaf" ? "Mushaf" : m === "arabic" ? "Arabic" : "Translation"}
             </Text>
           </Pressable>
         ))}
-      </View>
+      </View>}
 
       {/* ─── Main Scroll Content with horizontal swipe gestures ────────────────── */}
       <View style={{ flex: 1 }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-        <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[styles.scrollContent, readingMode === "mushaf" && styles.mushafScrollContent]}
+          showsVerticalScrollIndicator={false}
+        >
 
         {/* Surah Header Card (Image 2 style) */}
-        {pageVerses.filter(v => v.ayahNumber === 1).map(verse => (
+        {readingMode !== "mushaf" && pageVerses.filter(v => v.ayahNumber === 1).map(verse => (
           <View key={`card-${verse.surahNumber}`} style={[styles.surahCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             <View style={styles.cardLayoutRow}>
               
@@ -1864,10 +2037,138 @@ export default function QuranPageReader() {
         ))}
 
         {/* Bismillah */}
-        {pageVerses.some(v => v.ayahNumber === 1 && v.surahNumber !== 9) && (
+        {readingMode !== "mushaf" && pageVerses.some(v => v.ayahNumber === 1 && v.surahNumber !== 9) && (
           <View style={styles.bismillahBox}>
             <Text style={[styles.bismillahAr, { color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
             <Text style={[styles.bismillahEn, { color: colors.onSurfaceMuted }]}>In the Name of Allah—the Most Compassionate, Most Merciful</Text>
+          </View>
+        )}
+
+        {/* ═══ Mushaf Mode — canonical 15-line Madani layout ═══ */}
+        {readingMode === "mushaf" && (
+          <View
+            testID="mushaf-page"
+            style={[
+              styles.mushafPage,
+              {
+                backgroundColor: mode === "dark" ? colors.surfaceSecondary : "#FBF7EC",
+                borderColor: colors.brand + "66",
+              },
+            ]}
+          >
+            <View style={[styles.mushafInnerBorder, { borderColor: colors.brand + "42" }]}>
+              {mushafLines.map(line => {
+                if (line.type === "surah_name") {
+                  const surah = QURAN.find(item => item.number === line.surah);
+                  return (
+                    <View
+                      key={`mushaf-surah-${line.line}-${line.surah}`}
+                      style={[
+                        styles.mushafSurahBanner,
+                        {
+                          backgroundColor: colors.brand + (mode === "dark" ? "18" : "12"),
+                          borderColor: colors.brand + "70",
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.mushafOrnament, { color: colors.brand }]}>◆</Text>
+                      <View style={styles.mushafSurahNames}>
+                        <Text
+                          style={[
+                            styles.mushafSurahArabic,
+                            { color: colors.onSurface, fontFamily: "ScheherazadeNew" },
+                          ]}
+                        >
+                          سُورَةُ {surah?.arabicName || ""}
+                        </Text>
+                        <Text style={[styles.mushafSurahEnglish, { color: colors.onSurfaceMuted }]}>
+                          {line.surah}. {surah?.name || `Surah ${line.surah}`}
+                        </Text>
+                      </View>
+                      <Text style={[styles.mushafOrnament, { color: colors.brand }]}>◆</Text>
+                    </View>
+                  );
+                }
+
+                if (line.type === "basmallah") {
+                  return (
+                    <Text
+                      key={`mushaf-basmallah-${line.line}`}
+                      style={[
+                        styles.mushafBasmallah,
+                        {
+                          color: colors.onSurface,
+                          fontFamily: "ScheherazadeNew",
+                          fontSize: Math.max(19, mushafFontSize),
+                        },
+                      ]}
+                    >
+                      بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+                    </Text>
+                  );
+                }
+
+                return (
+                  <Text
+                    key={`mushaf-line-${line.line}`}
+                    style={[
+                      styles.mushafLine,
+                      {
+                        color: colors.onSurface,
+                        fontFamily: getArabicFontFamily(quranScript),
+                        fontSize: mushafFontSize,
+                        lineHeight: Math.max(32, Math.min(46, mushafFontSize * 1.68)),
+                        textAlign: line.centered ? "center" : "justify",
+                      },
+                    ]}
+                  >
+                    {line.tokens.map((token, tokenIndex) => {
+                      const isHighlighted =
+                        highlightActive && playingAyah?.absolute === token.absoluteNumber;
+                      return (
+                        <Text
+                          key={`${line.line}-${token.absoluteNumber}-${tokenIndex}`}
+                          onPress={() =>
+                            handlePlaySingle(
+                              token.surahNumber,
+                              token.ayahNumber,
+                              token.absoluteNumber
+                            )
+                          }
+                          style={[
+                            token.kind === "marker" && {
+                              color: colors.brand,
+                              fontSize: Math.max(16, mushafFontSize - 1),
+                            },
+                            isHighlighted && {
+                              color: colors.brand,
+                              backgroundColor: colors.brand + "16",
+                            },
+                          ]}
+                        >
+                          {token.text}
+                          {tokenIndex < line.tokens.length - 1 ? " " : ""}
+                        </Text>
+                      );
+                    })}
+                  </Text>
+                );
+              })}
+
+              <View style={[styles.mushafPageFooter, { borderTopColor: colors.brand + "36" }]}>
+                <Text style={[styles.mushafFooterText, { color: colors.onSurfaceMuted }]}>
+                  Juz {pageInfo.juz}
+                </Text>
+                <View style={[styles.mushafPageMedallion, { borderColor: colors.brand }]}>
+                  <Text style={[styles.mushafPageNumber, { color: colors.brand }]}>
+                    {toArabicIndic(currentPageNum)}
+                  </Text>
+                </View>
+                <Text style={[styles.mushafFooterText, { color: colors.onSurfaceMuted }]}>
+                  Hafs
+                </Text>
+              </View>
+            </View>
           </View>
         )}
 
@@ -3164,6 +3465,12 @@ const headerStyle = StyleSheet.create({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, borderBottomWidth: 1 },
+  mushafHeader: { minHeight: 62 },
+  exitMushafBtn: { flexDirection: "row", alignItems: "center", gap: 5, minWidth: 100 },
+  exitMushafText: { fontSize: 12, fontWeight: "700" },
+  mushafHeaderTitleWrap: { alignItems: "center", flex: 1 },
+  mushafHeaderTitle: { fontSize: 15, fontWeight: "800" },
+  mushafHeaderSubtitle: { fontSize: 10, marginTop: 2 },
   surahSelectorBtn: { flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 200 },
   headerTitle: { fontSize: 16, fontWeight: "700" },
   locationBar: { paddingHorizontal: theme.spacing.lg, paddingVertical: 6, borderBottomWidth: 1, alignItems: "center" },
@@ -3180,6 +3487,44 @@ const styles = StyleSheet.create({
   selectTransBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8, paddingTop: 8, borderTopWidth: 1 },
   selectTransBtnText: { fontSize: 13, fontWeight: "700" },
   scrollContent: { padding: theme.spacing.lg, paddingBottom: 120 },
+  mushafScrollContent: { paddingHorizontal: 10, paddingTop: 10 },
+  mushafPage: { borderWidth: 1, borderRadius: 16, padding: 6, overflow: "hidden" },
+  mushafInnerBorder: { borderWidth: 1, borderRadius: 11, paddingHorizontal: 9, paddingTop: 10, paddingBottom: 8 },
+  mushafSurahBanner: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  mushafSurahNames: { flex: 1, alignItems: "center" },
+  mushafSurahArabic: { fontSize: 22, lineHeight: 30, textAlign: "center" },
+  mushafSurahEnglish: { fontSize: 10, fontWeight: "700", letterSpacing: 0.4, textAlign: "center" },
+  mushafOrnament: { fontSize: 10, marginHorizontal: 5 },
+  mushafBasmallah: { textAlign: "center", lineHeight: 40, marginVertical: 1 },
+  mushafLine: { width: "100%", writingDirection: "rtl", letterSpacing: 0 },
+  mushafPageFooter: {
+    borderTopWidth: 1,
+    marginTop: 8,
+    paddingTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  mushafFooterText: { fontSize: 10, fontWeight: "700", minWidth: 50, textAlign: "center" },
+  mushafPageMedallion: {
+    minWidth: 34,
+    height: 34,
+    borderWidth: 1,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mushafPageNumber: { fontFamily: "ScheherazadeNew", fontSize: 17, fontWeight: "700" },
   // Surah Card
   surahCard: { padding: theme.spacing.lg, borderRadius: theme.radius.lg, borderWidth: 1, marginBottom: 20 },
   cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },

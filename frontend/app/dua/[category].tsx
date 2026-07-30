@@ -19,6 +19,7 @@ import {
 } from "@/src/storage";
 import { transliterateToTamil } from "@/src/transliterator";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import { getCdnAssetUrl } from "@/src/utils/cdnAsset";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -1226,7 +1227,7 @@ export default function DuaCategoryScreen() {
 }
 
 const CATEGORY_IMAGES: Record<string, any> = {
-  ummah: require("@/assets/images/ummah_background.png"),
+  ummah: { uri: getCdnAssetUrl("images/ummah_background.png") },
   morning: { uri: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop&q=80" },
   evening: { uri: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=500&auto=format&fit=crop&q=80" },
   sleep: { uri: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=500&auto=format&fit=crop&q=80" },

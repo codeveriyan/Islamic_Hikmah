@@ -107,7 +107,12 @@ export default function MeTab() {
   const name = profile?.name || user?.email?.split("@")[0] || (isGuest ? "Guest" : "Islamic Hikmah");
   const email = profile?.email || user?.email || "";
   const tier = profile?.tier || "free";
-  const isPremium = tier === "premium" || profile?.trialActive;
+  const isPremium = !isGuest && (tier === "premium" || Boolean(profile?.trialActive));
+  const accountStatusLabel = isGuest
+    ? "Guest mode"
+    : isPremium
+      ? "Premium member"
+      : "Free account";
 
   const MENU_GROUPS: { title: string; items: MenuItem[] }[] = [
     {
@@ -122,7 +127,14 @@ export default function MeTab() {
       title: "Account",
       items: [
         { id: "profile", label: "My Profile", icon: "account-circle", route: "/profile", color: "#1D4ED8" },
-        { id: "premium", label: isPremium ? "Premium Active ✓" : "Upgrade to Premium", subtitle: isPremium ? "All features unlocked" : "Unlock all features", icon: "crown", route: "/premium", color: "#D97706" },
+        {
+          id: "premium",
+          label: isGuest ? "Create account to upgrade" : isPremium ? "Premium Active ✓" : "Upgrade to Premium",
+          subtitle: isGuest ? "Sync progress before upgrading" : isPremium ? "All features unlocked" : "Unlock all features",
+          icon: "crown",
+          route: isGuest ? "/auth/register" : "/premium",
+          color: "#D97706",
+        },
         { id: "settings", label: "Settings", subtitle: "Theme, language, font & more", icon: "cog", route: "/settings", color: "#64748B" },
       ],
     },
@@ -137,10 +149,21 @@ export default function MeTab() {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={["top"]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.scroll,
+          { width: "100%", maxWidth: theme.layout.readableWidth, alignSelf: "center" },
+        ]}
+      >
 
         {/* Profile Hero Card */}
-        <AnimatedCard onPress={() => router.push("/profile")} style={[s.profileCard, { overflow: "hidden" }]}>
+        <AnimatedCard
+          onPress={() => router.push("/profile")}
+          accessibilityRole="button"
+          accessibilityLabel={`Open profile for ${name}`}
+          style={[s.profileCard, { overflow: "hidden" }]}
+        >
           <LinearGradient
             colors={mode === "dark" ? ["#0B2D25", "#163B2E"] : ["#065F46", "#047857"]}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -159,12 +182,12 @@ export default function MeTab() {
               {email ? <Text style={s.profileEmail}>{email}</Text> : null}
               <View style={s.tierBadge}>
                 <MaterialCommunityIcons
-                  name={isPremium ? "crown" : "account"}
+                  name={isPremium ? "crown" : isGuest ? "account-clock" : "account"}
                   size={11}
                   color={isPremium ? colors.warning : "rgba(255,255,255,0.7)"}
                 />
                 <Text style={[s.tierTxt, isPremium && { color: "#FCD34D" }]}>
-                  {isPremium ? "Premium Member" : "Free Account"}
+                  {accountStatusLabel}
                 </Text>
               </View>
             </View>

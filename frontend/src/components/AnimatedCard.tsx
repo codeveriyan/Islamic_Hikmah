@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, ViewStyle, StyleProp } from "react-native";
+import { Pressable, ViewStyle, StyleProp, type PressableProps } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -9,22 +9,16 @@ import Animated, {
 
 const SPRING_CONFIG = { damping: 15, stiffness: 300, mass: 0.6 };
 
-type Props = {
+type Props = Omit<PressableProps, "children" | "style"> & {
   children: React.ReactNode;
-  onPress?: () => void;
-  onLongPress?: () => void;
   style?: StyleProp<ViewStyle>;
   pressedScale?: number;
-  disabled?: boolean;
-  delayLongPress?: number;
-  hitSlop?: number;
-  testID?: string;
 };
 
 /**
  * Drop-in replacement for <Pressable> with Reanimated 3 spring physics.
  * Works exactly like Pressable but adds spring scale + opacity bounce.
- * Nested Pressables are NOT blocked — this wraps using the Animated.Pressable pattern.
+ * Nested Pressables are NOT blocked â€” this wraps using the Animated.Pressable pattern.
  */
 export function AnimatedCard({
   children,
@@ -36,6 +30,7 @@ export function AnimatedCard({
   delayLongPress = 350,
   hitSlop,
   testID,
+  ...pressableProps
 }: Props) {
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
@@ -64,6 +59,7 @@ export function AnimatedCard({
         hitSlop={hitSlop}
         testID={testID}
         style={{ flex: 1 }}
+        {...pressableProps}
       >
         {children}
       </Pressable>

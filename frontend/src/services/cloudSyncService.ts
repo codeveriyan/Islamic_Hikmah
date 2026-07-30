@@ -104,11 +104,16 @@ async function syncHadithBookmarks(uid: string) {
 
   const mergedMap = new Map<string, any>();
   for (const item of [...cloudList, ...localList]) {
-    const key = item.id;
-    if (key) mergedMap.set(key, item);
+    const key = item.id || item.hadithnumber;
+    if (key) {
+      const existing = mergedMap.get(String(key));
+      if (!existing || (item.savedAt || item.timestamp || 0) > (existing.savedAt || existing.timestamp || 0)) {
+        mergedMap.set(String(key), item);
+      }
+    }
   }
 
-  const merged = Array.from(mergedMap.values());
+  const merged = Array.from(mergedMap.values()).sort((a, b) => (b.savedAt || b.timestamp || 0) - (a.savedAt || a.timestamp || 0));
   await AsyncStorage.setItem(KEYS.HADITH_BOOKMARKS, JSON.stringify(merged));
   await setDoc(docRef, { data: merged, updatedAt: Date.now() }, { merge: true });
 }
@@ -123,11 +128,16 @@ async function syncSeerahBookmarks(uid: string) {
 
   const mergedMap = new Map<string, any>();
   for (const item of [...cloudList, ...localList]) {
-    const key = item.id;
-    if (key) mergedMap.set(key, item);
+    const key = item.id || item.chapterId;
+    if (key) {
+      const existing = mergedMap.get(String(key));
+      if (!existing || (item.savedAt || item.timestamp || 0) > (existing.savedAt || existing.timestamp || 0)) {
+        mergedMap.set(String(key), item);
+      }
+    }
   }
 
-  const merged = Array.from(mergedMap.values());
+  const merged = Array.from(mergedMap.values()).sort((a, b) => (b.savedAt || b.timestamp || 0) - (a.savedAt || a.timestamp || 0));
   await AsyncStorage.setItem(KEYS.SEERAH_BOOKMARKS, JSON.stringify(merged));
   await setDoc(docRef, { data: merged, updatedAt: Date.now() }, { merge: true });
 }
@@ -142,11 +152,16 @@ async function syncDhikrBookmarks(uid: string) {
 
   const mergedMap = new Map<string, any>();
   for (const item of [...cloudList, ...localList]) {
-    const key = item.id;
-    if (key) mergedMap.set(key, item);
+    const key = item.id || item.dhikrId;
+    if (key) {
+      const existing = mergedMap.get(String(key));
+      if (!existing || (item.savedAt || item.timestamp || 0) > (existing.savedAt || existing.timestamp || 0)) {
+        mergedMap.set(String(key), item);
+      }
+    }
   }
 
-  const merged = Array.from(mergedMap.values());
+  const merged = Array.from(mergedMap.values()).sort((a, b) => (b.savedAt || b.timestamp || 0) - (a.savedAt || a.timestamp || 0));
   await AsyncStorage.setItem(KEYS.DHIKR_BOOKMARKS, JSON.stringify(merged));
   await setDoc(docRef, { data: merged, updatedAt: Date.now() }, { merge: true });
 }
@@ -161,11 +176,16 @@ async function syncFavourites(uid: string) {
 
   const mergedMap = new Map<string, any>();
   for (const item of [...cloudList, ...localList]) {
-    const key = item.id;
-    if (key) mergedMap.set(key, item);
+    const key = item.id || item.itemKey;
+    if (key) {
+      const existing = mergedMap.get(String(key));
+      if (!existing || (item.savedAt || item.timestamp || 0) > (existing.savedAt || existing.timestamp || 0)) {
+        mergedMap.set(String(key), item);
+      }
+    }
   }
 
-  const merged = Array.from(mergedMap.values());
+  const merged = Array.from(mergedMap.values()).sort((a, b) => (b.savedAt || b.timestamp || 0) - (a.savedAt || a.timestamp || 0));
   await AsyncStorage.setItem(KEYS.FAVOURITES, JSON.stringify(merged));
   await setDoc(docRef, { data: merged, updatedAt: Date.now() }, { merge: true });
 }

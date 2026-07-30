@@ -448,7 +448,7 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
           content: {
             title: `${p} Prayer Time`,
             body: `It is time for ${p} prayer.`,
-            sound: bgAzaanEnabled ? (Platform.OS === "android" ? "azaan" : "azaan.wav") : true,
+            sound: bgAzaanEnabled ? (Platform.OS === "android" ? "azaan" : "azaan.mp3") : true,
             data: { notificationKind: "prayer-adhan", prayer: p },
           },
           trigger: {

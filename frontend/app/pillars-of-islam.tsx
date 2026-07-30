@@ -10,6 +10,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
+import { getCdnAssetUrl } from "@/src/utils/cdnAsset";
 
 const { width } = Dimensions.get("window");
 
@@ -265,10 +266,9 @@ export default function PillarsOfIslamScreen() {
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Calligraphy Screenshot Image as requested */}
                 <View style={[styles.calligraphyBox, { borderColor: colors.border }]}>
                   <Image
-                    source={require("../assets/images/shahadah_calligraphy.png")}
+                    source={{ uri: getCdnAssetUrl("images/shahadah_calligraphy.png") }}
                     style={styles.calligraphyImg}
                   />
                 </View>

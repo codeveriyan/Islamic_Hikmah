@@ -6,9 +6,7 @@ import {
   Pressable, 
   Image, 
   ScrollView, 
-  TextInput, 
   Modal, 
-  ActivityIndicator, 
   Alert,
   Platform,
 } from "react-native";
@@ -24,6 +22,11 @@ import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { getQuranBookmarks, getHadithBookmarks } from "@/src/storage";
+import {
+  AppButton,
+  AppIconButton,
+  AppTextInput,
+} from "@/src/components/ui";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -218,19 +221,19 @@ export default function ProfileScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable 
-          onPress={() => router.back()} 
-          style={[styles.backBtn, { backgroundColor: colors.surfaceSecondary }]}
-        >
-          <MaterialCommunityIcons name="arrow-left" size={20} color={colors.onSurface} />
-        </Pressable>
+        <AppIconButton
+          accessibilityLabel="Go back"
+          icon="arrow-left"
+          onPress={() => router.back()}
+          variant="tonal"
+        />
         <Text style={[styles.headerTitle, { color: colors.onSurface }]}>User Profile</Text>
-        <Pressable 
+        <AppIconButton
+          accessibilityLabel="Edit profile"
+          icon="pencil-outline"
           onPress={openProfileEditor}
-          style={[styles.editIconBtn, { backgroundColor: colors.surfaceSecondary }]}
-        >
-          <MaterialCommunityIcons name="pencil-outline" size={20} color={colors.brand} />
-        </Pressable>
+          variant="tonal"
+        />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

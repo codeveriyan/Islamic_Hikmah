@@ -6,6 +6,17 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
+import {
+  Figtree_400Regular,
+  Figtree_500Medium,
+  Figtree_600SemiBold,
+  Figtree_700Bold,
+} from "@expo-google-fonts/figtree";
+import {
+  Outfit_600SemiBold,
+  Outfit_700Bold,
+  Outfit_800ExtraBold,
+} from "@expo-google-fonts/outfit";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
@@ -15,6 +26,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ThemeProvider, useTheme } from "@/src/ThemeContext";
+import { AppPaperProvider } from "@/src/paperTheme";
 import { AuthProvider, useAuth } from "@/src/AuthContext";
 import { db } from "@/src/firebase";
 import { doc, setDoc } from "firebase/firestore";
@@ -218,6 +230,13 @@ function ThemedStack({ azaanPlaying, onStopAzaan }: { azaanPlaying: boolean; onS
 export default function RootLayout() {
   const [iconLoaded, iconError] = useIconFonts();
   const [fontsLoaded, fontsError] = useFonts({
+    Figtree_400Regular,
+    Figtree_500Medium,
+    Figtree_600SemiBold,
+    Figtree_700Bold,
+    Outfit_600SemiBold,
+    Outfit_700Bold,
+    Outfit_800ExtraBold,
     Amiri: require("../assets/fonts/Amiri-Regular.ttf"),
     AmiriBold: require("../assets/fonts/Amiri-Bold.ttf"),
     // ScheherazadeNew — SIL Open Font License, purpose-built for Quranic Uthmani script.
@@ -341,7 +360,7 @@ export default function RootLayout() {
         } else if (kind === "reminder" || kind === "adhkar") {
           router.push("/(tabs)/reminder" as any);
         } else if (kind === "quran") {
-          router.push("/(tabs)/quran" as any);
+          router.push("/(tabs)/quran-tab" as any);
         }
         // 2. Route by category identifier
         else if (categoryId === "prayer-actions") {
@@ -403,16 +422,18 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>
-            <AuthProvider>
-              <PushTokenRegistrar />
-              <QuranPlayerProvider>
-                <PremiumModalProvider>
-                  <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
-                  <PremiumModal />
-                  <MiniPlayerBar />
-                </PremiumModalProvider>
-              </QuranPlayerProvider>
-            </AuthProvider>
+            <AppPaperProvider>
+              <AuthProvider>
+                <PushTokenRegistrar />
+                <QuranPlayerProvider>
+                  <PremiumModalProvider>
+                    <ThemedStack azaanPlaying={!!playerStatus?.playing} onStopAzaan={stopAzaan} />
+                    <PremiumModal />
+                    <MiniPlayerBar />
+                  </PremiumModalProvider>
+                </QuranPlayerProvider>
+              </AuthProvider>
+            </AppPaperProvider>
           </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

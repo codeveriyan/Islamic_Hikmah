@@ -15,6 +15,7 @@ import { usePremiumModal } from "@/src/PremiumModalContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { AppBottomSheet, AppBottomSheetRef } from "@/src/components/AppBottomSheet";
+import { AppButton, AppSwitch } from "@/src/components/ui";
 
 type SettingItem = {
   id: string;
@@ -227,33 +228,34 @@ export default function SettingsScreen() {
           <View style={styles.modalContent}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Notification Settings</Text>
             
-            <View style={styles.optionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Daily Adhkar Alerts</Text>
-                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Receive morning/evening reminders</Text>
-              </View>
-              <Switch value={dailyNotif} onValueChange={setDailyNotif} trackColor={{ true: colors.brand }} />
-            </View>
+            <AppSwitch
+              description="Receive morning and evening reminders."
+              label="Daily Adhkar alerts"
+              onValueChange={setDailyNotif}
+              value={dailyNotif}
+            />
+            <AppSwitch
+              description="Receive reminders for your custom habit goals."
+              label="Reminder notifications"
+              onValueChange={setReminderNotif}
+              value={reminderNotif}
+            />
+            <AppSwitch
+              description="Get notified when new articles are published."
+              label="New article alerts"
+              onValueChange={setArticleNotif}
+              value={articleNotif}
+            />
 
-            <View style={styles.optionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Reminder Notifications</Text>
-                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Custom habit goals notifications</Text>
-              </View>
-              <Switch value={reminderNotif} onValueChange={setReminderNotif} trackColor={{ true: colors.brand }} />
-            </View>
-
-            <View style={styles.optionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>New Articles Alerts</Text>
-                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Notify when new articles are posted</Text>
-              </View>
-              <Switch value={articleNotif} onValueChange={setArticleNotif} trackColor={{ true: colors.brand }} />
-            </View>
-
-            <Pressable onPress={() => { setActiveItem(null); router.push("/reminder"); }} style={[styles.btn, { backgroundColor: colors.brand, marginTop: 24 }]}>
-              <Text style={[styles.btnTxt, { color: colors.onBrandPrimary }]}>Configure Reminder Times</Text>
-            </Pressable>
+            <AppButton
+              fullWidth
+              label="Configure reminder times"
+              onPress={() => {
+                setActiveItem(null);
+                router.push("/reminder");
+              }}
+              style={{ marginTop: 24 }}
+            />
           </View>
         );
 
@@ -310,27 +312,24 @@ export default function SettingsScreen() {
               })}
             </View>
 
-            <View style={styles.optionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Dark Mode</Text>
-                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Toggle between light and dark theme</Text>
-              </View>
-              <Switch value={mode === "dark"} onValueChange={(val) => setMode(val ? "dark" : "light")} trackColor={{ true: colors.brand }} />
-            </View>
-
-            <View style={styles.optionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show Translation</Text>
-              </View>
-              <Switch value={translationEnabled} onValueChange={handleToggleTranslation} trackColor={{ true: colors.brand }} />
-            </View>
-
-            <View style={styles.optionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Show Transliteration</Text>
-              </View>
-              <Switch value={transliterationEnabled} onValueChange={handleToggleTransliteration} trackColor={{ true: colors.brand }} />
-            </View>
+            <AppSwitch
+              description="Toggle between the light and dark theme."
+              label="Dark mode"
+              onValueChange={(enabled) =>
+                setMode(enabled ? "dark" : "light")
+              }
+              value={mode === "dark"}
+            />
+            <AppSwitch
+              label="Show translation"
+              onValueChange={handleToggleTranslation}
+              value={translationEnabled}
+            />
+            <AppSwitch
+              label="Show transliteration"
+              onValueChange={handleToggleTransliteration}
+              value={transliterationEnabled}
+            />
 
             {transliterationEnabled && (
               <View style={{ marginTop: 12 }}>
@@ -434,25 +433,27 @@ export default function SettingsScreen() {
               ))}
             </View>
 
-            <View style={[styles.optionRow, { marginTop: 24 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Tasbih Vibration</Text>
-                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Haptic feedback on Tasbih counter tap</Text>
-              </View>
-              <Switch value={tasbihVibe} onValueChange={setTasbihVibe} trackColor={{ true: colors.brand }} />
-            </View>
+            <AppSwitch
+              containerStyle={{ marginTop: 24 }}
+              description="Use haptic feedback when the Tasbih counter is tapped."
+              label="Tasbih vibration"
+              onValueChange={setTasbihVibe}
+              value={tasbihVibe}
+            />
+            <AppSwitch
+              containerStyle={{ marginTop: 8 }}
+              description="Play the full Azaan alarm while the app is closed."
+              label="Play Azaan in background"
+              onValueChange={handleToggleBgAzaan}
+              value={bgAzaan}
+            />
 
-            <View style={[styles.optionRow, { marginTop: 16 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Play Azaan in Background</Text>
-                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Play full Azaan alarm when app is closed</Text>
-              </View>
-              <Switch value={bgAzaan} onValueChange={handleToggleBgAzaan} trackColor={{ true: colors.brand }} />
-            </View>
-
-            <Pressable onPress={() => setActiveItem(null)} style={[styles.btn, { backgroundColor: colors.brand, marginTop: 24 }]}>
-              <Text style={[styles.btnTxt, { color: colors.onBrandPrimary }]}>Save Preferences</Text>
-            </Pressable>
+            <AppButton
+              fullWidth
+              label="Save preferences"
+              onPress={() => setActiveItem(null)}
+              style={{ marginTop: 24 }}
+            />
           </View>
         );
 
@@ -461,13 +462,12 @@ export default function SettingsScreen() {
           <View style={styles.modalContent}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>System & Offline Storage</Text>
 
-            <View style={styles.optionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.optionLabel, { color: colors.onSurface }]}>Download Over Wi-Fi Only</Text>
-                <Text style={[styles.optionSub, { color: colors.onSurfaceMuted }]}>Saves mobile data for Quran recitations</Text>
-              </View>
-              <Switch value={downloadWifi} onValueChange={setDownloadWifi} trackColor={{ true: colors.brand }} />
-            </View>
+            <AppSwitch
+              description="Save mobile data when downloading Quran recitations."
+              label="Download over Wi-Fi only"
+              onValueChange={setDownloadWifi}
+              value={downloadWifi}
+            />
 
             <View style={[styles.optionRow, { marginTop: 16, flexDirection: "column", alignItems: "flex-start" }]}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
@@ -870,6 +870,30 @@ export default function SettingsScreen() {
             <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: '#EF4444' }}>Sign Out</Text>
           </AnimatedCard>
         </View>
+
+        {__DEV__ ? (
+          <>
+            <Text style={{ fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, color: colors.brand, marginTop: 8, marginBottom: 8 }}>
+              Developer
+            </Text>
+            <AnimatedCard
+              onPress={() => router.push('/ui-kit')}
+              style={[styles.row, { backgroundColor: colors.surfaceSecondary }]}
+              testID="settings-ui-kit-preview"
+            >
+              <View style={[styles.iconWrap, { backgroundColor: colors.brand + '18' }]}>
+                <MaterialCommunityIcons name="palette-outline" size={24} color={colors.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowLabel, { color: colors.onSurface }]}>UI Component Preview</Text>
+                <Text style={[styles.rowSub, { color: colors.onSurfaceMuted }]}>
+                  Inspect buttons, inputs, controls, surfaces and overlays
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={colors.onSurfaceMuted} />
+            </AnimatedCard>
+          </>
+        ) : null}
 
         {/* Footer version */}
         <Text style={[styles.version, { color: colors.onSurfaceMuted }]}>{t("appVersion")}</Text>

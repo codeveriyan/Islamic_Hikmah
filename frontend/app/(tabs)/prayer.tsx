@@ -8,7 +8,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getPrayerTimingsCache } from "@/src/storage";
+import {
+  getPrayerSettings,
+  getPrayerTimingsCache,
+  getSavedLocation,
+  localDateKey,
+  resolveUserLocation,
+  savePrayerTimingsCache,
+} from "@/src/storage";
 import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { format12Hour } from "@/src/utils/time";
@@ -64,6 +71,8 @@ export default function PrayerTab() {
   const [countdown, setCountdown] = useState("--:--:--");
   const [progress, setProgress] = useState(0);
   const [prayedToday, setPrayedToday] = useState<Set<string>>(new Set());
+  const [isLoadingTimes, setIsLoadingTimes] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isFriday = new Date().getDay() === 5;
@@ -84,15 +93,56 @@ export default function PrayerTab() {
   useFocusEffect(useCallback(() => {
     (async () => {
       try {
-        const [cache, prayedRaw] = await Promise.all([
+        const [cache, prayedRaw, savedLocation] = await Promise.all([
           getPrayerTimingsCache(),
           AsyncStorage.getItem(todayKey),
+          getSavedLocation(),
         ]);
-        if (cache?.timings) { setTimes(cache.timings); setCity((cache as any).city || ""); }
+        if (cache?.timings) setTimes(cache.timings);
+        if (savedLocation?.city) setCity(savedLocation.city);
         if (prayedRaw) setPrayedToday(new Set(JSON.parse(prayedRaw)));
       } catch {}
     })();
   }, [todayKey]));
+
+  const loadPrayerTimes = useCallback(async () => {
+    setIsLoadingTimes(true);
+    setLoadError(null);
+    try {
+      const [location, settings] = await Promise.all([
+        resolveUserLocation({ preferCurrent: true, requireCurrent: true }),
+        getPrayerSettings(),
+      ]);
+      const response = await fetch(
+        `https://api.aladhan.com/v1/timings?latitude=${location.lat}&longitude=${location.lon}&method=${settings.method}&school=${settings.juristic}`,
+      );
+      if (!response.ok) throw new Error("Prayer times could not be downloaded.");
+      const payload = await response.json();
+      const nextTimes = payload?.data?.timings as Record<string, string> | undefined;
+      if (!nextTimes) throw new Error("Prayer times were unavailable for this location.");
+
+      setTimes(nextTimes);
+      setCity(location.city);
+      await savePrayerTimingsCache({
+        timings: nextTimes,
+        date: localDateKey(),
+        latitude: location.lat,
+        longitude: location.lon,
+        method: settings.method,
+        juristic: settings.juristic,
+        source: "remote",
+        savedAt: Date.now(),
+      });
+    } catch (error) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Enable location permission and try again.",
+      );
+    } finally {
+      setIsLoadingTimes(false);
+    }
+  }, []);
 
   // Compute next prayer + start countdown timer
   useEffect(() => {
@@ -107,10 +157,15 @@ export default function PrayerTab() {
         return { name, date: d, timeStr: t };
       }).filter(Boolean) as { name: string; date: Date; timeStr: string }[];
 
-      let nextIdx = parsed.findIndex((p) => p.date > now);
-      if (nextIdx === -1) nextIdx = 0;
-      const next = parsed[nextIdx];
-      const curr = parsed[Math.max(0, nextIdx - 1)];
+      const nextIdx = parsed.findIndex((p) => p.date > now);
+      const next =
+        nextIdx === -1
+          ? { ...parsed[0], date: new Date(parsed[0].date.getTime() + 86_400_000) }
+          : parsed[nextIdx];
+      const curr =
+        nextIdx <= 0
+          ? { ...parsed[parsed.length - 1], date: new Date(parsed[parsed.length - 1].date.getTime() - 86_400_000) }
+          : parsed[nextIdx - 1];
       setNextPrayer(next);
       setCurrentPrayer(curr);
 
@@ -134,7 +189,7 @@ export default function PrayerTab() {
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={["top"]}>
       {/* Header */}
-      <View style={[s.header, { borderBottomColor: colors.border }]}>
+      <View style={[s.header, { borderBottomColor: colors.border, width: "100%", maxWidth: theme.layout.readableWidth, alignSelf: "center" }]}>
         <View>
           <Text style={[s.headerTitle, { color: colors.onSurface }]}>Prayer Times</Text>
           {city ? (
@@ -144,7 +199,12 @@ export default function PrayerTab() {
             </View>
           ) : null}
         </View>
-        <AnimatedCard onPress={() => router.push("/prayer-times")} style={s.settingsBtn}>
+        <AnimatedCard
+          onPress={() => router.push("/prayer-times")}
+          style={s.settingsBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Prayer settings"
+        >
           <View style={[s.settingsBtnInner, { backgroundColor: colors.brand + "18" }]}>
             <MaterialCommunityIcons name="tune" size={18} color={colors.brand} />
             <Text style={[s.settingsBtnTxt, { color: colors.brand }]}>Settings</Text>
@@ -152,7 +212,13 @@ export default function PrayerTab() {
         </AnimatedCard>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.scroll,
+          { width: "100%", maxWidth: theme.layout.readableWidth, alignSelf: "center" },
+        ]}
+      >
         {/* ── Jumu'ah Banner (Fridays only) ── */}
         {isFriday && (
           <AnimatedCard
@@ -195,7 +261,7 @@ export default function PrayerTab() {
               )}
               <Text style={s.heroNext}>Next: {nextPrayer.name}</Text>
               <Text style={s.heroTime}>{format12Hour(nextPrayer.timeStr)}</Text>
-              <Text style={s.heroCountdown}>{countdown}</Text>
+              <Text style={s.heroCountdown}>in {countdown}</Text>
             </View>
             <View style={s.heroRing}>
               <Svg width={RING} height={RING}>
@@ -212,10 +278,33 @@ export default function PrayerTab() {
             </View>
           </AnimatedCard>
         ) : (
-          <AnimatedCard onPress={() => router.push("/prayer-times")} style={[s.heroCard, { overflow: "hidden", backgroundColor: colors.surfaceSecondary, justifyContent: "center", alignItems: "center" }]}>
-            <MaterialCommunityIcons name="mosque" size={32} color={colors.brand} />
-            <Text style={[{ color: colors.onSurfaceMuted, marginTop: 8, fontSize: 14 }]}>Tap to load prayer times</Text>
-          </AnimatedCard>
+          <View style={[s.emptyCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <View style={[s.emptyIcon, { backgroundColor: colors.brand + "18" }]}>
+              <MaterialCommunityIcons name="map-marker-radius" size={30} color={colors.brand} />
+            </View>
+            <Text style={[s.emptyTitle, { color: colors.onSurface }]}>Set your prayer location</Text>
+            <Text style={[s.emptyText, { color: colors.onSurfaceMuted }]}>
+              Use your current location to calculate accurate daily prayer times.
+            </Text>
+            {loadError ? <Text style={[s.errorText, { color: colors.error }]}>{loadError}</Text> : null}
+            <Pressable
+              onPress={loadPrayerTimes}
+              disabled={isLoadingTimes}
+              accessibilityRole="button"
+              accessibilityLabel="Use current location"
+              accessibilityState={{ disabled: isLoadingTimes, busy: isLoadingTimes }}
+              style={[s.locationButton, { backgroundColor: colors.brand }]}
+            >
+              {isLoadingTimes ? (
+                <ActivityIndicator color={colors.onBrandPrimary} />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="crosshairs-gps" size={20} color={colors.onBrandPrimary} />
+                  <Text style={[s.locationButtonText, { color: colors.onBrandPrimary }]}>Use current location</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
         )}
 
         {/* Today's Schedule */}
@@ -247,6 +336,9 @@ export default function PrayerTab() {
                   <Pressable
                     onPress={() => togglePrayed(name)}
                     hitSlop={8}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={`Mark ${name} as prayed`}
+                    accessibilityState={{ checked: prayedToday.has(name) }}
                     style={[
                       s.prayedBtn,
                       prayedToday.has(name)
@@ -265,9 +357,11 @@ export default function PrayerTab() {
             })}
           </View>
         ) : (
-          <View style={[s.scheduleCard, { backgroundColor: cardBg, borderColor: colors.border, alignItems: "center", padding: 32 }]}>
-            <ActivityIndicator color={colors.brand} />
-            <Text style={[{ color: colors.onSurfaceMuted, marginTop: 8, fontSize: 13 }]}>Open the app from Home to load prayer times</Text>
+          <View style={[s.scheduleCard, { backgroundColor: cardBg, borderColor: colors.border, alignItems: "center", padding: 24 }]}>
+            <MaterialCommunityIcons name="calendar-clock" size={26} color={colors.onSurfaceMuted} />
+            <Text style={[s.scheduleEmptyText, { color: colors.onSurfaceMuted }]}>
+              Your schedule will appear after a location is selected.
+            </Text>
           </View>
         )}
 
@@ -314,6 +408,61 @@ const s = StyleSheet.create({
   settingsBtnInner: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   settingsBtnTxt: { fontSize: 13, fontWeight: "700", fontFamily: "Figtree_400Regular" },
   scroll: { padding: theme.spacing.lg },
+  emptyCard: {
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 19,
+    textAlign: "center",
+  },
+  emptyText: {
+    fontFamily: "Figtree_400Regular",
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    marginTop: 6,
+  },
+  errorText: {
+    fontFamily: "Figtree_500Medium",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginTop: 10,
+  },
+  locationButton: {
+    minHeight: theme.layout.touchTarget,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 20,
+    marginTop: 18,
+  },
+  locationButtonText: {
+    fontFamily: "Figtree_700Bold",
+    fontSize: 15,
+  },
+  scheduleEmptyText: {
+    fontFamily: "Figtree_400Regular",
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    marginTop: 8,
+  },
   heroCard: {
     borderRadius: 20, flexDirection: "row", alignItems: "center",
     padding: 20, marginBottom: 20, minHeight: 130,

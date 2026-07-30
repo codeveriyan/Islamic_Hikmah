@@ -21,8 +21,18 @@ export const theme = {
   radius: { sm: 6, md: 12, lg: 20, pill: 999 },
   font: {
     display: 'Outfit_600SemiBold',
+    displayBold: 'Outfit_700Bold',
+    displayExtraBold: 'Outfit_800ExtraBold',
     text: 'Figtree_400Regular',
+    textMedium: 'Figtree_500Medium',
+    textSemiBold: 'Figtree_600SemiBold',
+    textBold: 'Figtree_700Bold',
     arabic: 'NotoNaskhArabic',
+  },
+  layout: {
+    readableWidth: 680,
+    wideWidth: 1120,
+    touchTarget: 44,
   },
   /**
    * Material 3 Expressive Type Scale

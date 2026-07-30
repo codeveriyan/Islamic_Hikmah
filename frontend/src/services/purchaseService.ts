@@ -65,7 +65,13 @@ export async function purchasePlan(
 
         if (isPro && uid) {
           // Sync native receipt with backend server entitlement
-          await syncIapReceiptWithBackend(uid, customerInfo);
+          const synced = await syncIapReceiptWithBackend(uid, customerInfo);
+          if (!synced) {
+            return {
+              success: false,
+              error: "Purchase completed with store, but server entitlement sync failed. Please tap 'Restore Purchases'.",
+            };
+          }
           return { success: true, tier: "premium" };
         }
       }
@@ -90,7 +96,10 @@ export async function restorePurchases(): Promise<PurchaseResult> {
     const uid = auth.currentUser?.uid;
 
     if (isPro && uid) {
-      await syncIapReceiptWithBackend(uid, customerInfo);
+      const synced = await syncIapReceiptWithBackend(uid, customerInfo);
+      if (!synced) {
+        return { success: false, error: "Subscription found, but server entitlement sync failed." };
+      }
       return { success: true, tier: "premium" };
     }
     return { success: false, error: "No active subscription found to restore." };
@@ -99,13 +108,13 @@ export async function restorePurchases(): Promise<PurchaseResult> {
   }
 }
 
-async function syncIapReceiptWithBackend(uid: string, customerInfo: any): Promise<void> {
-  if (!API_BASE_URL) return;
+async function syncIapReceiptWithBackend(uid: string, customerInfo: any): Promise<boolean> {
+  if (!API_BASE_URL) return false;
   try {
     const idToken = await auth.currentUser?.getIdToken();
-    if (!idToken) return;
+    if (!idToken) return false;
 
-    await fetch(`${API_BASE_URL}/api/v1/auth/entitlements/verify-iap`, {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/entitlements/verify-iap`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -117,7 +126,13 @@ async function syncIapReceiptWithBackend(uid: string, customerInfo: any): Promis
         originalAppUserId: customerInfo.originalAppUserId,
       }),
     });
+    if (!res.ok) {
+      if (__DEV__) console.warn("[PurchaseService] Backend verify-iap returned error status:", res.status);
+      return false;
+    }
+    return true;
   } catch (e) {
     if (__DEV__) console.warn("[PurchaseService] Failed to sync IAP receipt with backend:", e);
+    return false;
   }
 }

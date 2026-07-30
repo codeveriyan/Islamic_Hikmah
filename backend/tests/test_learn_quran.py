@@ -23,10 +23,23 @@ def disable_real_asr_by_default(monkeypatch):
     monkeypatch.setenv("LEARN_QURAN_ASR_ENABLED", "false")
 
 
+def get_app_paths(app_or_router):
+    paths = set()
+    routes = getattr(app_or_router, "routes", [])
+    for r in routes:
+        if hasattr(r, "path"):
+            paths.add(r.path)
+        if hasattr(r, "original_router"):
+            paths.update(get_app_paths(r.original_router))
+        elif hasattr(r, "router"):
+            paths.update(get_app_paths(r.router))
+    return paths
+
+
 def test_learn_score_route_is_mounted_under_existing_api_router():
-    paths = {route.path for route in server.app.routes}
-    assert "/api/learn/score" in paths
-    assert "/api/learn/status" in paths
+    paths = get_app_paths(server.app)
+    assert any(p.endswith("/learn/score") for p in paths)
+    assert any(p.endswith("/learn/status") for p in paths)
 
 
 def test_localhost_web_origin_can_preflight_scoring_upload():

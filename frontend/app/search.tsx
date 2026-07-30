@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   FlatList,
   Pressable,
@@ -12,9 +11,10 @@ import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
-import { useTranslation } from "@/src/localization";
 import { CATEGORIES } from "@/src/data/duas";
 import { SURAH_LIST } from "@/src/data/surahList";
+import { AppIconButton, AppTextInput } from "@/src/components/ui";
+import { AppEmptyState } from "@/src/components/states";
 
 type Result = {
   id: string;
@@ -57,8 +57,7 @@ const TYPE_COLOR: Record<Result["type"], string> = {
 
 export default function SearchScreen() {
   const router = useRouter();
-  const { colors , language } = useTheme();
-  const { t } = useTranslation(language);
+  const { colors } = useTheme();
   const [query, setQuery] = useState("");
 
   const results = useMemo<Result[]>(() => {
@@ -82,72 +81,51 @@ export default function SearchScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <MaterialCommunityIcons
-            name="chevron-left"
-            size={28}
-            color={colors.onSurface}
-          />
-        </Pressable>
+        <AppIconButton
+          accessibilityLabel="Go back"
+          icon="chevron-left"
+          onPress={() => router.back()}
+        />
         <Text style={[styles.title, { color: colors.onSurface }]}>Search</Text>
-        <View style={{ width: 28 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       {/* Search bar */}
-      <View
-        style={[
-          styles.searchBar,
-          { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
-        ]}
-      >
-        <MaterialCommunityIcons
-          name="magnify"
-          size={22}
-          color={colors.onSurfaceMuted}
-        />
-        <TextInput
+      <AppTextInput
+          autoFocus
+          containerStyle={styles.searchContainer}
+          label="Search"
+          leadingIcon="magnify"
           value={query}
           onChangeText={setQuery}
           placeholder="Search surahs, duas…"
-          placeholderTextColor={colors.onSurfaceMuted}
-          style={[styles.input, { color: colors.onSurface }]}
-          autoFocus
+          onTrailingIconPress={() => setQuery("")}
+          outlineStyle={styles.searchOutline}
           returnKeyType="search"
-          clearButtonMode="while-editing"
+          trailingIcon={query.length > 0 ? "close-circle" : undefined}
+          trailingIconAccessibilityLabel="Clear search"
         />
-        {query.length > 0 && (
-          <Pressable onPress={() => setQuery("")} hitSlop={8}>
-            <MaterialCommunityIcons
-              name="close-circle"
-              size={18}
-              color={colors.onSurfaceMuted}
-            />
-          </Pressable>
-        )}
-      </View>
 
       {/* Results */}
       {query.trim().length === 0 ? (
         <View style={styles.empty}>
-          <MaterialCommunityIcons
-            name="magnify"
-            size={56}
-            color={colors.onSurfaceMuted}
+          <AppEmptyState
+            compact
+            description="Enter a surah or dua name to begin."
+            icon="magnify"
+            title="Search surahs and duas"
           />
-          <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>
-            Search surahs and duas
-          </Text>
         </View>
       ) : results.length === 0 ? (
         <View style={styles.empty}>
-          <MaterialCommunityIcons
-            name="file-search-outline"
-            size={56}
-            color={colors.onSurfaceMuted}
+          <AppEmptyState
+            actionLabel="Clear search"
+            compact
+            description="Try another spelling or a broader search."
+            icon="file-search-outline"
+            onAction={() => setQuery("")}
+            title={`No results for "${query}"`}
           />
-          <Text style={[styles.emptyText, { color: colors.onSurfaceMuted }]}>
-            No results for &quot;{query}&quot;
-          </Text>
         </View>
       ) : (
         <FlatList
@@ -212,18 +190,13 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
   },
   title: { fontSize: 18, fontWeight: "700" },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
+  searchContainer: {
     marginHorizontal: theme.spacing.lg,
     marginBottom: theme.spacing.md,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    gap: 10,
   },
-  input: { flex: 1, fontSize: 16 },
+  searchOutline: {
+    borderRadius: theme.radius.pill,
+  },
   empty: {
     flex: 1,
     alignItems: "center",
@@ -231,7 +204,6 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingBottom: 60,
   },
-  emptyText: { fontSize: 15 },
   resultRow: {
     flexDirection: "row",
     alignItems: "center",

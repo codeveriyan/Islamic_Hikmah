@@ -114,52 +114,71 @@ def test_valid_firebase_rs256_token_creates_a_bound_free_account(monkeypatch):
     assert inserted[0]["email"] == "test@example.com"
 
 
-def test_cached_firebase_certificate_survives_a_network_outage(monkeypatch, tmp_path):
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    certificate_name = x509.Name(
-        [x509.NameAttribute(NameOID.COMMON_NAME, "cached securetoken signer")]
-    )
-    certificate = (
-        x509.CertificateBuilder()
-        .subject_name(certificate_name)
-        .issuer_name(certificate_name)
-        .public_key(private_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(server.datetime.utcnow() - server.timedelta(minutes=1))
-        .not_valid_after(server.datetime.utcnow() + server.timedelta(hours=1))
-        .sign(private_key, hashes.SHA256())
-    )
-    certificate_pem = certificate.public_bytes(
-        encoding=serialization.Encoding.PEM,
-    ).decode("utf-8")
-    now = server.datetime.now(server.timezone.utc)
+def test_cached_firebase_certificate_survives_a_network_outage(monkeypatch):
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+        )
+        certificate_name = x509.Name(
+            [x509.NameAttribute(NameOID.COMMON_NAME, "cached securetoken signer")]
+        )
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(certificate_name)
+            .issuer_name(certificate_name)
+            .public_key(private_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(server.datetime.utcnow() - server.timedelta(minutes=1))
+            .not_valid_after(server.datetime.utcnow() + server.timedelta(hours=1))
+            .sign(private_key, hashes.SHA256())
+        )
+        certificate_pem = certificate.public_bytes(
+            encoding=serialization.Encoding.PEM,
+        ).decode("utf-8")
+        now = server.datetime.now(server.timezone.utc)
 
-    monkeypatch.setattr(
-        server,
-        "FIREBASE_CERT_CACHE_PATH",
-        tmp_path / "firebase_public_certs_cache.json",
-    )
-    monkeypatch.setattr(server, "GOOGLE_CERTS", {})
-    monkeypatch.setattr(
-        server,
-        "GOOGLE_CERTS_EXPIRE",
-        server.datetime.min.replace(tzinfo=server.timezone.utc),
-    )
-    server._save_google_certificate_cache(
-        {"cached-key": certificate_pem},
-        now - server.timedelta(seconds=1),
-    )
+        monkeypatch.setattr(
+            server,
+            "FIREBASE_CERT_CACHE_PATH",
+            tmp_path / "firebase_public_certs_cache.json",
+        )
+        monkeypatch.setattr(server, "GOOGLE_CERTS", {})
+        monkeypatch.setattr(
+            server,
+            "GOOGLE_CERTS_EXPIRE",
+            server.datetime.min.replace(tzinfo=server.timezone.utc),
+        )
+        server._save_google_certificate_cache(
+            {"cached-key": certificate_pem},
+            now - server.timedelta(seconds=1),
+        )
 
-    def offline(*_args, **_kwargs):
-        raise server.requests.ConnectionError("offline")
+        def offline(*_args, **_kwargs):
+            raise server.requests.ConnectionError("offline")
 
-    monkeypatch.setattr(server.requests, "get", offline)
+        monkeypatch.setattr(server.requests, "get", offline)
 
-    assert server.get_google_public_key("cached-key") == certificate_pem
+        assert server.get_google_public_key("cached-key") == certificate_pem
+
+
+def get_app_paths(app_or_router):
+    paths = set()
+    routes = getattr(app_or_router, "routes", [])
+    for r in routes:
+        if hasattr(r, "path"):
+            paths.add(r.path)
+        if hasattr(r, "original_router"):
+            paths.update(get_app_paths(r.original_router))
+        elif hasattr(r, "router"):
+            paths.update(get_app_paths(r.router))
+    return paths
 
 
 def test_unsafe_custom_auth_routes_are_removed():
-    paths = {route.path for route in server.app.routes}
+    paths = get_app_paths(server.app)
 
     assert "/api/signup" not in paths
     assert "/api/login" not in paths
@@ -170,6 +189,47 @@ def test_unsafe_custom_auth_routes_are_removed():
     assert "/api/status" not in paths
     assert "/api/hadith/{collection}/backfill" not in paths
     assert "/api/payment-submissions" in paths
+    assert "/api/v1/auth/entitlements/verify-iap" in paths
+
+
+def test_verify_iap_entitlements_activates_premium(monkeypatch):
+    user = verified_user(email="buyer@example.com", tier="free")
+    updated_records = []
+
+    async def mock_update(email, data):
+        updated_records.append((email, data))
+        user.update(data)
+
+    monkeypatch.setattr(server, "db_update_user", mock_update)
+
+    submission = server.VerifyIapInput(
+        uid="firebase-uid-1",
+        entitlements={"pro": {"isActive": True}},
+        originalAppUserId="app-user-123",
+    )
+
+    response = run(server.verify_iap_entitlements(submission, current_user=user))
+
+    assert response["status"] == "success"
+    assert response["tier"] == "premium"
+    assert user["tier"] == "premium"
+    assert len(updated_records) == 1
+    assert updated_records[0][1]["tier"] == "premium"
+
+
+def test_verify_iap_rejects_empty_receipt():
+    user = verified_user(email="buyer@example.com", tier="free")
+    submission = server.VerifyIapInput(
+        uid="firebase-uid-1",
+        entitlements={},
+        originalAppUserId="app-user-123",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        run(server.verify_iap_entitlements(submission, current_user=user))
+
+    assert exc.value.status_code == 400
+    assert "No active pro entitlement" in exc.value.detail
 
 
 def test_cors_configuration_never_uses_a_wildcard():

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, FlatList, Pressable,
-  Dimensions, Platform, ListRenderItem,
+  Platform, ListRenderItem, useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -20,7 +20,6 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "@/src/AuthContext";
 import { theme } from "@/src/theme";
 
-const { width, height } = Dimensions.get("window");
 const ONBOARDING_KEY = "hikmah:onboarding-done";
 
 // ─── Slide data ───────────────────────────────────────────────────────────────
@@ -112,9 +111,23 @@ const fp = StyleSheet.create({
 });
 
 // ─── Single slide ─────────────────────────────────────────────────────────────
-function SlideView({ slide, index, scrollX }: { slide: Slide; index: number; scrollX: SharedValue<number> }) {
+function SlideView({
+  slide,
+  index,
+  scrollX,
+  viewportWidth,
+}: {
+  slide: Slide;
+  index: number;
+  scrollX: SharedValue<number>;
+  viewportWidth: number;
+}) {
   const animStyle = useAnimatedStyle(() => {
-    const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
+    const inputRange = [
+      (index - 1) * viewportWidth,
+      index * viewportWidth,
+      (index + 1) * viewportWidth,
+    ];
     const opacity = interpolate(scrollX.value, inputRange, [0, 1, 0], Extrapolation.CLAMP);
     const scale = interpolate(scrollX.value, inputRange, [0.88, 1, 0.88], Extrapolation.CLAMP);
     const translateY = interpolate(scrollX.value, inputRange, [24, 0, 24], Extrapolation.CLAMP);
@@ -122,7 +135,7 @@ function SlideView({ slide, index, scrollX }: { slide: Slide; index: number; scr
   });
 
   return (
-    <View style={[sv.slide]}>
+    <View style={[sv.slide, { width: viewportWidth }]}>
       <Animated.View style={[sv.content, animStyle]}>
         {/* Centre illustration */}
         <View style={[sv.iconRing, { borderColor: slide.accentColor + "30" }]}>
@@ -152,8 +165,8 @@ function SlideView({ slide, index, scrollX }: { slide: Slide; index: number; scr
 }
 
 const sv = StyleSheet.create({
-  slide: { width, flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
-  content: { alignItems: "center", width: "100%" },
+  slide: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
+  content: { alignItems: "center", width: "100%", maxWidth: 560 },
   iconRing: { width: 160, height: 160, borderRadius: 80, borderWidth: 1.5, borderStyle: "dashed", alignItems: "center", justifyContent: "center", marginBottom: 28 },
   iconInner: { width: 110, height: 110, borderRadius: 55, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   arabic: { fontFamily: "NotoNaskhArabic", fontSize: 18, textAlign: "center", marginBottom: 16, opacity: 0.9 },
@@ -166,6 +179,7 @@ const sv = StyleSheet.create({
 export default function OnboardingScreen() {
   const router = useRouter();
   const { loginAsGuest } = useAuth();
+  const { width: viewportWidth } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatRef = useRef<FlatList>(null);
   const scrollX = useSharedValue(0);
@@ -204,7 +218,12 @@ export default function OnboardingScreen() {
   const currentSlide = SLIDES[currentIndex];
 
   const renderItem: ListRenderItem<Slide> = ({ item, index }) => (
-    <SlideView slide={item} index={index} scrollX={scrollX} />
+    <SlideView
+      slide={item}
+      index={index}
+      scrollX={scrollX}
+      viewportWidth={viewportWidth}
+    />
   );
 
   return (
@@ -219,7 +238,13 @@ export default function OnboardingScreen() {
       <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
         {/* Skip button (top right) */}
         {currentIndex < SLIDES.length - 1 && (
-          <Pressable onPress={handleSkip} style={s.skipBtn} hitSlop={12}>
+          <Pressable
+            onPress={handleSkip}
+            style={s.skipBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Skip onboarding"
+          >
             <Text style={s.skipTxt}>Skip</Text>
           </Pressable>
         )}
@@ -230,6 +255,11 @@ export default function OnboardingScreen() {
           data={SLIDES}
           renderItem={renderItem}
           keyExtractor={(item) => item.key}
+          getItemLayout={(_, index) => ({
+            length: viewportWidth,
+            offset: viewportWidth * index,
+            index,
+          })}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
@@ -266,6 +296,8 @@ export default function OnboardingScreen() {
           {currentIndex < SLIDES.length - 1 ? (
             <Pressable
               onPress={handleNext}
+              accessibilityRole="button"
+              accessibilityLabel={`Continue to onboarding step ${currentIndex + 2} of ${SLIDES.length}`}
               style={[s.primaryBtn, { backgroundColor: currentSlide.accentColor }]}
             >
               <Text style={s.primaryBtnTxt}>Continue</Text>
@@ -275,12 +307,17 @@ export default function OnboardingScreen() {
             <View style={s.finalBtns}>
               <Pressable
                 onPress={handleSignUp}
+                accessibilityRole="button"
+                accessibilityLabel="Create a free account"
                 style={[s.primaryBtn, { backgroundColor: currentSlide.accentColor, flex: 1 }]}
               >
                 <Text style={s.primaryBtnTxt}>Create Free Account</Text>
               </Pressable>
               <Pressable
                 onPress={handleGuest}
+                accessibilityRole="button"
+                accessibilityLabel="Continue as guest"
+                accessibilityHint="Guest progress stays on this device"
                 style={[s.ghostBtn, { borderColor: "rgba(255,255,255,0.25)", flex: 1 }]}
               >
                 <Text style={s.ghostBtnTxt}>Continue as Guest</Text>
@@ -299,7 +336,14 @@ const s = StyleSheet.create({
   skipBtn: { position: "absolute", top: Platform.OS === "ios" ? 56 : 16, right: 20, zIndex: 10, paddingHorizontal: 12, paddingVertical: 6, borderRadius: theme.radius.pill, backgroundColor: "rgba(255,255,255,0.12)" },
   skipTxt: { fontSize: 13, color: "rgba(255,255,255,0.7)", fontFamily: "Figtree_400Regular", fontWeight: "600" },
   flatList: { flex: 1 },
-  bottom: { paddingHorizontal: 24, paddingBottom: Platform.OS === "ios" ? 12 : 24, gap: 20 },
+  bottom: {
+    width: "100%",
+    maxWidth: 560,
+    alignSelf: "center",
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === "ios" ? 12 : 24,
+    gap: 20,
+  },
   dots: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   dot: { height: 8, borderRadius: 4 },
   primaryBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, borderRadius: theme.radius.pill },

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
@@ -31,44 +32,21 @@ const GoogleGIcon = () => (
   </Svg>
 );
 
-const HandsIllustration = () => {
-  return (
-    <View style={styles.illustrationWrapper}>
-      {/* Soft background clouds */}
-      <View style={[styles.cloud, { top: 15, left: 20, width: 80, height: 32 }]} />
-      <View style={[styles.cloud, { top: 35, right: 30, width: 100, height: 28 }]} />
-
-      {/* Left Hand holding blue mosque circle */}
-      <View style={styles.leftHandContainer}>
-        {/* Left Arm */}
-        <View style={styles.leftArm} />
-        {/* Left Palm */}
-        <View style={styles.leftPalm} />
-        {/* Blue Circle with Mosque inside */}
-        <View style={styles.mosqueCircle}>
-          <View style={styles.mosqueBase} />
-          <View style={styles.mosqueDome} />
-          <View style={styles.mosqueArch} />
-          <MaterialCommunityIcons name="moon-waning-crescent" size={18} color="#FFFFFF" style={styles.moon} />
-        </View>
+const WelcomeIllustration = ({ brand }: { brand: string }) => (
+  <View style={styles.illustrationWrapper} accessibilityElementsHidden>
+    <LinearGradient
+      colors={[`${brand}24`, `${brand}08`]}
+      style={styles.spiritualHalo}
+    >
+      <View style={[styles.mosqueMark, { backgroundColor: `${brand}18`, borderColor: `${brand}55` }]}>
+        <MaterialCommunityIcons name="mosque" size={64} color={brand} />
       </View>
-
-      {/* Right Hand holding Tasbih beads */}
-      <View style={styles.rightHandContainer}>
-        {/* Right Arm */}
-        <View style={styles.rightArm} />
-        {/* Right Palm */}
-        <View style={styles.rightPalm} />
-        {/* Beads/Tasbih loop */}
-        <View style={styles.tasbihContainer}>
-          <View style={styles.tasbihLoop} />
-          <View style={styles.tasbihTassel} />
-          <View style={styles.tasbihBeadEnd} />
-        </View>
+      <View style={[styles.crescentBadge, { backgroundColor: brand }]}>
+        <MaterialCommunityIcons name="moon-waning-crescent" size={22} color="#FFFFFF" />
       </View>
-    </View>
-  );
-};
+    </LinearGradient>
+  </View>
+);
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -80,25 +58,29 @@ export default function WelcomeScreen() {
     router.push("/auth/login");
   };
 
+  const handleGuestPress = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    await loginAsGuest();
+    router.replace("/(tabs)");
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* Top Illustration */}
-        <HandsIllustration />
+        <View style={styles.contentWidth}>
+          <WelcomeIllustration brand={colors.brand} />
 
-        {/* Messaging Text */}
-        <View style={styles.textSection}>
-          <Text style={[styles.heading, { color: colors.onSurface }]}>
-            Unlock the true potential of Athan App
-          </Text>
-          <Text style={[styles.subheading, { color: colors.onSurfaceMuted }]}>
-            Keep track of your prayers, view prayer performance, save your bookmarks and more.
-          </Text>
-        </View>
+          <View style={styles.textSection}>
+            <Text style={[styles.eyebrow, { color: colors.brand }]}>ISLAMIC HIKMAH</Text>
+            <Text style={[styles.heading, { color: colors.onSurface }]}>
+              Grow with a calmer daily rhythm
+            </Text>
+            <Text style={[styles.subheading, { color: colors.onSurfaceMuted }]}>
+              Keep prayer times, Qur&apos;an reading, dhikr and personal goals together in one private companion.
+            </Text>
+          </View>
 
-        {/* Buttons List */}
-        <View style={styles.btnSection}>
+          <View style={styles.btnSection}>
           
           {/* Continue with Google */}
           <Pressable
@@ -107,6 +89,9 @@ export default function WelcomeScreen() {
               loginWithGoogle();
             }}
             disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Continue with Google"
+            accessibilityState={{ disabled: loading }}
             style={({ pressed }) => [
               styles.googleBtn,
               { borderColor: colors.border },
@@ -127,6 +112,9 @@ export default function WelcomeScreen() {
           <Pressable
             onPress={handleEmailPress}
             disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Continue with email"
+            accessibilityState={{ disabled: loading }}
             style={({ pressed }) => [
               styles.emailBtn,
               { backgroundColor: colors.brand },
@@ -137,21 +125,24 @@ export default function WelcomeScreen() {
             <Text style={styles.emailBtnText}>Continue with Email</Text>
           </Pressable>
 
-          {/* Will do it later */}
           <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-              loginAsGuest();
-            }}
+            onPress={handleGuestPress}
             disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Continue as guest"
+            accessibilityHint="Uses the app without creating an account"
+            accessibilityState={{ disabled: loading }}
             style={({ pressed }) => [
               styles.laterBtn,
               pressed && { opacity: 0.7 }
             ]}
           >
-            <Text style={[styles.laterText, { color: colors.onSurface }]}>Will do it later</Text>
+            <Text style={[styles.laterText, { color: colors.onSurface }]}>Continue as guest</Text>
           </Pressable>
-
+          <Text style={[styles.guestHint, { color: colors.onSurfaceMuted }]}>
+            Guest progress stays on this device. You can create an account later.
+          </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -164,22 +155,49 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingVertical: 20,
+  },
+  contentWidth: {
+    width: "100%",
+    maxWidth: 520,
+    flex: 1,
+    alignSelf: "center",
     justifyContent: "space-between",
   },
   illustrationWrapper: {
     width: "100%",
-    height: 180,
+    height: 210,
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
+    overflow: "visible",
     marginTop: 20,
     position: "relative",
   },
-  cloud: {
+  spiritualHalo: {
+    width: 176,
+    height: 176,
+    borderRadius: 88,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mosqueMark: {
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  crescentBadge: {
     position: "absolute",
-    borderRadius: 15,
-    backgroundColor: "#F1F5F9",
-    opacity: 0.8,
+    right: 12,
+    top: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
   },
   leftHandContainer: {
     position: "absolute",
@@ -309,16 +327,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginVertical: 20,
   },
+  eyebrow: {
+    fontFamily: theme.font.textBold,
+    fontSize: 12,
+    letterSpacing: 1.6,
+    marginBottom: 10,
+  },
   heading: {
     fontSize: 26,
-    fontWeight: "800",
+    fontFamily: theme.font.displayExtraBold,
     textAlign: "center",
     lineHeight: 34,
     marginBottom: 12,
   },
   subheading: {
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 24,
+    fontFamily: theme.font.text,
     textAlign: "center",
     paddingHorizontal: 10,
   },
@@ -338,7 +363,7 @@ const styles = StyleSheet.create({
   },
   googleBtnText: {
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: theme.font.textBold,
   },
   emailBtn: {
     flexDirection: "row",
@@ -350,7 +375,7 @@ const styles = StyleSheet.create({
   emailBtnText: {
     color: "#FFFFFF",
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: theme.font.textBold,
   },
   laterBtn: {
     alignItems: "center",
@@ -359,7 +384,14 @@ const styles = StyleSheet.create({
   },
   laterText: {
     fontSize: 15,
-    fontWeight: "600",
-    textDecorationLine: "underline",
+    fontFamily: theme.font.textSemiBold,
+  },
+  guestHint: {
+    fontFamily: theme.font.text,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    paddingHorizontal: 20,
+    marginTop: -6,
   },
 });

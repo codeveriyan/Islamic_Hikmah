@@ -3,19 +3,23 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  TextInput, 
   Pressable, 
-  ActivityIndicator, 
   KeyboardAvoidingView, 
   Platform, 
   ScrollView 
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import * as Haptics from "expo-haptics";
+import {
+  AppButton,
+  AppCheckbox,
+  AppIconButton,
+  AppTextInput,
+} from "@/src/components/ui";
+import { AppStatusBanner } from "@/src/components/states";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -94,12 +98,13 @@ export default function RegisterScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
-            <Pressable 
-              onPress={() => router.back()} 
-              style={[styles.backBtn, { backgroundColor: colors.surfaceSecondary }]}
-            >
-              <MaterialCommunityIcons name="arrow-left" size={20} color={colors.onSurface} />
-            </Pressable>
+            <AppIconButton
+              accessibilityLabel="Go back"
+              icon="arrow-left"
+              onPress={() => router.back()}
+              style={styles.backBtn}
+              variant="tonal"
+            />
             <Text style={[styles.headerTitle, { color: colors.onSurface }]}>Create Account</Text>
             <Text style={[styles.headerSubtitle, { color: colors.onSurfaceSecondary }]}>
               Join Islamic Hikmah and start tracking your goals.
@@ -108,126 +113,93 @@ export default function RegisterScreen() {
 
           {/* Form */}
           <View style={styles.form}>
-            {errorMsg && (
-              <View style={[styles.errorBox, { backgroundColor: "#FFEBEE" }]}>
-                <MaterialCommunityIcons name="alert-circle" size={18} color="#D32F2F" />
-                <Text style={styles.errorTxt}>{errorMsg}</Text>
-              </View>
-            )}
+            {errorMsg ? (
+              <AppStatusBanner
+                kind="error"
+                message={errorMsg}
+                onDismiss={() => setErrorMsg(null)}
+              />
+            ) : null}
 
             {/* Name Input */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Full Name</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                <MaterialCommunityIcons name="account-outline" size={20} color={colors.onSurfaceMuted} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { color: colors.onSurface }]}
-                  placeholder="Enter your full name"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                />
-              </View>
-            </View>
+            <AppTextInput
+              autoCapitalize="words"
+              label="Full name"
+              leadingIcon="account-outline"
+              onChangeText={setName}
+              placeholder="Enter your full name"
+              value={name}
+            />
 
             {/* Email Input */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Email Address</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                <MaterialCommunityIcons name="email-outline" size={20} color={colors.onSurfaceMuted} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { color: colors.onSurface }]}
-                  placeholder="Enter your email"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-            </View>
+            <AppTextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              label="Email address"
+              leadingIcon="email-outline"
+              onChangeText={setEmail}
+              placeholder="Enter your email"
+              value={email}
+            />
 
             {/* Password Input */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Password</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                <MaterialCommunityIcons name="lock-outline" size={20} color={colors.onSurfaceMuted} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { color: colors.onSurface }]}
-                  placeholder="Create a password (min 6 chars)"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={setPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                  <MaterialCommunityIcons 
-                    name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                    size={20} 
-                    color={colors.onSurfaceMuted} 
-                  />
-                </Pressable>
-              </View>
-            </View>
+            <AppTextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              helperText="Use at least six characters."
+              label="Password"
+              leadingIcon="lock-outline"
+              onChangeText={setPassword}
+              onTrailingIconPress={() => setShowPassword(!showPassword)}
+              placeholder="Create a password"
+              secureTextEntry={!showPassword}
+              trailingIcon={showPassword ? "eye-off-outline" : "eye-outline"}
+              trailingIconAccessibilityLabel={
+                showPassword ? "Hide password" : "Show password"
+              }
+              value={password}
+            />
 
             {/* Confirm Password */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Confirm Password</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                <MaterialCommunityIcons name="lock-check-outline" size={20} color={colors.onSurfaceMuted} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { color: colors.onSurface }]}
-                  placeholder="Re-enter your password"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  secureTextEntry={!showPassword}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-            </View>
+            <AppTextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              errorMessage={
+                confirmPassword && password !== confirmPassword
+                  ? "Passwords do not match."
+                  : undefined
+              }
+              label="Confirm password"
+              leadingIcon="lock-check-outline"
+              onChangeText={setConfirmPassword}
+              placeholder="Re-enter your password"
+              secureTextEntry={!showPassword}
+              value={confirmPassword}
+            />
 
             {/* Terms and Conditions checkbox */}
-            <Pressable 
-              onPress={() => {
+            <AppCheckbox
+              accessibilityLabel="Accept Terms and Conditions and Privacy Policy"
+              checked={acceptTerms}
+              label={
+                <Text style={[styles.termsTxt, { color: colors.onSurfaceSecondary }]}>
+                  I accept the <Text style={{ color: colors.brand, fontWeight: "600" }}>Terms & Conditions</Text> and <Text style={{ color: colors.brand, fontWeight: "600" }}>Privacy Policy</Text>
+                </Text>
+              }
+              onValueChange={(checked) => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                setAcceptTerms(!acceptTerms);
+                setAcceptTerms(checked);
               }}
-              style={styles.termsRow}
-            >
-              <View style={[
-                styles.checkbox, 
-                { borderColor: colors.border },
-                acceptTerms && { backgroundColor: colors.brand, borderColor: colors.brand }
-              ]}>
-                {acceptTerms && <MaterialCommunityIcons name="check" size={14} color={colors.onBrandPrimary} />}
-              </View>
-              <Text style={[styles.termsTxt, { color: colors.onSurfaceSecondary }]}>
-                I accept the <Text style={{ color: colors.brand, fontWeight: "600" }}>Terms & Conditions</Text> and <Text style={{ color: colors.brand, fontWeight: "600" }}>Privacy Policy</Text>
-              </Text>
-            </Pressable>
+            />
 
             {/* Submit Button */}
-            <Pressable
+            <AppButton
+              fullWidth
+              label="Sign up"
+              loading={loading}
               onPress={handleRegister}
-              disabled={loading}
-              style={({ pressed }) => [
-                styles.submitBtn,
-                { backgroundColor: colors.brand },
-                (pressed || loading) && { opacity: 0.9 }
-              ]}
-            >
-              {loading ? (
-                <ActivityIndicator color={colors.onBrandPrimary} />
-              ) : (
-                <Text style={[styles.submitBtnTxt, { color: colors.onBrandPrimary }]}>Sign Up</Text>
-              )}
-            </Pressable>
+            />
           </View>
 
           {/* Footer */}

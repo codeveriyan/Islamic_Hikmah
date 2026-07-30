@@ -103,7 +103,7 @@ export default function TabsLayout() {
           shadowRadius: 16,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 12,
           fontFamily: "Figtree_400Regular",
           fontWeight: "700",
           marginTop: 0,
@@ -117,6 +117,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: t("home") || "Home",
+          tabBarAccessibilityLabel: t("home") || "Home",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon icon="home-variant-outline" iconFocused="home-variant" color={color} focused={focused} />
           ),
@@ -126,9 +127,10 @@ export default function TabsLayout() {
 
       {/* 2. Quran */}
       <Tabs.Screen
-        name="quran"
+        name="quran-tab"
         options={{
           title: "Quran",
+          tabBarAccessibilityLabel: "Quran",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon icon="book-open-outline" iconFocused="book-open" color={color} focused={focused} />
           ),
@@ -141,6 +143,7 @@ export default function TabsLayout() {
         name="prayer"
         options={{
           title: "Prayer",
+          tabBarAccessibilityLabel: "Prayer",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon icon="mosque" iconFocused="mosque" color={color} focused={focused} />
           ),
@@ -153,6 +156,7 @@ export default function TabsLayout() {
         name="discover"
         options={{
           title: "Discover",
+          tabBarAccessibilityLabel: "Discover",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon icon="compass-outline" iconFocused="compass" color={color} focused={focused} />
           ),
@@ -165,6 +169,7 @@ export default function TabsLayout() {
         name="me"
         options={{
           title: "Me",
+          tabBarAccessibilityLabel: "Profile and progress",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon icon="account-circle-outline" iconFocused="account-circle" color={color} focused={focused} />
           ),

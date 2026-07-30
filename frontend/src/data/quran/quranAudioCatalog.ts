@@ -68,6 +68,16 @@ const STANDARD = [
   [35, "Saleh al Taleb", "saleh_al_taleb"], [43, "Salah al-Budair", "salahbudair"],
   [61, "Sadaqat `Ali", "sadaqat_ali"], [80, "Salah Al-Hashim", "salah_alhashim"],
   [23, "Tawfeeq ibn Sa`id as-Sawa'igh", "tawfeeq_bin_saeed-as-sawaaigh"], [130, "Wadee Hammadi Al Yamani", "wadee_hammadi_al-yamani"],
+  [201, "Maher Al-Muaiqly", "maher_al_muaiqly"], [202, "Yasser Al-Dosari", "yasser_ad-dussary"],
+  [203, "Bandar Baleela", "bandar_baleela"], [204, "Saad Al-Ghamdi", "saad_al_ghamdi"],
+  [205, "Ahmed Al-Ajmi", "ahmed_ibn_ali_al_ajamy"], [206, "Hani Ar-Rifai", "hani_ar_rifai"],
+  [207, "Ali Jaber", "ali_jaber"], [208, "Fatih Seferagic", "fatih_seferagic/mp3"],
+  [209, "Khalid Al-Jalil", "khalid_al_jaleel/mp3"], [210, "Abdullah Al-Khalaf", "abdullah_al_khalaf/mp3"],
+  [211, "Mansour Al-Salimi", "mansour_al_salimi/mp3"], [212, "Abdul Rahman Al-Ossi", "abdulrahman_al_ossi/mp3"],
+  [213, "Khalid Al-Muhanna", "khalid_al_muhanna/mp3"], [214, "Salah Ba Uthman", "salah_ba_uthman/mp3"],
+  [215, "Ahmad Al-Nufais", "ahmad_al_nufais/mp3"], [216, "Haitham Al-Dakhin", "haitham_al_dakhin/mp3"],
+  [217, "Fouad Al-Khamiri", "fouad_al_khamiri/mp3"], [218, "Omar Hisham Al Arabi", "omar_hisham_al_arabi/mp3"],
+  [219, "Islam Sobhi", "islam_sobhi/mp3"], [220, "Imam Feysal Mohammed", "imam_feysal_mohammed/mp3"],
 ] as const;
 
 const HARAMAIN = [

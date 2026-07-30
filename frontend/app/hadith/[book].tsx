@@ -367,7 +367,10 @@ export default function HadithDetailScreen() {
       } catch (err) {
         console.warn("Background Sunnah.com refresh error:", err);
       } finally {
-        if (isMounted) setBgLoading(false);
+        if (isMounted) {
+          setBgLoading(false);
+          setLoading(false);
+        }
       }
     };
 
@@ -433,7 +436,10 @@ export default function HadithDetailScreen() {
       } catch (err) {
         console.warn("Remote fallback refresh error:", err);
       } finally {
-        if (isMounted) setBgLoading(false);
+        if (isMounted) {
+          setBgLoading(false);
+          setLoading(false);
+        }
       }
     };
 
