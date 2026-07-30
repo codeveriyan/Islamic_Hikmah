@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Switch, Modal, FlatList, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal, FlatList, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -9,6 +9,7 @@ import { theme } from "@/src/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { LANGUAGES } from "@/src/data/quran/translationLanguages";
+import { AppSwitch } from "@/src/components/ui";
 
 type FontOption = {
   id: "indopak" | "uthmani" | "naskh";
@@ -280,11 +281,10 @@ export default function PersonaliseScreen() {
             <MaterialCommunityIcons name="book-open-variant" size={22} color={colors.brandSecondary} />
             <Text style={[styles.rowLabel, { color: colors.onSurface }]}>{t("translation")}</Text>
           </View>
-          <Switch
+          <AppSwitch
+            accessibilityLabel="Show translation"
             value={showTranslation}
             onValueChange={saveTranslation}
-            trackColor={{ false: "#E2E8F0", true: colors.brand }}
-            thumbColor="#FFF"
           />
         </View>
 
@@ -300,11 +300,10 @@ export default function PersonaliseScreen() {
               <MaterialCommunityIcons name="information-outline" size={16} color={colors.onSurfaceMuted} />
             </Pressable>
           </View>
-          <Switch
+          <AppSwitch
+            accessibilityLabel="Show transliteration"
             value={showTransliteration}
             onValueChange={saveTransliteration}
-            trackColor={{ false: "#E2E8F0", true: colors.brand }}
-            thumbColor="#FFF"
           />
         </View>
 

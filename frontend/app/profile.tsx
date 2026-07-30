@@ -385,13 +385,12 @@ export default function ProfileScreen() {
                   <Text style={[styles.countdownNote, { color: colors.onSurfaceMuted }]}>{trialCountdown.urgent ? 'Upgrade now to keep your access!' : 'Trial ends — upgrade to continue'}</Text>
                 </View>
               </View>
-              <Pressable
+              <AppButton
+                fullWidth
+                icon="crown"
+                label="Upgrade to premium"
                 onPress={() => router.push('/premium')}
-                style={({ pressed }) => [styles.upgradeBtn, pressed && { opacity: 0.85 }]}
-              >
-                <MaterialCommunityIcons name="crown" size={16} color="#fff" />
-                <Text style={styles.upgradeBtnTxt}>Upgrade to Premium</Text>
-              </Pressable>
+              />
             </>
           ) : (
             // ─── FREE user ───────────────────────────────────────────────────
@@ -406,36 +405,25 @@ export default function ProfileScreen() {
                   <Text style={[styles.subscriptionBadgeTxt, { color: colors.onSurfaceMuted }]}>FREE</Text>
                 </View>
               </View>
-              <Pressable
+              <AppButton
+                fullWidth
+                icon="crown"
+                label="Start free trial or buy premium"
                 onPress={() => router.push('/premium')}
-                style={({ pressed }) => [styles.upgradeBtn, pressed && { opacity: 0.85 }]}
-              >
-                <MaterialCommunityIcons name="crown" size={16} color="#fff" />
-                <Text style={styles.upgradeBtnTxt}>Start Free Trial / Buy Premium</Text>
-              </Pressable>
+              />
             </>
           )}
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionSection}>
-          <Pressable
+          <AppButton
+            fullWidth
+            icon={isGuest ? "login" : "logout"}
+            label={isGuest ? "Sign in or create account" : "Sign out"}
             onPress={handleLogout}
-            style={({ pressed }) => [
-              styles.btnOutlined,
-              { borderColor: colors.border },
-              pressed && { backgroundColor: colors.surfaceSecondary }
-            ]}
-          >
-            <MaterialCommunityIcons
-              name={isGuest ? "login" : "logout"}
-              size={20}
-              color={isGuest ? colors.brand : "#D32F2F"}
-            />
-            <Text style={[styles.btnTxt, { color: isGuest ? colors.brand : "#D32F2F" }]}>
-              {isGuest ? "Sign In or Create Account" : "Sign Out"}
-            </Text>
-          </Pressable>
+            variant={isGuest ? "outlined" : "danger"}
+          />
         </View>
       </ScrollView>
 
@@ -452,16 +440,13 @@ export default function ProfileScreen() {
 
             <View style={styles.modalForm}>
               {/* Name */}
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Display Name</Text>
-                <TextInput
-                  style={[styles.input, { color: colors.onSurface, backgroundColor: colors.surface, borderColor: colors.border }]}
-                  placeholder="Enter name"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  value={name}
-                  onChangeText={setName}
-                />
-              </View>
+              <AppTextInput
+                label="Display name"
+                leadingIcon="account-outline"
+                onChangeText={setName}
+                placeholder="Enter name"
+                value={name}
+              />
 
               {/* Profile photo */}
               <View style={styles.inputGroup}>
@@ -481,24 +466,18 @@ export default function ProfileScreen() {
             </View>
 
             <View style={styles.modalButtons}>
-              <Pressable
+              <AppButton
+                label="Cancel"
                 onPress={() => setEditModalVisible(false)}
-                style={[styles.modalBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border } as any]}
-              >
-                <Text style={[styles.modalBtnTxt, { color: colors.onSurface } as any]}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
+                style={styles.modalButton}
+                variant="outlined"
+              />
+              <AppButton
+                label="Save"
+                loading={updating}
                 onPress={handleSaveProfile}
-                disabled={updating}
-                style={[styles.modalBtn, { backgroundColor: colors.brand } as any]}
-              >
-                {updating ? (
-                  <ActivityIndicator color={colors.onBrandPrimary} />
-                ) : (
-                  <Text style={[styles.modalBtnTxt, { color: colors.onBrandPrimary } as any]}>Save</Text>
-                )}
-              </Pressable>
+                style={styles.modalButton}
+              />
             </View>
           </View>
         </View>
@@ -715,6 +694,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     marginTop: 12,
+  },
+  modalButton: {
+    flex: 1,
   },
   modalBtn: {
     flex: 1,

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  TextInput,
   Share,
   Dimensions,
 } from "react-native";
@@ -17,6 +16,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import { DAWAH_HERO, DAWAH_PARTS, DawahSection } from "@/src/data/dawahData";
+import { AppTextInput } from "@/src/components/ui";
 
 const { width } = Dimensions.get("window");
 
@@ -117,12 +117,16 @@ export default function DawahScreen() {
         {/* Search Bar */}
         <View style={[styles.searchContainer, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
-          <TextInput
+          <AppTextInput
+            activeUnderlineColor="transparent"
+            containerStyle={{ flex: 1 }}
+            mode="flat"
             placeholder="Search existence of God, prophets, science quotes..."
             placeholderTextColor={colors.onSurfaceMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
             style={[styles.searchInput, { color: colors.onSurface }]}
+            underlineColor="transparent"
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery("")}>

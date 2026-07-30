@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient
+import base64
+import binascii
 import os
 import logging
 import json
@@ -15,7 +17,14 @@ import requests
 from cryptography import x509
 from pymongo.errors import DuplicateKeyError
 from learn_quran.router import create_learn_quran_router
-from learn_quran.asr import AsrUnavailableError, get_quran_asr_service
+from learn_quran.asr import (
+    AsrTranscriptionError,
+    AsrUnavailableError,
+    NoArabicSpeechError,
+    get_quran_asr_service,
+)
+from quran_corpus import CorpusUnavailableError
+from quran_identify_matcher import NoConfidentMatchError, identify_from_transcript
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -703,9 +712,35 @@ async def start_trial_backend(current_user: dict = Depends(get_current_user_prof
 
 
 class IdentifyQuranRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     audio_b64: Optional[str] = None
     audio_format: Optional[str] = "wav"
     sample_rate: Optional[int] = 16000
+
+
+MAX_IDENTIFY_AUDIO_BYTES = 10 * 1024 * 1024
+
+
+def _decode_identify_audio(value: str) -> bytes:
+    """Decode either raw base64 or the data URL produced by a web recorder."""
+
+    encoded = value.strip()
+    if encoded.startswith("data:"):
+        if ";base64," not in encoded:
+            raise ValueError("The audio data URL is not base64 encoded.")
+        encoded = encoded.split(";base64,", 1)[1]
+
+    try:
+        audio_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError, TypeError) as exc:
+        raise ValueError("The audio payload is not valid base64.") from exc
+
+    if not audio_bytes:
+        raise ValueError("The audio recording is empty.")
+    if len(audio_bytes) > MAX_IDENTIFY_AUDIO_BYTES:
+        raise ValueError("The audio recording exceeds the 10 MB upload limit.")
+    return audio_bytes
 
 
 SURAHS_DATASET = [
@@ -799,40 +834,77 @@ RECITERS_DATASET = [
 @api_router.post("/quran/identify")
 async def identify_quran_recitation(req: IdentifyQuranRequest):
     """
-    Identifies a Quranic recitation audio clip ("Shazam for the Quran").
-    Uses acoustic fingerprinting & phoneme matching against the 114 Surahs and reciter voice library.
-    """
-    audio_data = req.audio_b64 or ""
-    
-    # Compute deterministic fingerprint hash from audio payload
-    if audio_data:
-        val = sum(ord(c) for c in audio_data[:300])
-        surah_idx = val % len(SURAHS_DATASET)
-        reciter_idx = (val * 7) % len(RECITERS_DATASET)
-        confidence = 0.92 + ((val % 8) / 100.0)
-    else:
-        # Default fallback
-        surah_idx = 0
-        reciter_idx = 1
-        confidence = 0.98
+    Transcribe a Quran recitation and match it against all 6,236 ayahs.
 
-    matched_surah = SURAHS_DATASET[surah_idx]
-    matched_reciter = RECITERS_DATASET[reciter_idx]
+    This route identifies Quran text only. Reciter voice identification needs
+    a separate speaker model and is reported as unavailable instead of guessed.
+    """
+    if not req.audio_b64:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No audio recording was provided.",
+        )
+
+    try:
+        audio_bytes = _decode_identify_audio(req.audio_b64)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    asr_service = get_quran_asr_service()
+    try:
+        transcript = await run_in_threadpool(asr_service.transcribe, audio_bytes)
+    except AsrUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Recitation identification is unavailable because the Quran "
+                "speech model is not ready."
+            ),
+        ) from exc
+    except (NoArabicSpeechError, AsrTranscriptionError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        match = await run_in_threadpool(identify_from_transcript, transcript)
+    except NoConfidentMatchError as exc:
+        return {
+            "status": "no_match",
+            "message": str(exc),
+            "transcript": transcript.text,
+        }
+    except CorpusUnavailableError as exc:
+        logger.exception("Quran identification corpus is unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The Quran text-matching service is not ready.",
+        ) from exc
 
     return {
         "status": "success",
-        "surah_number": matched_surah["surah_number"],
-        "surah_name_english": matched_surah["surah_name_english"],
-        "surah_name_arabic": matched_surah["surah_name_arabic"],
-        "verse_start": matched_surah["verse_start"],
-        "verse_end": matched_surah["verse_end"],
-        "reciter_name": matched_reciter["name"],
-        "reciter_id": matched_reciter["id"],
-        "reciter_country": matched_reciter["country"],
-        "reciter_style": matched_reciter["style"],
-        "confidence": round(confidence, 2),
-        "matched_text_arabic": matched_surah["matched_text_arabic"],
-        "matched_text_english": matched_surah["matched_text_english"],
+        "source": "model",
+        "surah_number": match.surah_number,
+        "surah_name_english": match.surah_name_english,
+        "surah_name_arabic": match.surah_name_arabic,
+        "verse_start": match.ayah_start,
+        "verse_end": match.ayah_end,
+        "reciter_name": None,
+        "reciter_id": None,
+        "reciter_country": None,
+        "reciter_style": None,
+        "reciter_status": "not_available",
+        "confidence": match.confidence,
+        "matched_text_arabic": match.matched_text_arabic,
+        "matched_text_english": match.matched_text_english,
+        "transcript": transcript.text,
+        "modelName": transcript.model_name,
+        "modelRevision": transcript.model_revision,
+        "processingTimeMs": transcript.processing_time_ms,
     }
 
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Switch, Alert, Dimensions } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -8,6 +8,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import { useAuth } from "@/src/AuthContext";
 import { getGoogleCalendarConnected, setGoogleCalendarConnected } from "@/src/storage";
+import { AppSwitch } from "@/src/components/ui";
 
 const { width } = Dimensions.get("window");
 
@@ -69,11 +70,10 @@ export default function CalendarSyncScreen() {
         {/* Toggle Card */}
         <View style={[styles.toggleCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <Text style={[styles.toggleText, { color: colors.onSurface }]}>Sync with Google Calendar</Text>
-          <Switch
+          <AppSwitch
+            accessibilityLabel="Sync with Google Calendar"
             value={calendarConnected}
             onValueChange={handleToggle}
-            trackColor={{ false: colors.border, true: colors.brand }}
-            thumbColor={colors.surfaceSecondary}
           />
         </View>
 

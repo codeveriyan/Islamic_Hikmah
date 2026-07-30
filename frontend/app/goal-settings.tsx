@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Switch, Alert, Platform, Modal } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
+import { AppSwitch } from "@/src/components/ui";
 import { 
   getActiveGoalIds, 
   getGoalNotifTimes, 
@@ -142,11 +143,10 @@ export default function GoalSettingsScreen() {
         <View style={[styles.sectionCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <View style={styles.row}>
             <Text style={[styles.rowText, { color: colors.onSurface }]}>Log reminder</Text>
-            <Switch
+            <AppSwitch
+              accessibilityLabel="Log reminder"
               value={logReminder}
               onValueChange={(val) => handleToggle("logReminder", val)}
-              trackColor={{ false: colors.border, true: colors.brand }}
-              thumbColor={Platform.OS === "ios" ? undefined : colors.surfaceSecondary}
             />
           </View>
         </View>
@@ -167,11 +167,10 @@ export default function GoalSettingsScreen() {
           
           <View style={[styles.row, { borderTopWidth: 1, borderTopColor: colors.border }]}>
             <Text style={[styles.rowText, { color: colors.onSurface }]}>Al-Quran reminder</Text>
-            <Switch
+            <AppSwitch
+              accessibilityLabel="Al-Quran reminder"
               value={quranReminder}
               onValueChange={(val) => handleToggle("quranReminder", val)}
-              trackColor={{ false: colors.border, true: colors.brand }}
-              thumbColor={Platform.OS === "ios" ? undefined : colors.surfaceSecondary}
             />
           </View>
 
@@ -203,21 +202,19 @@ export default function GoalSettingsScreen() {
           
           <View style={[styles.row, { borderTopWidth: 1, borderTopColor: colors.border }]}>
             <Text style={[styles.rowText, { color: colors.onSurface }]}>Dhikr reminder</Text>
-            <Switch
+            <AppSwitch
+              accessibilityLabel="Dhikr reminder"
               value={dhikrReminder}
               onValueChange={(val) => handleToggle("dhikrReminder", val)}
-              trackColor={{ false: colors.border, true: colors.brand }}
-              thumbColor={Platform.OS === "ios" ? undefined : colors.surfaceSecondary}
             />
           </View>
 
           <View style={[styles.row, { borderTopWidth: 1, borderTopColor: colors.border }]}>
             <Text style={[styles.rowText, { color: colors.onSurface }]}>Haptic effect</Text>
-            <Switch
+            <AppSwitch
+              accessibilityLabel="Haptic effect"
               value={hapticEffect}
               onValueChange={(val) => handleToggle("hapticEffect", val)}
-              trackColor={{ false: colors.border, true: colors.brand }}
-              thumbColor={Platform.OS === "ios" ? undefined : colors.surfaceSecondary}
             />
           </View>
         </View>

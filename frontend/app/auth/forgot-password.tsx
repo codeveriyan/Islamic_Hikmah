@@ -3,9 +3,7 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  TextInput, 
   Pressable, 
-  ActivityIndicator, 
   KeyboardAvoidingView, 
   Platform, 
   ScrollView 
@@ -16,6 +14,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import * as Haptics from "expo-haptics";
+import { AppButton, AppTextInput } from "@/src/components/ui";
+import { AppStatusBanner } from "@/src/components/states";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
@@ -87,60 +87,39 @@ export default function ForgotPasswordScreen() {
                 <Text style={[styles.successDesc, { color: colors.onSurfaceSecondary }]}>
                   Please check your inbox at <Text style={{ fontWeight: "700" }}>{email}</Text> and follow the link to reset your password.
                 </Text>
-                <Pressable
+                <AppButton
+                  fullWidth
+                  label="Back to Login"
                   onPress={() => router.replace("/auth/login")}
-                  style={({ pressed }) => [
-                    styles.primaryBtn,
-                    { backgroundColor: colors.brand, marginTop: 24 },
-                    pressed && { opacity: 0.9 }
-                  ]}
-                >
-                  <Text style={[styles.primaryBtnTxt, { color: colors.onBrandPrimary }]}>Back to Login</Text>
-                </Pressable>
+                  style={{ marginTop: 24 }}
+                />
               </View>
             ) : (
               <View style={styles.form}>
                 {errorMsg && (
-                  <View style={[styles.errorBox, { backgroundColor: "#FFEBEE" }]}>
-                    <MaterialCommunityIcons name="alert-circle" size={18} color="#D32F2F" />
-                    <Text style={styles.errorTxt}>{errorMsg}</Text>
-                  </View>
+                  <AppStatusBanner kind="error" message={errorMsg} />
                 )}
 
                 {/* Email Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: colors.onSurfaceSecondary }]}>Email Address</Text>
-                  <View style={[styles.inputWrapper, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                    <MaterialCommunityIcons name="email-outline" size={20} color={colors.onSurfaceMuted} style={styles.inputIcon} />
-                    <TextInput
-                      style={[styles.input, { color: colors.onSurface }]}
-                      placeholder="Enter your email"
-                      placeholderTextColor={colors.onSurfaceMuted}
-                      value={email}
-                      onChangeText={setEmail}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                  </View>
-                </View>
+                <AppTextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  label="Email Address"
+                  leadingIcon="email-outline"
+                  onChangeText={setEmail}
+                  placeholder="Enter your email"
+                  value={email}
+                />
 
                 {/* Submit Button */}
-                <Pressable
+                <AppButton
+                  fullWidth
+                  label="Send Reset Link"
+                  loading={loading}
                   onPress={handleReset}
-                  disabled={loading}
-                  style={({ pressed }) => [
-                    styles.primaryBtn,
-                    { backgroundColor: colors.brand, marginTop: 12 },
-                    (pressed || loading) && { opacity: 0.9 }
-                  ]}
-                >
-                  {loading ? (
-                    <ActivityIndicator color={colors.onBrandPrimary} />
-                  ) : (
-                    <Text style={[styles.primaryBtnTxt, { color: colors.onBrandPrimary }]}>Send Reset Link</Text>
-                  )}
-                </Pressable>
+                  style={{ marginTop: 12 }}
+                />
               </View>
             )}
           </View>
@@ -222,54 +201,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
-  },
-  errorBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 10,
-    gap: 8,
-  },
-  errorTxt: {
-    color: "#D32F2F",
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-  },
-  inputGroup: {
-    gap: 6,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    height: 52,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    height: "100%",
-  },
-  primaryBtn: {
-    height: 52,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    width: "100%",
-  },
-  primaryBtnTxt: {
-    fontSize: 16,
-    fontWeight: "700",
   },
   footer: {
     flexDirection: "row",

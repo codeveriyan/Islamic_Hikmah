@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Platform, Modal, Switch, Alert, TextInput, RefreshControl, FlatList,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Modal, Alert, RefreshControl, FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -36,6 +36,11 @@ import {
 } from "@/src/storage";
 
 import { Image as ExpoImage } from "expo-image";
+import {
+  AppIconButton,
+  AppSwitch,
+  AppTextInput,
+} from "@/src/components/ui";
 
 const { width, height } = Dimensions.get("window");
 const CARD_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md) / 2;
@@ -1893,9 +1898,11 @@ export default function HomeScreen() {
           <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface }]}>All Prayers</Text>
-              <Pressable onPress={() => setPrayersModalVisible(false)} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close all prayers"
+                icon="close"
+                onPress={() => setPrayersModalVisible(false)}
+              />
             </View>
             
             <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
@@ -1926,11 +1933,10 @@ export default function HomeScreen() {
                     Menstrual mode will excuse your Prayers until you turn it off at the end of your period.
                   </Text>
                 </View>
-                <Switch 
+                <AppSwitch
+                  accessibilityLabel="Menstrual mode"
                   value={menstrualMode}
                   onValueChange={handleMenstrualModeToggle}
-                  trackColor={{ false: colors.border, true: colors.brand }}
-                  thumbColor={Platform.OS === 'ios' ? undefined : colors.surfaceSecondary}
                 />
               </View>
             </ScrollView>
@@ -1952,9 +1958,11 @@ export default function HomeScreen() {
                 <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Select Daily Adhkar</Text>
                 <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 2 }}>Select your favourite Dhikr to perform everyday</Text>
               </View>
-              <Pressable onPress={() => setDhikrModalVisible(false)} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close daily adhkar selection"
+                icon="close"
+                onPress={() => setDhikrModalVisible(false)}
+              />
             </View>
 
             {/* Create Custom Goal Button */}
@@ -1986,7 +1994,8 @@ export default function HomeScreen() {
                   >
                     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                       <Text style={{ fontSize: 15, fontWeight: "700", color: colors.onSurface, flex: 1, paddingRight: 8 }}>{item.title}</Text>
-                      <Switch
+                      <AppSwitch
+                        accessibilityLabel={`Include ${item.title} in daily adhkar`}
                         value={isAdded}
                         onValueChange={async () => {
                           Haptics.selectionAsync().catch(() => {});
@@ -2000,8 +2009,6 @@ export default function HomeScreen() {
                             await saveActiveGoalIds(updated);
                           }
                         }}
-                        trackColor={{ false: colors.border, true: colors.brand }}
-                        thumbColor={Platform.OS === 'ios' ? undefined : colors.surfaceSecondary}
                       />
                     </View>
 
@@ -2034,9 +2041,11 @@ export default function HomeScreen() {
           <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Create Custom Goal</Text>
-              <Pressable onPress={() => setShowAddCustomModal(false)} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close custom goal"
+                icon="close"
+                onPress={() => setShowAddCustomModal(false)}
+              />
             </View>
             
             <View style={{ gap: 14, marginTop: 8, width: "100%", flex: 1 }}>
@@ -2070,12 +2079,12 @@ export default function HomeScreen() {
               {newGoalCategory === "quran" ? (
                 <View style={{ flex: 1, gap: 8 }}>
                   <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Surah to Recite Everyday</Text>
-                  <TextInput
+                  <AppTextInput
                     value={surahSearch}
                     onChangeText={setSurahSearch}
                     placeholder="Search Surah (e.g. Yaseen, Kahf, Mulk...)"
-                    placeholderTextColor={colors.onSurfaceMuted}
-                    style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
+                    leadingIcon="magnify"
+                    style={styles.input}
                   />
 
                   <FlatList
@@ -2130,12 +2139,12 @@ export default function HomeScreen() {
               ) : newGoalCategory === "dhikr" ? (
                 <View style={{ flex: 1, gap: 8 }}>
                   <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Dhikr or Du'a from Du'a Hub to Recite Everyday</Text>
-                  <TextInput
+                  <AppTextInput
                     value={dhikrSearch}
                     onChangeText={setDhikrSearch}
                     placeholder="Search Dhikr or Du'a (e.g. Protection, Forgiveness, Ummah, Healing...)"
-                    placeholderTextColor={colors.onSurfaceMuted}
-                    style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
+                    leadingIcon="magnify"
+                    style={styles.input}
                   />
 
                   <FlatList
@@ -2200,12 +2209,11 @@ export default function HomeScreen() {
                 <View style={{ gap: 16, marginTop: 4 }}>
                   <View>
                     <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Goal Title</Text>
-                    <TextInput
+                    <AppTextInput
                       value={newGoalTitle}
                       onChangeText={setNewGoalTitle}
                       placeholder={newGoalCategory === "prayer" ? "e.g. Offer Ishraq, Offer Duha" : "e.g. Read Tafseer, Visit Family"}
-                      placeholderTextColor={colors.onSurfaceMuted}
-                      style={[styles.input, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]}
+                      style={styles.input}
                     />
                   </View>
 
@@ -2660,10 +2668,6 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   input: {
-    borderWidth: 1,
-    borderRadius: theme.radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
     fontSize: 15,
     marginBottom: 4,
     width: "100%",

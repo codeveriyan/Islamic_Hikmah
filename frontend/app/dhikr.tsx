@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef, memo } from '
 import {
   View, Text, TouchableOpacity, StyleSheet, Dimensions,
   Animated, Pressable, ScrollView, Platform, Modal,
-  TextInput, FlatList, KeyboardAvoidingView, Image, Easing
+  FlatList, KeyboardAvoidingView, Image, Easing
 } from 'react-native';
 import Reanimated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +22,12 @@ import type { DuaItem } from '@/src/data/duas';
 import { MORNING_EVENING_ADHKAR, AdhkarItem } from '@/src/data/adhkar';
 import { DHIKR_DATA } from '@/src/data/quran/dhikrData';
 import Svg, { Path } from 'react-native-svg';
+import {
+  AppButton,
+  AppIconButton,
+  AppTextInput,
+} from '@/src/components/ui';
+import { AppEmptyState } from '@/src/components/states';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 32;
@@ -929,16 +935,22 @@ export default function TasbihScreen() {
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.surface }]} edges={['top']}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Select Dhikr</Text>
-            <Pressable onPress={() => setShowPicker(false)} hitSlop={10}>
-              <MaterialCommunityIcons name="close" size={26} color={colors.onSurface} />
-            </Pressable>
+            <AppIconButton
+              accessibilityLabel="Close dhikr selection"
+              icon="close"
+              onPress={() => setShowPicker(false)}
+            />
           </View>
-          <View style={[styles.searchRow, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
-            <TextInput value={searchQuery} onChangeText={setSearchQuery} placeholder="Search dhikr or dua..."
-              placeholderTextColor={colors.onSurfaceMuted} style={[styles.searchInput, { color: colors.onSurface }]} />
-            {searchQuery ? <Pressable onPress={() => setSearchQuery('')}><MaterialCommunityIcons name="close-circle" size={18} color={colors.onSurfaceMuted} /></Pressable> : null}
-          </View>
+          <AppTextInput
+            containerStyle={styles.searchRow}
+            leadingIcon="magnify"
+            onChangeText={setSearchQuery}
+            onTrailingIconPress={searchQuery ? () => setSearchQuery('') : undefined}
+            placeholder="Search dhikr or dua..."
+            trailingIcon={searchQuery ? "close-circle" : undefined}
+            trailingIconAccessibilityLabel="Clear dhikr search"
+            value={searchQuery}
+          />
           <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
             {(['all', 'main', 'other', 'adhkar'] as const).map(tab => (
               <Pressable key={tab} onPress={() => setPickerTab(tab)}
@@ -951,10 +963,15 @@ export default function TasbihScreen() {
           </View>
           <FlatList data={pickerItems} keyExtractor={item => item.id} renderItem={renderPickerItem}
             contentContainerStyle={{ padding: 16, gap: 10 }} showsVerticalScrollIndicator={false}
-            ListEmptyComponent={<View style={{ alignItems: 'center', paddingTop: 40 }}>
-              <MaterialCommunityIcons name="magnify-close" size={40} color={colors.onSurfaceMuted} />
-              <Text style={{ color: colors.onSurfaceMuted, marginTop: 12 }}>No results found</Text>
-            </View>} keyboardShouldPersistTaps="handled" />
+            ListEmptyComponent={
+              <AppEmptyState
+                compact
+                description="Try a different phrase or category."
+                title="No dhikr found"
+              />
+            }
+            keyboardShouldPersistTaps="handled"
+          />
         </SafeAreaView>
       </Modal>
 
@@ -964,16 +981,27 @@ export default function TasbihScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowTargetModal(false)} />
           <View style={[styles.modalCard, { backgroundColor: colors.surfaceSecondary }]}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Set Custom Target</Text>
-            <TextInput value={customTargetInput} onChangeText={setCustomTargetInput} keyboardType="numeric"
-              placeholder="Enter target (e.g. 500)" placeholderTextColor={colors.onSurfaceMuted}
-              style={[styles.numInput, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface }]} autoFocus />
+            <AppTextInput
+              autoFocus
+              keyboardType="numeric"
+              label="Target"
+              onChangeText={setCustomTargetInput}
+              placeholder="Enter target (e.g. 500)"
+              style={styles.numInput}
+              value={customTargetInput}
+            />
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable onPress={() => setShowTargetModal(false)} style={[styles.modalBtn, { borderColor: colors.border, borderWidth: 1 }]}>
-                <Text style={{ color: colors.onSurfaceMuted, fontWeight: '600' }}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={handleCustomTargetConfirm} style={[styles.modalBtn, { backgroundColor: colors.brand }]}>
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Set Target</Text>
-              </Pressable>
+              <AppButton
+                label="Cancel"
+                onPress={() => setShowTargetModal(false)}
+                style={styles.modalBtn}
+                variant="outlined"
+              />
+              <AppButton
+                label="Set Target"
+                onPress={handleCustomTargetConfirm}
+                style={styles.modalBtn}
+              />
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -989,19 +1017,24 @@ export default function TasbihScreen() {
               <Text style={[styles.modalTitle, { color: colors.onSurface, textAlign: 'left', flex: 1 }]}>Save Progress</Text>
             </View>
             <Text style={{ color: colors.onSurfaceMuted, fontSize: 13 }}>{selectedPhrase?.transliteration} · {count} of {targetCount}</Text>
-            <TextInput value={sessionNameInput} onChangeText={setSessionNameInput}
+            <AppTextInput value={sessionNameInput} onChangeText={setSessionNameInput}
+              label="Session name"
               placeholder={`${selectedPhrase?.transliteration ?? 'Dhikr'} – ${new Date().toLocaleDateString()}`}
-              placeholderTextColor={colors.onSurfaceMuted}
-              style={[styles.numInput, { color: colors.onSurface, borderColor: colors.border, backgroundColor: colors.surface, fontSize: 14 }]}
+              style={[styles.numInput, { fontSize: 14 }]}
               autoFocus returnKeyType="done" onSubmitEditing={handleSaveProgress} />
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable onPress={() => setShowSaveModal(false)} style={[styles.modalBtn, { borderColor: colors.border, borderWidth: 1 }]}>
-                <Text style={{ color: colors.onSurfaceMuted, fontWeight: '600' }}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={handleSaveProgress}
-                style={[styles.modalBtn, { backgroundColor: count === 0 ? colors.border : '#27ae60', opacity: count === 0 ? 0.5 : 1 }]} disabled={count === 0}>
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>
-              </Pressable>
+              <AppButton
+                label="Cancel"
+                onPress={() => setShowSaveModal(false)}
+                style={styles.modalBtn}
+                variant="outlined"
+              />
+              <AppButton
+                disabled={count === 0}
+                label="Save"
+                onPress={handleSaveProgress}
+                style={styles.modalBtn}
+              />
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -1182,8 +1215,7 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth },
   modalTitle: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 16, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
-  searchInput: { flex: 1, fontSize: 15 },
+  searchRow: { margin: 16 },
   bottomTabs: {
     flexDirection: 'row',
     padding: 10,
@@ -1227,6 +1259,6 @@ const styles = StyleSheet.create({
   pickerAddBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#00000090', padding: 24 },
   modalCard: { width: '100%', borderRadius: 20, padding: 24, gap: 14 },
-  numInput: { borderWidth: 1.5, borderRadius: 12, padding: 14, fontSize: 17, textAlign: 'center', fontWeight: '700' },
-  modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  numInput: { fontSize: 17, textAlign: 'center', fontWeight: '700' },
+  modalBtn: { flex: 1 },
 });

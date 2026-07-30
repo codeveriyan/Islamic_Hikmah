@@ -5,10 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  TextInput,
   Modal,
   Share,
-  Switch,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +16,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
 import { getQadhaCounts, saveQadhaCounts, QadhaCounts } from "@/src/storage";
+import { AppSwitch, AppTextInput } from "@/src/components/ui";
 
 const PRAYER_NAMES: (keyof QadhaCounts)[] = [
   "Fajr",
@@ -207,7 +206,14 @@ export default function QadhaTrackerScreen() {
         </View>
         <View style={[styles.optionsCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Include Witr</Text>
-          <Switch value={includeWitr} onValueChange={value => { setIncludeWitr(value); AsyncStorage.setItem("hikmah:qadha:include-witr:v1", String(value)); }} />
+          <AppSwitch
+            accessibilityLabel="Include Witr"
+            value={includeWitr}
+            onValueChange={value => {
+              setIncludeWitr(value);
+              AsyncStorage.setItem("hikmah:qadha:include-witr:v1", String(value));
+            }}
+          />
         </View>
         <Pressable onPress={exportBackup} style={[styles.exportBtn, { borderColor: colors.brand }]}>
           <MaterialCommunityIcons name="export-variant" size={18} color={colors.brand} />
@@ -222,8 +228,9 @@ export default function QadhaTrackerScreen() {
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
               Set {editingPrayer} Count
             </Text>
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.surface, color: colors.onSurface, borderColor: colors.border }]}
+            <AppTextInput
+              label={`${editingPrayer ?? "Prayer"} count`}
+              style={styles.modalInput}
               value={inputVal}
               onChangeText={setInputVal}
               keyboardType="number-pad"

@@ -5,10 +5,8 @@ import {
   StyleSheet, 
   Pressable, 
   ScrollView, 
-  ActivityIndicator, 
   Alert,
   Modal,
-  TextInput,
   Platform,
   Linking
 } from "react-native";
@@ -23,6 +21,11 @@ import * as Clipboard from "expo-clipboard";
 import { auth } from "@/src/firebase";
 import { API_BASE_URL } from "@/src/apiBaseUrl";
 import { initPurchaseService, purchasePlan, restorePurchases } from "@/src/services/purchaseService";
+import {
+  AppButton,
+  AppIconButton,
+  AppTextInput,
+} from "@/src/components/ui";
 
 export default function PremiumScreen() {
   const router = useRouter();
@@ -206,12 +209,12 @@ export default function PremiumScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
       {/* Top Close Button */}
       <View style={styles.topHeader}>
-        <Pressable 
+        <AppIconButton
+          accessibilityLabel="Close premium screen"
+          icon="close"
           onPress={() => router.back()} 
-          style={[styles.closeBtn, { backgroundColor: colors.surfaceSecondary }]}
-        >
-          <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
-        </Pressable>
+          variant="tonal"
+        />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -354,19 +357,13 @@ export default function PremiumScreen() {
         <View style={styles.actionsSection}>
 
           {!profile?.trialStartedAt && profile?.tier !== "premium" && (
-            <Pressable
+            <AppButton
+              fullWidth
+              icon="clock-outline"
+              label="Start 7-day free trial"
               onPress={handleStartTrial}
-              style={({ pressed }) => [
-                styles.trialBtn,
-                { backgroundColor: "rgba(39,174,96,0.12)", borderColor: "#27ae60", borderWidth: 1.5 },
-                pressed && { opacity: 0.8 }
-              ]}
-            >
-              <MaterialCommunityIcons name="clock-outline" size={20} color="#27ae60" style={{ marginRight: 6 }} />
-              <Text style={[styles.trialBtnTxt, { color: "#27ae60" }]}>
-                Start 7-Day Free Trial
-              </Text>
-            </Pressable>
+              variant="outlined"
+            />
           )}
 
           {profile?.trialActive && (
@@ -377,23 +374,22 @@ export default function PremiumScreen() {
             </View>
           )}
           
-          <Pressable
+          <AppButton
+            fullWidth
+            label={
+              selectedPlan === "lifetime"
+                ? "Unlock lifetime access"
+                : "Subscribe now"
+            }
             onPress={handleSubscribe}
-            style={({ pressed }) => [
-              styles.subscribeBtn,
-              { backgroundColor: colors.brand },
-              pressed && { opacity: 0.9 }
-            ]}
-          >
-            <Text style={[styles.subscribeBtnTxt, { color: colors.onBrandPrimary }]}>
-              {selectedPlan === "lifetime" ? "Unlock Lifetime Access" : "Subscribe Now"}
-            </Text>
-          </Pressable>
+          />
 
           <View style={styles.linksRow}>
-            <Pressable onPress={handleRestore} style={styles.linkBtn}>
-              <Text style={[styles.linkBtnTxt, { color: colors.onSurfaceMuted }]}>Restore Purchase</Text>
-            </Pressable>
+            <AppButton
+              label="Restore purchase"
+              onPress={handleRestore}
+              variant="text"
+            />
           </View>
 
         </View>
@@ -431,29 +427,22 @@ export default function PremiumScreen() {
 
               {/* Pay Button for Mobile */}
               {Platform.OS !== "web" && (
-                <Pressable
+                <AppButton
+                  fullWidth
+                  icon="flash"
+                  label="Open UPI payment apps"
                   onPress={handlePayViaUPI}
-                  style={({ pressed }) => [
-                    styles.upiPayButton,
-                    { backgroundColor: colors.brand },
-                    pressed && { opacity: 0.9 }
-                  ]}
-                >
-                  <MaterialCommunityIcons name="flash" size={20} color={colors.onBrandPrimary} style={{ marginRight: 6 }} />
-                  <Text style={[styles.upiPayButtonText, { color: colors.onBrandPrimary }]}>Open UPI Payment Apps</Text>
-                </Pressable>
+                />
               )}
 
               {/* Manual UPI/QR Trigger */}
-              <Pressable 
+              <AppButton
+                fullWidth
+                icon="qrcode"
+                label={showQR ? "Hide QR code" : "Show static UPI QR code"}
                 onPress={() => setShowQR(!showQR)} 
-                style={[styles.qrTrigger, { borderColor: colors.border }]}
-              >
-                <MaterialCommunityIcons name="qrcode" size={18} color={colors.onSurface} style={{ marginRight: 6 }} />
-                <Text style={[styles.qrTriggerTxt, { color: colors.onSurface }]}>
-                  {showQR ? "Hide QR Code" : "Show static UPI QR Code"}
-                </Text>
-              </Pressable>
+                variant="outlined"
+              />
 
               {/* Static QR Section */}
               {showQR && (
@@ -477,9 +466,11 @@ export default function PremiumScreen() {
                   
                   <View style={styles.upiIdRow}>
                     <Text style={[styles.upiIdTxt, { color: colors.onSurfaceMuted }]}>UPI ID: islamichikmah@ybl</Text>
-                    <Pressable onPress={handleCopyUPI} hitSlop={8} style={styles.copyBtn}>
-                      <MaterialCommunityIcons name="content-copy" size={16} color={colors.brand} />
-                    </Pressable>
+                    <AppIconButton
+                      accessibilityLabel="Copy UPI ID"
+                      icon="content-copy"
+                      onPress={handleCopyUPI}
+                    />
                   </View>
                 </View>
               )}
@@ -492,46 +483,37 @@ export default function PremiumScreen() {
                 <Text style={[styles.verificationDesc, { color: colors.onSurfaceMuted }]}>
                   After completing the transfer, submit the UTR for manual payment review.
                 </Text>
-                <TextInput
-                  style={[styles.utrInput, { backgroundColor: colors.surface, color: colors.onSurface, borderColor: colors.border }]}
-                  placeholder="e.g. 620478193024"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  value={utr}
-                  onChangeText={setUtr}
-                  keyboardType="numeric"
-                  maxLength={12}
+                <AppTextInput
                   autoCorrect={false}
+                  keyboardType="numeric"
+                  label="UPI reference number"
+                  leadingIcon="receipt-text-outline"
+                  maxLength={12}
+                  onChangeText={setUtr}
+                  placeholder="e.g. 620478193024"
+                  value={utr}
                 />
               </View>
 
               {/* Action Buttons */}
               <View style={styles.modalActions}>
-                <Pressable
+                <AppButton
+                  fullWidth
+                  label="Submit for review"
+                  loading={verifying}
                   onPress={handleVerifyUTR}
-                  disabled={verifying}
-                  style={({ pressed }) => [
-                    styles.verifyBtn,
-                    { backgroundColor: colors.brand },
-                    (pressed || verifying) && { opacity: 0.9 }
-                  ]}
-                >
-                  {verifying ? (
-                    <ActivityIndicator color={colors.onBrandPrimary} />
-                  ) : (
-                    <Text style={[styles.verifyBtnTxt, { color: colors.onBrandPrimary }]}>Submit for Review</Text>
-                  )}
-                </Pressable>
+                />
 
-                <Pressable
+                <AppButton
+                  fullWidth
+                  label="Cancel"
                   onPress={() => {
                     setUpiModalVisible(false);
                     setUtr("");
                     setShowQR(false);
                   }}
-                  style={styles.cancelBtn}
-                >
-                  <Text style={[styles.cancelBtnTxt, { color: colors.onSurfaceMuted }]}>Cancel</Text>
-                </Pressable>
+                  variant="text"
+                />
               </View>
 
             </ScrollView>

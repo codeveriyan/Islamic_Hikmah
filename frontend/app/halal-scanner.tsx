@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,6 +22,7 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
+import { AppTextInput } from "@/src/components/ui";
 
 type IngredientStatus = "unknown" | "mushbooh" | "haram";
 type VerifyMode = "photo" | "barcode" | "text";
@@ -461,7 +461,7 @@ export default function HalalScannerScreen() {
               </View>
             </View>
           )}
-          <TextInput
+          <AppTextInput
             value={productName}
             onChangeText={setProductName}
             placeholder="Product name"
@@ -470,13 +470,14 @@ export default function HalalScannerScreen() {
           />
           {verifyMode !== "text" && (
             <View style={styles.barcodeRow}>
-              <TextInput
+              <AppTextInput
+                containerStyle={{ flex: 1 }}
                 value={barcode}
                 onChangeText={setBarcode}
                 placeholder="Barcode number"
                 placeholderTextColor={colors.onSurfaceMuted}
                 keyboardType="number-pad"
-                style={[styles.barcodeInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.onSurface }]}
+                style={{ backgroundColor: colors.surface }}
               />
               <Pressable onPress={openBarcodeScanner} style={[styles.squareBtn, { backgroundColor: colors.brand + "18", borderColor: colors.brand + "55" }]}>
                 <MaterialCommunityIcons name="barcode-scan" size={22} color={colors.brand} />
@@ -486,7 +487,7 @@ export default function HalalScannerScreen() {
               </Pressable>
             </View>
           )}
-          <TextInput
+          <AppTextInput
             value={ingredients}
             onChangeText={setIngredients}
             placeholder={verifyMode === "barcode" ? "Ingredients from barcode lookup or package label..." : "Paste ingredients list..."}
@@ -672,7 +673,6 @@ const styles = StyleSheet.create({
   miniBtnText: { fontSize: 12, fontWeight: "900" },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   barcodeRow: { flexDirection: "row", gap: 8 },
-  barcodeInput: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   squareBtn: {
     width: 48,
     borderRadius: 12,

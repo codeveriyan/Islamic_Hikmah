@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  TextInput,
   ScrollView,
   Alert,
   Modal,
@@ -16,6 +15,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
+import {
+  AppButton,
+  AppIconButton,
+  AppTextInput,
+} from "@/src/components/ui";
 
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
@@ -695,21 +699,17 @@ export default function QuranIndex() {
 
       {/* Search */}
       {activeTab !== "learn" && activeTab !== "mutashabihat" && (
-        <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
-          <TextInput
-            value={q} onChangeText={setQ}
-            placeholder={activeTab === "read" ? t("searchPageOrSurah") : t("searchSurahName")}
-            placeholderTextColor={colors.onSurfaceMuted}
-            style={[styles.search, { color: colors.onSurface }]}
-            testID="surah-search"
-          />
-          {q.length > 0 && (
-            <Pressable onPress={() => setQ("")} hitSlop={8}>
-              <MaterialCommunityIcons name="close-circle" size={18} color={colors.onSurfaceMuted} />
-            </Pressable>
-          )}
-        </View>
+        <AppTextInput
+          containerStyle={styles.searchWrap}
+          leadingIcon="magnify"
+          onChangeText={setQ}
+          onTrailingIconPress={q ? () => setQ("") : undefined}
+          placeholder={activeTab === "read" ? t("searchPageOrSurah") : t("searchSurahName")}
+          testID="surah-search"
+          trailingIcon={q ? "close-circle" : undefined}
+          trailingIconAccessibilityLabel="Clear Qur'an search"
+          value={q}
+        />
       )}
 
       {loading ? (
@@ -892,9 +892,11 @@ export default function QuranIndex() {
           <View style={[styles.noteModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.noteModalHeader}>
               <Text style={[styles.noteModalTitle, { color: colors.onSurface }]}>Verse Reflection Note</Text>
-              <Pressable onPress={() => setNoteModalVisible(false)} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close reflection note"
+                icon="close"
+                onPress={() => setNoteModalVisible(false)}
+              />
             </View>
 
             {editingBookmark && (
@@ -903,36 +905,27 @@ export default function QuranIndex() {
               </Text>
             )}
 
-            <TextInput
+            <AppTextInput
               value={noteInput}
               onChangeText={setNoteInput}
               placeholder="Write your reflections, notes, or lessons from this verse..."
-              placeholderTextColor={colors.onSurfaceMuted}
               multiline
               numberOfLines={4}
-              style={[
-                styles.noteInputText,
-                {
-                  color: colors.onSurface,
-                  backgroundColor: colors.surfaceSecondary,
-                  borderColor: colors.border,
-                },
-              ]}
+              style={styles.noteInputText}
             />
 
             <View style={styles.noteModalActions}>
-              <Pressable
+              <AppButton
+                label="Cancel"
                 onPress={() => setNoteModalVisible(false)}
-                style={[styles.noteBtn, { backgroundColor: colors.surfaceSecondary }]}
-              >
-                <Text style={{ color: colors.onSurface, fontWeight: "700" }}>Cancel</Text>
-              </Pressable>
-              <Pressable
+                style={styles.noteBtn}
+                variant="text"
+              />
+              <AppButton
+                label="Save Note"
                 onPress={saveNote}
-                style={[styles.noteBtn, { backgroundColor: colors.brand }]}
-              >
-                <Text style={{ color: colors.onBrandPrimary, fontWeight: "700" }}>Save Note</Text>
-              </Pressable>
+                style={styles.noteBtn}
+              />
             </View>
           </View>
         </View>
@@ -955,9 +948,11 @@ export default function QuranIndex() {
                   {selectedSurahForInfo?.englishNameTranslation}
                 </Text>
               </View>
-              <Pressable onPress={closeSurahInfoModal} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurfaceMuted} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close Surah information"
+                icon="close"
+                onPress={closeSurahInfoModal}
+              />
             </View>
 
             {selectedSurahForInfo && (() => {
@@ -1109,12 +1104,12 @@ export default function QuranIndex() {
               );
             })()}
 
-            <Pressable
+            <AppButton
+              fullWidth
+              label="Dismiss"
               onPress={closeSurahInfoModal}
-              style={[styles.infoBtnClose, { backgroundColor: colors.brand }]}
-            >
-              <Text style={{ color: colors.onBrandPrimary, fontWeight: "700" }}>Dismiss</Text>
-            </Pressable>
+              style={styles.infoBtnClose}
+            />
           </View>
         </View>
       </Modal>
@@ -1151,10 +1146,9 @@ const styles = StyleSheet.create({
   segmentBtnActive: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 2 },
   segmentTxt: { fontSize: 13, fontWeight: "700" },
   searchWrap: {
-    flexDirection: "row", alignItems: "center", marginHorizontal: theme.spacing.lg,
-    paddingHorizontal: 14, borderRadius: 12, gap: 8, marginBottom: 12,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: 12,
   },
-  search: { flex: 1, paddingVertical: 12, fontSize: 14 },
   resumeBanner: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     marginHorizontal: theme.spacing.lg, padding: theme.spacing.md,
@@ -1219,9 +1213,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   noteInputText: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
     fontSize: 14,
     minHeight: 100,
     textAlignVertical: "top",

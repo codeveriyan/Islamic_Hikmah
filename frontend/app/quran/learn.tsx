@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   FlatList,
-  TextInput,
   Dimensions,
   LayoutAnimation,
 } from "react-native";

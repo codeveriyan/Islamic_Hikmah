@@ -7,7 +7,6 @@ import {
   FlatList,
   Pressable,
   Alert,
-  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -26,6 +25,7 @@ import {
 } from "@/src/storage";
 import { SURAH_LIST } from "@/src/data/surahList";
 import pageMapping from "@/src/data/quran/pageMapping.json";
+import { AppTextInput } from "@/src/components/ui";
 
 import { JUZ_DATA } from "@/src/data/juzData";
 
@@ -203,12 +203,16 @@ export default function QuranBookmarksScreen() {
       {/* Search bar */}
       <View style={[styles.searchRow, { backgroundColor: colors.surfaceSecondary }]}>
         <MaterialCommunityIcons name="magnify" size={18} color={colors.onSurfaceMuted} />
-        <TextInput
+        <AppTextInput
+          activeUnderlineColor="transparent"
+          containerStyle={{ flex: 1 }}
+          mode="flat"
           value={searchQ}
           onChangeText={setSearchQ}
           placeholder="Search bookmarks..."
           placeholderTextColor={colors.onSurfaceMuted}
           style={[styles.searchInput, { color: colors.onSurface }]}
+          underlineColor="transparent"
         />
         {searchQ.length > 0 && (
           <Pressable onPress={() => setSearchQ("")} hitSlop={8}>

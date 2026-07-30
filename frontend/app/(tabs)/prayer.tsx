@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -20,6 +20,11 @@ import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { format12Hour } from "@/src/utils/time";
 import { theme } from "@/src/theme";
+import {
+  AppErrorState,
+  AppLoadingState,
+  AppPermissionState,
+} from "@/src/components/states";
 
 const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
 const PRAYER_ICONS: Record<string, string> = {
@@ -278,33 +283,28 @@ export default function PrayerTab() {
             </View>
           </AnimatedCard>
         ) : (
-          <View style={[s.emptyCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <View style={[s.emptyIcon, { backgroundColor: colors.brand + "18" }]}>
-              <MaterialCommunityIcons name="map-marker-radius" size={30} color={colors.brand} />
-            </View>
-            <Text style={[s.emptyTitle, { color: colors.onSurface }]}>Set your prayer location</Text>
-            <Text style={[s.emptyText, { color: colors.onSurfaceMuted }]}>
-              Use your current location to calculate accurate daily prayer times.
-            </Text>
-            {loadError ? <Text style={[s.errorText, { color: colors.error }]}>{loadError}</Text> : null}
-            <Pressable
-              onPress={loadPrayerTimes}
-              disabled={isLoadingTimes}
-              accessibilityRole="button"
-              accessibilityLabel="Use current location"
-              accessibilityState={{ disabled: isLoadingTimes, busy: isLoadingTimes }}
-              style={[s.locationButton, { backgroundColor: colors.brand }]}
-            >
-              {isLoadingTimes ? (
-                <ActivityIndicator color={colors.onBrandPrimary} />
-              ) : (
-                <>
-                  <MaterialCommunityIcons name="crosshairs-gps" size={20} color={colors.onBrandPrimary} />
-                  <Text style={[s.locationButtonText, { color: colors.onBrandPrimary }]}>Use current location</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
+          isLoadingTimes ? (
+            <AppLoadingState
+              compact
+              description="Requesting your location and calculating today's schedule."
+              title="Finding prayer times"
+            />
+          ) : loadError && !/location|permission/i.test(loadError) ? (
+            <AppErrorState
+              compact
+              description={loadError}
+              onRetry={loadPrayerTimes}
+              title="Prayer times unavailable"
+            />
+          ) : (
+            <AppPermissionState
+              compact
+              description={loadError ?? "Use your current location to calculate accurate daily prayer times."}
+              onTryAgain={loadPrayerTimes}
+              permission="location"
+              title="Set your prayer location"
+            />
+          )
         )}
 
         {/* Today's Schedule */}
@@ -408,54 +408,6 @@ const s = StyleSheet.create({
   settingsBtnInner: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   settingsBtnTxt: { fontSize: 13, fontWeight: "700", fontFamily: "Figtree_400Regular" },
   scroll: { padding: theme.spacing.lg },
-  emptyCard: {
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    padding: 24,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
-  },
-  emptyTitle: {
-    fontFamily: "Outfit_700Bold",
-    fontSize: 19,
-    textAlign: "center",
-  },
-  emptyText: {
-    fontFamily: "Figtree_400Regular",
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: "center",
-    marginTop: 6,
-  },
-  errorText: {
-    fontFamily: "Figtree_500Medium",
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: "center",
-    marginTop: 10,
-  },
-  locationButton: {
-    minHeight: theme.layout.touchTarget,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 20,
-    marginTop: 18,
-  },
-  locationButtonText: {
-    fontFamily: "Figtree_700Bold",
-    fontSize: 15,
-  },
   scheduleEmptyText: {
     fontFamily: "Figtree_400Regular",
     fontSize: 14,

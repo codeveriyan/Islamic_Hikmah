@@ -6,8 +6,7 @@ import {
   Pressable, 
   ScrollView, 
   Modal, 
-  FlatList,
-  TextInput
+  FlatList
 } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +17,7 @@ import quranData from "@/src/data/quran/quranData.json";
 import matchingAyahData from "@/src/data/quran/matching-ayah.json";
 import { SURAH_LIST } from "@/src/data/surahList";
 import * as Haptics from "expo-haptics";
+import { AppTextInput } from "@/src/components/ui";
 
 // Helper to normalize Arabic diacritics/variations for fuzzy matching
 const normalizeArabic = (text: string) => {
@@ -476,12 +476,16 @@ export default function MutashabihatView() {
             {/* Search Bar */}
             <View style={[styles.searchBar, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
               <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
-              <TextInput
+              <AppTextInput
+                activeUnderlineColor="transparent"
+                containerStyle={{ flex: 1 }}
+                mode="flat"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 placeholder="Search Surah Name..."
                 placeholderTextColor={colors.onSurfaceMuted}
                 style={[styles.searchInput, { color: colors.onSurface }]}
+                underlineColor="transparent"
               />
             </View>
 

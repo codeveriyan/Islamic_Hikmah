@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Switch,
   Modal,
   FlatList,
 } from "react-native";
@@ -18,6 +17,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { resolveUserLocation, saveRamadanLog, getRamadanLogs, FastingLog, getPrayerSettings, getPrayerTimingsCache, localDateKey } from "@/src/storage";
 import { calculateLocalPrayerTimes } from "@/src/services/prayerCalculation";
 import { format12Hour } from "@/src/utils/time";
+import { AppSwitch } from "@/src/components/ui";
 
 export default function RamadanScreen() {
   const router = useRouter();
@@ -157,10 +157,10 @@ export default function RamadanScreen() {
               </Text>
             </View>
           </View>
-          <Switch
+          <AppSwitch
+            accessibilityLabel="Fasted today"
             value={todayFasted}
             onValueChange={toggleTodayFast}
-            trackColor={{ false: colors.border, true: colors.brand }}
           />
         </View>
 

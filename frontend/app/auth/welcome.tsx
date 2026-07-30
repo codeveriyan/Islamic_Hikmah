@@ -9,6 +9,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/src/AuthContext";
+import { AppButton } from "@/src/components/ui";
 
 // Multicolor Google G logo in SVG
 const GoogleGIcon = () => (
@@ -108,37 +109,24 @@ export default function WelcomeScreen() {
             )}
           </Pressable>
 
-          {/* Continue with Email */}
-          <Pressable
-            onPress={handleEmailPress}
-            disabled={loading}
-            accessibilityRole="button"
+          <AppButton
             accessibilityLabel="Continue with email"
-            accessibilityState={{ disabled: loading }}
-            style={({ pressed }) => [
-              styles.emailBtn,
-              { backgroundColor: colors.brand },
-              pressed && { opacity: 0.9 }
-            ]}
-          >
-            <MaterialCommunityIcons name="email" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
-            <Text style={styles.emailBtnText}>Continue with Email</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={handleGuestPress}
             disabled={loading}
-            accessibilityRole="button"
+            fullWidth
+            icon="email"
+            label="Continue with Email"
+            onPress={handleEmailPress}
+          />
+
+          <AppButton
             accessibilityLabel="Continue as guest"
             accessibilityHint="Uses the app without creating an account"
-            accessibilityState={{ disabled: loading }}
-            style={({ pressed }) => [
-              styles.laterBtn,
-              pressed && { opacity: 0.7 }
-            ]}
-          >
-            <Text style={[styles.laterText, { color: colors.onSurface }]}>Continue as guest</Text>
-          </Pressable>
+            disabled={loading}
+            fullWidth
+            label="Continue as guest"
+            onPress={handleGuestPress}
+            variant="text"
+          />
           <Text style={[styles.guestHint, { color: colors.onSurfaceMuted }]}>
             Guest progress stays on this device. You can create an account later.
           </Text>

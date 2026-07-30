@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, TextInput, ActivityIndicator, Share, ScrollView, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Share, ScrollView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
@@ -16,6 +16,7 @@ import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
 import { HADITH_INTRODUCTIONS } from "@/src/data/hadithIntroductions";
 import { getHadithFallback } from "@/src/services/cdnContentService";
 import { API_BASE_URL } from "@/src/apiBaseUrl";
+import { AppTextInput } from "@/src/components/ui";
 // hadithFallback.json (19.3 MB) is no longer bundled.
 // It is fetched from Cloudflare R2 CDN on first use and cached to disk.
 import { 
@@ -780,7 +781,10 @@ export default function HadithDetailScreen() {
       {/* Search Input Bar */}
       <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
         <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
-        <TextInput
+        <AppTextInput
+          activeUnderlineColor="transparent"
+          containerStyle={{ flex: 1 }}
+          mode="flat"
           value={q}
           onChangeText={(txt) => {
             setQ(txt);
@@ -789,6 +793,7 @@ export default function HadithDetailScreen() {
           placeholder={viewMode === "index" ? "Search chapters or categories..." : (t("searchPlaceholder") || "Search Hadith or Hadith #...")}
           placeholderTextColor={colors.onSurfaceMuted}
           style={[styles.search, { color: colors.onSurface }]}
+          underlineColor="transparent"
         />
         {q.length > 0 && (
           <Pressable onPress={() => setQ("")} hitSlop={8}>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import data from "@/src/data/hisnulMuslim.json";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
+import { AppTextInput } from "@/src/components/ui";
 
 export default function FortressIndexScreen() {
   const router = useRouter();
@@ -38,12 +39,16 @@ export default function FortressIndexScreen() {
 
       <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
         <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
-        <TextInput
+        <AppTextInput
+          activeUnderlineColor="transparent"
+          containerStyle={{ flex: 1 }}
+          mode="flat"
           value={query}
           onChangeText={setQuery}
           placeholder="Search chapters"
           placeholderTextColor={colors.onSurfaceMuted}
           style={[styles.search, { color: colors.onSurface }]}
+          underlineColor="transparent"
         />
         {!!query && (
           <Pressable onPress={() => setQuery("")} hitSlop={8}>

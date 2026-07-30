@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Switch, Modal, ScrollView, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Modal, ScrollView, Platform, Alert } from "react-native";
 import { SkeletonBone } from "@/src/components/SkeletonLoader";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -17,6 +17,12 @@ import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS } from "@/src/data/goals";
 import { format12Hour } from "@/src/utils/time";
 import { calculateLocalPrayerTimes } from "@/src/services/prayerCalculation";
+import { AppIconButton } from "@/src/components/ui";
+import {
+  AppErrorState,
+  AppOfflineState,
+  AppStatusBanner,
+} from "@/src/components/states";
 import { 
   resolveUserLocation, 
   getPrayerSettings, 
@@ -439,23 +445,40 @@ export default function PrayerTimesScreen() {
             <SkeletonBone key={i} width="100%" height={56} borderRadius={14} />
           ))}
         </View>
-      ) : err ? (
-        <View style={styles.errBox}>
-          <MaterialCommunityIcons name="wifi-off" size={48} color={colors.onSurfaceMuted} />
-          <Text style={[styles.errTxt, { color: colors.onSurfaceMuted }]}>{err}</Text>
-          <Pressable onPress={() => load()} style={[styles.retry, { backgroundColor: colors.brand }]}>
-            <Text style={[styles.retryTxt, { color: colors.onBrandPrimary }]}>{t("retry")}</Text>
-          </Pressable>
-        </View>
+      ) : err && !times ? (
+        /offline|cached|connection|network/i.test(err) ? (
+          <AppOfflineState
+            description={err}
+            onRetry={() => load()}
+            style={styles.errBox}
+          />
+        ) : (
+          <AppErrorState
+            description={err}
+            onRetry={() => load()}
+            style={styles.errBox}
+          />
+        )
       ) : (
         <FlatList
           data={PRAYERS}
           keyExtractor={p => p}
           renderItem={renderPrayer}
           contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.sm, paddingBottom: 32 }}
-          getItemLayout={(_, i) => ({ length: 72, offset: 72 * i, index: i })}
           windowSize={5}
           removeClippedSubviews
+          ListHeaderComponent={
+            err ? (
+              <AppStatusBanner
+                actionLabel={t("retry")}
+                kind="offline"
+                message={err}
+                onAction={() => load()}
+                style={styles.offlineBanner}
+                title="Using offline prayer times"
+              />
+            ) : null
+          }
           ListFooterComponent={
             <View style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}>
               {/* Prayer Logs Row */}
@@ -531,9 +554,11 @@ export default function PrayerTimesScreen() {
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface }]}>{t("calculationMethod")}</Text>
-              <Pressable onPress={() => setShowMethodPicker(false)} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close calculation method"
+                icon="close"
+                onPress={() => setShowMethodPicker(false)}
+              />
             </View>
             <ScrollView>
               {CALC_METHODS.map(m => (
@@ -557,9 +582,11 @@ export default function PrayerTimesScreen() {
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface }]}>{t("juristicMethod")}</Text>
-              <Pressable onPress={() => setShowJuristicPicker(false)} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close juristic method"
+                icon="close"
+                onPress={() => setShowJuristicPicker(false)}
+              />
             </View>
             {JURISTIC_METHODS.map(j => (
               <Pressable key={j.id} onPress={() => selectJuristic(j.id)}
@@ -581,9 +608,11 @@ export default function PrayerTimesScreen() {
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Manual Time Correction</Text>
-              <Pressable onPress={() => setShowOffsetPicker(false)} hitSlop={10}>
-                <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
-              </Pressable>
+              <AppIconButton
+                accessibilityLabel="Close manual time correction"
+                icon="close"
+                onPress={() => setShowOffsetPicker(false)}
+              />
             </View>
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 350 }}>
               {["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha", "Qiyam"].map(p => {
@@ -604,21 +633,23 @@ export default function PrayerTimesScreen() {
                       </Text>
                     </View>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                      <Pressable
+                      <AppIconButton
+                        accessibilityLabel={`Decrease ${p} adjustment`}
+                        icon="minus"
                         onPress={() => updateOffset(currentOffset - 1)}
-                        style={{ padding: 8, borderRadius: 8, backgroundColor: colors.surfaceTertiary }}
-                      >
-                        <MaterialCommunityIcons name="minus" size={20} color={colors.onSurface} />
-                      </Pressable>
+                        size={20}
+                        variant="tonal"
+                      />
                       <Text style={{ minWidth: 32, textAlign: "center", color: colors.onSurface, fontWeight: "700" }}>
                         {currentOffset}
                       </Text>
-                      <Pressable
+                      <AppIconButton
+                        accessibilityLabel={`Increase ${p} adjustment`}
+                        icon="plus"
                         onPress={() => updateOffset(currentOffset + 1)}
-                        style={{ padding: 8, borderRadius: 8, backgroundColor: colors.surfaceTertiary }}
-                      >
-                        <MaterialCommunityIcons name="plus" size={20} color={colors.onSurface} />
-                      </Pressable>
+                        size={20}
+                        variant="tonal"
+                      />
                     </View>
                   </View>
                 );
@@ -649,9 +680,7 @@ const styles = StyleSheet.create({
   nextBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99 },
   nextBadgeTxt: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
   errBox: { padding: theme.spacing.xl, alignItems: "center", gap: theme.spacing.md },
-  errTxt: { textAlign: "center" },
-  retry: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: theme.radius.pill },
-  retryTxt: { fontWeight: "700" },
+  offlineBanner: { marginBottom: theme.spacing.md },
   settingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderRadius: theme.radius.lg },
   settingLabel: { fontSize: 16, fontWeight: "600" },
   settingValue: { fontSize: 13, marginTop: 2 },

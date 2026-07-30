@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, KeyboardAvoidingView, Platform, LayoutAnimation } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, KeyboardAvoidingView, Platform, LayoutAnimation } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
+import { AppTextInput } from "@/src/components/ui";
 
 // Currency definitions with default gold/silver rates per gram
 type CurrencyOption = {
@@ -381,7 +382,7 @@ export default function ZakatCalculatorScreen() {
               <View style={styles.inputFieldRow}>
                 <View style={styles.halfField}>
                   <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Gold 24K per gram ({selectedCurrency.symbol})</Text>
-                  <TextInput
+                  <AppTextInput
                     value={goldRate}
                     onChangeText={setGoldRate}
                     keyboardType="numeric"
@@ -390,7 +391,7 @@ export default function ZakatCalculatorScreen() {
                 </View>
                 <View style={styles.halfField}>
                   <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Silver per gram ({selectedCurrency.symbol})</Text>
-                  <TextInput
+                  <AppTextInput
                     value={silverRate}
                     onChangeText={setSilverRate}
                     keyboardType="numeric"
@@ -463,7 +464,7 @@ export default function ZakatCalculatorScreen() {
               <View style={styles.gridFieldContainer}>
                 <View style={styles.gridField}>
                   <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Gold 24K weight</Text>
-                  <TextInput
+                  <AppTextInput
                     value={gold24}
                     onChangeText={setGold24}
                     keyboardType="numeric"
@@ -474,7 +475,7 @@ export default function ZakatCalculatorScreen() {
                 </View>
                 <View style={styles.gridField}>
                   <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Gold 22K weight</Text>
-                  <TextInput
+                  <AppTextInput
                     value={gold22}
                     onChangeText={setGold22}
                     keyboardType="numeric"
@@ -485,7 +486,7 @@ export default function ZakatCalculatorScreen() {
                 </View>
                 <View style={styles.gridField}>
                   <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Gold 21K weight</Text>
-                  <TextInput
+                  <AppTextInput
                     value={gold21}
                     onChangeText={setGold21}
                     keyboardType="numeric"
@@ -496,7 +497,7 @@ export default function ZakatCalculatorScreen() {
                 </View>
                 <View style={styles.gridField}>
                   <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Gold 18K weight</Text>
-                  <TextInput
+                  <AppTextInput
                     value={gold18}
                     onChangeText={setGold18}
                     keyboardType="numeric"
@@ -521,7 +522,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Silver total weight</Text>
-                <TextInput
+                <AppTextInput
                   value={silverWeight}
                   onChangeText={setSilverWeight}
                   keyboardType="numeric"
@@ -548,7 +549,7 @@ export default function ZakatCalculatorScreen() {
             <View style={[styles.accordionContent, { borderColor: colors.border }]}>
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Cash in Hand / At Home</Text>
-                <TextInput
+                <AppTextInput
                   value={cashHand}
                   onChangeText={setCashHand}
                   keyboardType="numeric"
@@ -560,7 +561,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Bank Accounts (Savings / Current)</Text>
-                <TextInput
+                <AppTextInput
                   value={bankSavings}
                   onChangeText={setBankSavings}
                   keyboardType="numeric"
@@ -572,7 +573,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Fixed Deposits / RD</Text>
-                <TextInput
+                <AppTextInput
                   value={fixedDeposits}
                   onChangeText={setFixedDeposits}
                   keyboardType="numeric"
@@ -599,7 +600,7 @@ export default function ZakatCalculatorScreen() {
             <View style={[styles.accordionContent, { borderColor: colors.border }]}>
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Stocks / Shares / Mutual Funds</Text>
-                <TextInput
+                <AppTextInput
                   value={stocks}
                   onChangeText={setStocks}
                   keyboardType="numeric"
@@ -611,7 +612,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Provident Fund (Accessible Amount Only)</Text>
-                <TextInput
+                <AppTextInput
                   value={providentFund}
                   onChangeText={setProvidentFund}
                   keyboardType="numeric"
@@ -623,7 +624,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Other Investments</Text>
-                <TextInput
+                <AppTextInput
                   value={otherInvest}
                   onChangeText={setOtherInvest}
                   keyboardType="numeric"
@@ -650,7 +651,7 @@ export default function ZakatCalculatorScreen() {
             <View style={[styles.accordionContent, { borderColor: colors.border }]}>
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Business Inventory / Stock-in-Trade Value</Text>
-                <TextInput
+                <AppTextInput
                   value={businessInventory}
                   onChangeText={setBusinessInventory}
                   keyboardType="numeric"
@@ -662,7 +663,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Business Cash &amp; Bank Balances</Text>
-                <TextInput
+                <AppTextInput
                   value={businessCash}
                   onChangeText={setBusinessCash}
                   keyboardType="numeric"
@@ -674,7 +675,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Trade Receivables / Loans Given Out</Text>
-                <TextInput
+                <AppTextInput
                   value={receivables}
                   onChangeText={setReceivables}
                   keyboardType="numeric"
@@ -686,7 +687,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Other Business Assets</Text>
-                <TextInput
+                <AppTextInput
                   value={otherAssets}
                   onChangeText={setOtherAssets}
                   keyboardType="numeric"
@@ -713,7 +714,7 @@ export default function ZakatCalculatorScreen() {
             <View style={[styles.accordionContent, { borderColor: colors.border }]}>
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Debts (Creditors / Loans to pay this year)</Text>
-                <TextInput
+                <AppTextInput
                   value={debts}
                   onChangeText={setDebts}
                   keyboardType="numeric"
@@ -725,7 +726,7 @@ export default function ZakatCalculatorScreen() {
 
               <View style={styles.fieldContainer}>
                 <Text style={[styles.inputLabel, { color: colors.onSurface }]}>Unpaid Bills, Taxes &amp; Dues Payable</Text>
-                <TextInput
+                <AppTextInput
                   value={bills}
                   onChangeText={setBills}
                   keyboardType="numeric"

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, StatusBar, TextInput } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, StatusBar } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import { prophetStories } from "@/src/data/prophets";
+import { AppTextInput } from "@/src/components/ui";
 
 export default function ProphetsIndexScreen() {
   const router = useRouter();
@@ -51,12 +52,16 @@ export default function ProphetsIndexScreen() {
       <View style={{ paddingHorizontal: theme.spacing.lg, marginBottom: 12 }}>
         <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
-          <TextInput
+          <AppTextInput
+            activeUnderlineColor="transparent"
+            containerStyle={{ flex: 1 }}
+            mode="flat"
             value={search}
             onChangeText={setSearch}
             placeholder="Search 29 Prophets (e.g. Musa, Yusuf, Ibrahim...)"
             placeholderTextColor={colors.onSurfaceMuted}
             style={[styles.searchInput, { color: colors.onSurface }]}
+            underlineColor="transparent"
           />
           {search.length > 0 && (
             <Pressable onPress={() => setSearch("")}>

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, ScrollView, Modal, Switch, Alert, Platform, Image } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -700,13 +700,13 @@ export default function SettingsScreen() {
                 <MaterialCommunityIcons name={mode === "dark" ? "weather-night" : "weather-sunny"} size={20} color={colors.brand} />
                 <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Dark Mode</Text>
               </View>
-              <Switch
+              <AppSwitch
+                accessibilityLabel="Dark mode"
                 value={mode === "dark"}
                 onValueChange={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                   setMode(mode === "dark" ? "light" : "dark");
                 }}
-                trackColor={{ true: colors.brand }}
               />
             </Pressable>
 
@@ -730,10 +730,10 @@ export default function SettingsScreen() {
                 <MaterialCommunityIcons name="bell-ring-outline" size={20} color={colors.brand} />
                 <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Adhan Alert</Text>
               </View>
-              <Switch
+              <AppSwitch
+                accessibilityLabel="Adhan alert"
                 value={bgAzaan}
                 onValueChange={(v) => handleToggleBgAzaan(v)}
-                trackColor={{ true: colors.brand }}
               />
             </Pressable>
 
@@ -757,10 +757,10 @@ export default function SettingsScreen() {
                 <MaterialCommunityIcons name="translate" size={20} color={colors.brand} />
                 <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Translation</Text>
               </View>
-              <Switch
+              <AppSwitch
+                accessibilityLabel="Show translation"
                 value={translationEnabled}
                 onValueChange={(v) => handleToggleTranslation(v)}
-                trackColor={{ true: colors.brand }}
               />
             </Pressable>
 
@@ -784,10 +784,10 @@ export default function SettingsScreen() {
                 <MaterialCommunityIcons name="card-text-outline" size={20} color={colors.brand} />
                 <Text style={{ fontSize: 13, fontWeight: "600", color: colors.onSurface }}>Translit</Text>
               </View>
-              <Switch
+              <AppSwitch
+                accessibilityLabel="Show transliteration"
                 value={transliterationEnabled}
                 onValueChange={(v) => handleToggleTransliteration(v)}
-                trackColor={{ true: colors.brand }}
               />
             </Pressable>
 

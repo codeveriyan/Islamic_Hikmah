@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Switch, TextInput } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -9,7 +9,12 @@ import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { getReminders, saveReminders, Reminder } from "@/src/storage";
-import { EmptyState } from "@/src/components/EmptyState";
+import {
+  AppButton,
+  AppSwitch,
+  AppTextInput,
+} from "@/src/components/ui";
+import { AppEmptyState } from "@/src/components/states";
 
 export default function ReminderScreen() {
   const [items, setItems] = useState<Reminder[]>([]);
@@ -102,58 +107,58 @@ export default function ReminderScreen() {
 
       {adding ? (
         <View style={[styles.addPanel, { backgroundColor: colors.surfaceSecondary }]} testID="add-reminder-panel">
-          <TextInput
+          <AppTextInput
             placeholder="What to remember? (e.g. Read Surah Mulk)"
-            placeholderTextColor={colors.onSurfaceMuted}
             value={title}
             onChangeText={setTitle}
-            style={[styles.input, { backgroundColor: colors.surfaceTertiary, color: colors.onSurface }]}
+            style={styles.input}
               testID="reminder-title-input"
             />
           <View style={styles.timeRow}>
-            <TextInput
+            <AppTextInput
+              label="Hour"
               value={hour}
               onChangeText={setHour}
               keyboardType="number-pad"
               maxLength={2}
-              style={[styles.input, styles.timeInput, { backgroundColor: colors.surfaceTertiary, color: colors.onSurface }]}
+              containerStyle={styles.timeInputContainer}
+              style={styles.timeInput}
               testID="reminder-hour-input"
             />
             <Text style={[styles.colon, { color: colors.onSurface }]}>:</Text>
-            <TextInput
+            <AppTextInput
+              label="Minute"
               value={minute}
               onChangeText={setMinute}
               keyboardType="number-pad"
               maxLength={2}
-              style={[styles.input, styles.timeInput, { backgroundColor: colors.surfaceTertiary, color: colors.onSurface }]}
+              containerStyle={styles.timeInputContainer}
+              style={styles.timeInput}
               testID="reminder-minute-input"
             />
           </View>
           <View style={styles.actions}>
-            <Pressable
+            <AppButton
+              label={t("cancel")}
               onPress={() => setAdding(false)}
-              style={[styles.actionBtn, { backgroundColor: colors.surfaceTertiary }]}
+              style={styles.actionBtn}
               testID="reminder-cancel-btn"
-            >
-              <Text style={[styles.actionTxt, { color: colors.onSurface }]}>{t("cancel")}</Text>
-            </Pressable>
-            <Pressable
+              variant="outlined"
+            />
+            <AppButton
+              label={t("save")}
               onPress={addReminder}
-              style={[styles.actionBtn, { backgroundColor: colors.brand }]}
+              style={styles.actionBtn}
               testID="reminder-save-btn"
-            >
-              <Text style={[styles.actionTxt, { color: colors.onBrandPrimary }]}>{t("save")}</Text>
-            </Pressable>
+            />
           </View>
         </View>
       ) : null}
 
       {items.length === 0 && !adding ? (
-        <EmptyState
-          icon="bell-ring-outline"
-          title="No Reminders Set"
-          subtitle={`Set daily reminders for Adhkar, Quran reading, or any Du'a habit. Tap + below to add one.`}
-          orbitIcons={["bell", "book-open-variant", "moon-waning-crescent", "hands-pray"]}
+        <AppEmptyState
+          description={`Set daily reminders for Adhkar, Quran reading, or any Du'a habit. Tap + to add one.`}
+          title="No reminders set"
         />
       ) : (
         <FlatList
@@ -168,10 +173,10 @@ export default function ReminderScreen() {
                   {String(item.hour).padStart(2, "0")}:{String(item.minute).padStart(2, "0")}
                 </Text>
               </View>
-              <Switch
+              <AppSwitch
+                accessibilityLabel={`${item.title} reminder`}
                 value={item.enabled}
                 onValueChange={() => toggle(item.id)}
-                trackColor={{ true: colors.brandSecondary, false: colors.surfaceTertiary }}
                 testID={`switch-${item.id}`}
               />
               <Pressable onPress={() => remove(item.id)} hitSlop={10} testID={`delete-${item.id}`}>
@@ -205,11 +210,11 @@ const styles = StyleSheet.create({
   cardTitle: { color: theme.colors.onSurface, fontSize: 15, fontWeight: "600" },
   cardTime: { color: theme.colors.brand, fontSize: 22, fontWeight: "700", marginTop: 2 },
   addPanel: { marginHorizontal: theme.spacing.lg, padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.lg, marginBottom: theme.spacing.md, gap: theme.spacing.md },
-  input: { backgroundColor: theme.colors.surfaceTertiary, color: theme.colors.onSurface, padding: 12, borderRadius: theme.radius.md, fontSize: 15 },
+  input: { fontSize: 15 },
   timeRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-  timeInput: { width: 70, textAlign: "center", fontSize: 22, fontWeight: "700" },
+  timeInputContainer: { width: 88 },
+  timeInput: { textAlign: "center", fontSize: 22, fontWeight: "700" },
   colon: { color: theme.colors.onSurface, fontSize: 28, fontWeight: "700" },
   actions: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.sm },
-  actionBtn: { flex: 1, padding: 14, borderRadius: theme.radius.md, alignItems: "center" },
-  actionTxt: { fontWeight: "700" },
+  actionBtn: { flex: 1 },
 });

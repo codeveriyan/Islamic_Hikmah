@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  TextInput,
   StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,6 +25,7 @@ import {
   ERA_ICONS,
 } from "@/src/data/seerahData";
 import { translateText } from "@/src/services/translationService";
+import { AppTextInput } from "@/src/components/ui";
 
 const STORAGE_KEY = "islamic_hikmah:seerah_read_chapters";
 
@@ -294,12 +294,16 @@ export default function SeerahIndexScreen() {
           size={20}
           color={colors.onSurfaceMuted}
         />
-        <TextInput
+        <AppTextInput
+          activeUnderlineColor="transparent"
+          containerStyle={{ flex: 1 }}
+          mode="flat"
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder={t("searchChapters")}
           placeholderTextColor={colors.onSurfaceMuted}
           style={[styles.searchInput, { color: colors.onSurface }]}
+          underlineColor="transparent"
         />
         {searchQuery.length > 0 && (
           <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>

@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, Pressable, ScrollView, Modal, ActivityIndicator,
-  Platform, Alert, TextInput, Share, FlatList, Switch, useWindowDimensions
+  Platform, Alert, Share, FlatList, useWindowDimensions
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -29,6 +29,12 @@ import {
   addQuranBookmark, removeQuranBookmark, getQuranBookmarks, QuranBookmark,
 } from "@/src/storage";
 import { getTajweedColor, parseTajweedText } from "@/src/utils/parseTajweed";
+import {
+  AppButton,
+  AppIconButton,
+  AppSwitch,
+  AppTextInput,
+} from "@/src/components/ui";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type LocalAyah = { numberInSurah: number; arabic: string; translation: string; transliteration: string };
@@ -2395,11 +2401,13 @@ export default function QuranPageReader() {
               <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
             </Pressable>
           </View>
-          <View style={[styles.searchBar, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="magnify" size={22} color={colors.onSurfaceMuted} />
-            <TextInput placeholder="Search Surahs..." placeholderTextColor={colors.onSurfaceMuted} value={surahSearchQuery}
-              onChangeText={setSurahSearchQuery} style={[styles.searchInput, { color: colors.onSurface }]} />
-          </View>
+          <AppTextInput
+            containerStyle={styles.searchBar}
+            leadingIcon="magnify"
+            onChangeText={setSurahSearchQuery}
+            placeholder="Search Surahs..."
+            value={surahSearchQuery}
+          />
           <FlatList data={filteredSurahs} keyExtractor={i => String(i.number)}
             renderItem={({ item }) => (
               <Pressable onPress={() => { setShowSurahSelector(false); const pg = SURAH_FIRST_PAGE[item.number]; if (pg) router.replace(`/quran/read/${pg}`); }}
@@ -2429,11 +2437,13 @@ export default function QuranPageReader() {
               <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
             </Pressable>
           </View>
-          <View style={[styles.searchBar, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="magnify" size={22} color={colors.onSurfaceMuted} />
-            <TextInput placeholder="Search Translations" placeholderTextColor={colors.onSurfaceMuted} value={searchTransQuery}
-              onChangeText={setSearchTransQuery} style={[styles.searchInput, { color: colors.onSurface }]} />
-          </View>
+          <AppTextInput
+            containerStyle={styles.searchBar}
+            leadingIcon="magnify"
+            onChangeText={setSearchTransQuery}
+            placeholder="Search Translations"
+            value={searchTransQuery}
+          />
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
             {Object.keys(groupedTranslations).sort().map(lang => (
               <View key={lang} style={{ marginTop: 16 }}>
@@ -2526,23 +2536,42 @@ export default function QuranPageReader() {
                   </View>
 
                   {/* Copy verse as glyphs toggle switch */}
-                  <View style={[styles.toggleRow, { borderBottomColor: colors.border, marginBottom: 16 }]}>
-                    <Text style={[styles.toggleLabel, { color: colors.onSurface }]}>Copy verse as glyphs</Text>
-                    <Switch value={copyAsGlyphs} onValueChange={async (v) => { setCopyAsGlyphs(v); await AsyncStorage.setItem("quran_copy_glyphs", String(v)); }} />
-                  </View>
+                  <AppSwitch
+                    containerStyle={{ marginBottom: 16 }}
+                    label="Copy verse as glyphs"
+                    value={copyAsGlyphs}
+                    onValueChange={async (v) => {
+                      setCopyAsGlyphs(v);
+                      await AsyncStorage.setItem("quran_copy_glyphs", String(v));
+                    }}
+                  />
 
                   {/* Font size Scale Stepper (Image 1 style) */}
                   <Text style={[styles.settingLabel, { color: colors.onSurface }]}>Font size</Text>
                   <View style={[styles.stepperRow, { marginBottom: 16 }]}>
-                    <Pressable onPress={async () => { const v = Math.max(1, fontSizeArabicScale - 1); setFontSizeArabicScale(v); await AsyncStorage.setItem("quran_font_size_arabic_scale", String(v)); }}
-                      style={[styles.stepperBtn, { borderColor: colors.border }]}>
-                      <MaterialCommunityIcons name="minus" size={20} color={colors.onSurface} />
-                    </Pressable>
+                    <AppIconButton
+                      accessibilityLabel="Decrease Arabic font size"
+                      icon="minus"
+                      onPress={async () => {
+                        const v = Math.max(1, fontSizeArabicScale - 1);
+                        setFontSizeArabicScale(v);
+                        await AsyncStorage.setItem("quran_font_size_arabic_scale", String(v));
+                      }}
+                      size={20}
+                      variant="outlined"
+                    />
                     <Text style={[styles.stepperValue, { color: colors.onSurface }]}>{fontSizeArabicScale}</Text>
-                    <Pressable onPress={async () => { const v = Math.min(10, fontSizeArabicScale + 1); setFontSizeArabicScale(v); await AsyncStorage.setItem("quran_font_size_arabic_scale", String(v)); }}
-                      style={[styles.stepperBtn, { borderColor: colors.border }]}>
-                      <MaterialCommunityIcons name="plus" size={20} color={colors.onSurface} />
-                    </Pressable>
+                    <AppIconButton
+                      accessibilityLabel="Increase Arabic font size"
+                      icon="plus"
+                      onPress={async () => {
+                        const v = Math.min(10, fontSizeArabicScale + 1);
+                        setFontSizeArabicScale(v);
+                        await AsyncStorage.setItem("quran_font_size_arabic_scale", String(v));
+                      }}
+                      size={20}
+                      variant="outlined"
+                    />
                   </View>
 
                   <Text style={[styles.settingLabel, { color: colors.onSurface }]}>Selected Reciter</Text>
@@ -3159,20 +3188,10 @@ export default function QuranPageReader() {
                         <Text style={{ fontSize: 13, lineHeight: 20, color: colors.onSurfaceSecondary, fontStyle: "italic", marginBottom: 8 }}>
                           No community reflections posted yet. Add a personal reflection note below:
                         </Text>
-                        <TextInput
+                        <AppTextInput
                           placeholder="Write a reflection or study note..."
-                          placeholderTextColor={colors.onSurfaceMuted}
                           multiline
-                          style={{
-                            borderWidth: 1,
-                            borderColor: colors.border,
-                            borderRadius: 8,
-                            padding: 10,
-                            fontSize: 13,
-                            color: colors.onSurface,
-                            height: 60,
-                            textAlignVertical: "top"
-                          }}
+                          style={styles.reflectionInput}
                         />
                       </View>
                     )}
@@ -3386,24 +3405,29 @@ export default function QuranPageReader() {
             <View style={[styles.bottomSheet, { backgroundColor: colors.surface, paddingBottom: 36 }]}>
               <View style={styles.sheetHeader}>
                 <Text style={[styles.sheetTitle, { color: colors.onSurface }]}>Translation Feedback ({showFeedbackModal.surah}:{showFeedbackModal.ayah})</Text>
-                <Pressable onPress={() => setShowFeedbackModal(null)}><MaterialCommunityIcons name="close" size={24} color={colors.onSurface} /></Pressable>
+                <AppIconButton
+                  accessibilityLabel="Close translation feedback"
+                  icon="close"
+                  onPress={() => setShowFeedbackModal(null)}
+                />
               </View>
-              <TextInput
+              <AppTextInput
                 placeholder="Suggest correction or improvement for this translation..."
-                placeholderTextColor={colors.onSurfaceMuted}
                 value={feedbackText}
                 onChangeText={setFeedbackText}
                 multiline
                 numberOfLines={4}
-                style={[styles.searchInput, { color: colors.onSurface, borderColor: colors.border, borderWidth: 1, borderRadius: 10, padding: 12, height: 100, textAlignVertical: "top", marginBottom: 20 }]}
+                style={styles.feedbackInput}
               />
-              <Pressable onPress={() => {
-                setShowFeedbackModal(null);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                Alert.alert("Feedback submitted", "Thank you! Your suggestion has been recorded for review.");
-              }} style={[styles.doneBtn, { backgroundColor: colors.brand }]}>
-                <Text style={styles.doneBtnText}>Submit Feedback</Text>
-              </Pressable>
+              <AppButton
+                fullWidth
+                label="Submit Feedback"
+                onPress={() => {
+                  setShowFeedbackModal(null);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                  Alert.alert("Feedback submitted", "Thank you! Your suggestion has been recorded for review.");
+                }}
+              />
             </View>
           </View>
         </Modal>
@@ -3630,8 +3654,9 @@ const styles = StyleSheet.create({
   tafsirPillText: { fontSize: 12, fontWeight: "700" },
   tafsirBody: { fontSize: 14, lineHeight: 22 },
   // Surah Selector
-  searchBar: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginVertical: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1, gap: 8 },
-  searchInput: { flex: 1, fontSize: 14, padding: 0 },
+  searchBar: { marginHorizontal: 16, marginVertical: 12 },
+  reflectionInput: { minHeight: 72, fontSize: 13, textAlignVertical: "top" },
+  feedbackInput: { minHeight: 100, marginBottom: 20, textAlignVertical: "top" },
   surahRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, gap: 12 },
   surahNumCircle: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   surahNumText: { fontSize: 13, fontWeight: "700" },
