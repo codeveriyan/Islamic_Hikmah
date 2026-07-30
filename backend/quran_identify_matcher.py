@@ -251,7 +251,10 @@ def _score_locations(
     )
 
 
-def find_best_match(transcript_text: str) -> IdentifyMatch:
+def find_best_match(
+    transcript_text: str,
+    min_confidence: Optional[float] = None,
+) -> IdentifyMatch:
     corpus = get_corpus()
     query_words = _normalized_words(transcript_text)
     if len(query_words) < MIN_TRANSCRIPT_WORDS:
@@ -278,7 +281,10 @@ def find_best_match(transcript_text: str) -> IdentifyMatch:
         _fragment_finalists(windows, query_words),
         query_forms,
     )
-    if not ranked or ranked[0].score < MIN_CONFIDENT_MATCH:
+    effective_min_confidence = (
+        min_confidence if min_confidence is not None else MIN_CONFIDENT_MATCH
+    )
+    if not ranked or ranked[0].score < effective_min_confidence:
         best_score = ranked[0].score if ranked else 0.0
         raise NoConfidentMatchError(
             f"The best Quran-text match ({best_score:.0%}) was below the "

@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Dict, Literal, Optional
 from datetime import datetime, timedelta, timezone
 import jwt
+import re
 import requests
 from cryptography import x509
 from pymongo.errors import DuplicateKeyError
@@ -918,6 +919,7 @@ async def identify_quran_recitation(req: IdentifyQuranRequest):
 # ──────────────────────────────────────────────────────────────────────────────
 
 OCR_SPACE_API_KEY = os.environ.get("OCR_SPACE_API_KEY", "")
+OCR_SPACE_ENGINE = os.environ.get("OCR_SPACE_ENGINE", "1")
 
 # Free tier limit is 1 MB; 900 KB leaves headroom for base64/HTTP overhead.
 MAX_OCR_IMAGE_BYTES = 900_000
@@ -988,7 +990,7 @@ def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
                 "language": "ara",
                 "isOverlayRequired": "false",
                 "scale": "true",
-                "OCREngine": "1",
+                "OCREngine": OCR_SPACE_ENGINE,
                 "base64Image": data_url,
             },
             timeout=30,
@@ -1014,11 +1016,14 @@ def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
         raise ValueError(f"ocr_failed:{err}")
 
     parsed_results = payload.get("ParsedResults") or []
-    texts = [
-        r.get("ParsedText", "")
-        for r in parsed_results
-        if r.get("FileParseExitCode") == 1 and r.get("ParsedText")
-    ]
+    texts = []
+    for r in parsed_results:
+        if r.get("FileParseExitCode") == 1 and r.get("ParsedText"):
+            raw_text = r.get("ParsedText", "")
+            # Safely strip any residual HTML tags OCR.space may return
+            clean_text = re.sub(r"<[^>]+>", "", raw_text)
+            if clean_text.strip():
+                texts.append(clean_text.strip())
     combined = " ".join(texts).strip()
     if not combined:
         raise ValueError(
@@ -1072,7 +1077,9 @@ async def identify_quran_text(req: IdentifyTextRequest):
     # --- Fuzzy match against the Quran corpus ---
     cleaned = _strip_diacritics(arabic_text.strip())
     try:
-        match = await run_in_threadpool(find_best_match, cleaned)
+        match = await run_in_threadpool(
+            find_best_match, cleaned, QURAN_IDENTIFY_OCR_MIN_CONFIDENCE
+        )
     except NoConfidentMatchError as exc:
         return {
             "status": "no_match",

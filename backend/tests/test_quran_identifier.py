@@ -114,3 +114,41 @@ def test_matcher_handles_fragment_of_a_long_ayah():
     assert match.ayah_start == 1
     assert match.ayah_end == 1
     assert match.confidence >= 0.9
+
+
+def test_matcher_supports_custom_min_confidence():
+    # Verify custom min_confidence parameter overrides default threshold
+    import pytest
+    with pytest.raises(NoConfidentMatchError):
+        find_best_match("قل هو الله احد", min_confidence=1.01)
+
+    match = find_best_match("قل هو الله احد", min_confidence=0.50)
+    assert match.surah_number == 112
+
+
+def test_identify_text_route_success():
+    response = client.post(
+        "/api/quran/identify-text",
+        json={"arabic_text": "قل هو الله احد الله الصمد"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["surah_number"] == 112
+    assert data["source"] == "text"
+
+
+def test_identify_text_route_requires_exactly_one_input():
+    # Both inputs -> 422
+    res1 = client.post(
+        "/api/quran/identify-text",
+        json={"arabic_text": "اختبار", "image_b64": "fake"},
+    )
+    assert res1.status_code == 422
+
+    # Neither input -> 422
+    res2 = client.post(
+        "/api/quran/identify-text",
+        json={},
+    )
+    assert res2.status_code == 422
