@@ -18,6 +18,7 @@ import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "ex
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { API_BASE_URL } from "@/src/apiBaseUrl";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
@@ -46,10 +47,6 @@ type ScanResult = {
 };
 
 const HISTORY_KEY = "hikmah:halal-scanner:history:v1";
-const OCR_SPACE_API_KEY = process.env.EXPO_PUBLIC_OCR_SPACE_API_KEY ?? "";
-if (__DEV__ && !OCR_SPACE_API_KEY) {
-  console.warn("[HalalScanner] EXPO_PUBLIC_OCR_SPACE_API_KEY is not set. Photo scanning will fail. Add it to your .env file.");
-}
 
 const RULES: IngredientRule[] = [
   { term: "pork", status: "haram", reason: "Pork and pork-derived ingredients are not halal." },
@@ -231,32 +228,36 @@ export default function HalalScannerScreen() {
     }
   };
 
+  /**
+   * Extract ingredient text from an image via the backend OCR proxy.
+   * The OCR.space key is kept server-side — never bundled in the app.
+   */
   const extractTextFromImage = async (uri: string) => {
     setOcrLoading(true);
     try {
       const base64 = await new FileSystem.File(uri).base64();
-      const body = new URLSearchParams();
-      body.append("apikey", OCR_SPACE_API_KEY);
-      body.append("language", "eng");
-      body.append("isOverlayRequired", "false");
-      body.append("scale", "true");
-      body.append("OCREngine", "2");
-      body.append("base64Image", `data:image/jpeg;base64,${base64}`);
-
-      const response = await fetch("https://api.ocr.space/parse/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: body.toString(),
-      });
-      const payload = await response.json();
-      const parsedText = payload?.ParsedResults?.map((item: any) => item?.ParsedText).filter(Boolean).join("\n").trim();
-
-      if (!parsedText) {
-        const message = payload?.ErrorMessage?.[0] || payload?.ErrorDetails || "No readable text was found. Try a clearer label photo.";
-        Alert.alert("OCR could not read the label", String(message));
+      if (!API_BASE_URL) {
+        Alert.alert("Service unavailable", "The ingredient scanning service is not configured.");
         return;
       }
-
+      const response = await fetch(`${API_BASE_URL}/api/halal/ocr-ingredients`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_b64: base64, mime: "image/jpeg" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message =
+          (payload as { detail?: string })?.detail ??
+          "No readable text was found. Try a clearer label photo.";
+        Alert.alert("OCR could not read the label", message);
+        return;
+      }
+      const parsedText = (payload as { text?: string })?.text ?? "";
+      if (!parsedText) {
+        Alert.alert("OCR could not read the label", "No readable text was found. Try a clearer label photo.");
+        return;
+      }
       setIngredients(parsedText);
       Alert.alert("Ingredients extracted", "The label text was added below and checked automatically.");
     } catch {

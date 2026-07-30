@@ -22,12 +22,22 @@ import transliterationSyllablesData from "@/src/data/quran/transliterationSyllab
 import transliterationWbwData from "@/src/data/quran/transliterationWbw.json";
 import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 import { QURAN_AUDIO_CATALOG, QURAN_AUDIO_CATEGORIES, QuranAudioCategory } from "@/src/data/quran/quranAudioCatalog";
+import naqaaRecitersData from "@/src/data/quran/naqaaReciters.json";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withRepeat,
+  withSequence,
+  Easing,
+} from "react-native-reanimated";
 import {
   downloadTafsirAllSurahs,
   getTafsirSurah,
   isTafsirDownloaded,
   prefetchNextSurahTafsir,
 } from "@/src/services/cdnContentService";
+import * as Speech from "expo-speech";
 
 type Ayah = {
   number: number;
@@ -65,6 +75,68 @@ const QDC_RECITERS: ListenReciter[] = [
 ];
 const RECITERS: ListenReciter[] = [...QDC_RECITERS, ...QURAN_AUDIO_CATALOG.map((reciter) => ({ ...reciter, source: "quranicaudio" as const, hasWordSegments: false }))];
 
+const SPEED_STEPS = [0.75, 1.0, 1.25, 1.5, 2.0];
+
+// Speed chip with animated glow when not at 1x
+function SpeedChipInline({ rate, onPress, brandColor, mutedColor }: { rate: number; onPress: () => void; brandColor: string; mutedColor: string }) {
+  const glowOpacity = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const isActive = rate !== 1.0;
+
+  useEffect(() => {
+    if (isActive) {
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.65, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.12, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        true
+      );
+    } else {
+      glowOpacity.value = withTiming(0, { duration: 300 });
+    }
+  }, [isActive]);
+
+  const chipAnimStyle = useAnimatedStyle(() => ({
+    shadowOpacity: glowOpacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  const label = rate === 1.0 ? "1\u00d7" : rate === 0.75 ? "\u00be\u00d7" : `${rate}\u00d7`;
+
+  return (
+    <Pressable
+      onPress={() => {
+        scale.value = withSequence(withTiming(0.82, { duration: 80 }), withTiming(1, { duration: 120 }));
+        onPress();
+      }}
+      hitSlop={10}
+    >
+      <Animated.View
+        style={[
+          {
+            borderWidth: 1.5,
+            borderRadius: 10,
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            backgroundColor: isActive ? brandColor + "22" : "transparent",
+            borderColor: isActive ? brandColor : mutedColor,
+            shadowColor: brandColor,
+            shadowOffset: { width: 0, height: 0 },
+            shadowRadius: 8,
+            elevation: 0,
+          },
+          chipAnimStyle,
+        ]}
+      >
+        <Text style={{ fontSize: 13, fontWeight: "800", color: isActive ? brandColor : mutedColor, letterSpacing: 0.2 }}>
+          {label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
 
 type AyahItemProps = {
   a: Ayah;
@@ -93,7 +165,61 @@ type AyahItemProps = {
   surahName: string;
   onLayoutY: (i: number, y: number) => void;
   resolvedTransColor: string;
+  isSpeaking: boolean;
+  onSpeakAyah: (i: number, text: string) => void;
 };
+
+// ── Animated speaker button used inside AyahItem ──────────────────────────
+function SpeakerButton({ isSpeaking, onPress, colors }: { isSpeaking: boolean; onPress: () => void; colors: any }) {
+  const glowOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (isSpeaking) {
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.7, { duration: 700, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.1, { duration: 700, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        true
+      );
+    } else {
+      glowOpacity.value = withTiming(0, { duration: 250 });
+    }
+  }, [isSpeaking]);
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
+
+  return (
+    <Pressable onPress={onPress} hitSlop={10} testID={`speak-ayah`}>
+      <View style={{ position: "relative", width: 26, height: 26, alignItems: "center", justifyContent: "center" }}>
+        <Animated.View
+          style={[
+            glowStyle,
+            {
+              position: "absolute",
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              backgroundColor: colors.brand,
+              shadowColor: colors.brand,
+              shadowRadius: 8,
+              shadowOpacity: 1,
+              elevation: 6,
+            },
+          ]}
+        />
+        <MaterialCommunityIcons
+          name={(isSpeaking ? "volume-high" : "volume-medium") as any}
+          size={22}
+          color={isSpeaking ? colors.onBrandPrimary ?? "#fff" : colors.onSurfaceMuted}
+        />
+      </View>
+    </Pressable>
+  );
+}
 
 const AyahItem = React.memo(
   ({
@@ -123,6 +249,8 @@ const AyahItem = React.memo(
     surahName,
     onLayoutY,
     resolvedTransColor,
+    isSpeaking,
+    onSpeakAyah,
   }: AyahItemProps) => {
     const words = useMemo(() => a.text.trim().split(/\s+/), [a.text]);
     return (
@@ -190,6 +318,13 @@ const AyahItem = React.memo(
                 color={colors.brand}
               />
             </Pressable>
+            {showTranslation && (
+              <SpeakerButton
+                isSpeaking={isSpeaking}
+                onPress={() => onSpeakAyah(i, transText)}
+                colors={colors}
+              />
+            )}
           </View>
         </View>
         <Text
@@ -249,7 +384,8 @@ const AyahItem = React.memo(
       prev.colors === next.colors &&
       prev.resolvedTransColor === next.resolvedTransColor &&
       prev.surahId === next.surahId &&
-      prev.surahName === next.surahName
+      prev.surahName === next.surahName &&
+      prev.isSpeaking === next.isSpeaking
     );
   }
 );
@@ -284,6 +420,7 @@ export default function SurahDetail() {
   const [verseTimings, setVerseTimings] = useState<any[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [activeWordIdx, setActiveWordIdx] = useState<number | null>(null);
+  const [playbackRate, setPlaybackRateState] = useState(1.0);
 
   const player = useAudioPlayer(null, { updateInterval: 50 });
   const status = useAudioPlayerStatus(player);
@@ -291,6 +428,27 @@ export default function SurahDetail() {
   const { t } = useTranslation(language);
   const { profile } = useAuth();
   const { showPremiumModal } = usePremiumModal();
+
+  // Load persisted playback rate (shared key with MiniPlayerBar context)
+  useEffect(() => {
+    AsyncStorage.getItem("hikmah:playback-rate").then((v) => {
+      const parsed = parseFloat(v ?? "");
+      if (!isNaN(parsed) && parsed > 0) setPlaybackRateState(parsed);
+    }).catch(() => {});
+  }, []);
+
+  // Apply playback rate to player whenever it changes
+  useEffect(() => {
+    try {
+      player.setPlaybackRate(playbackRate);
+      player.shouldCorrectPitch = true;
+    } catch {}
+  }, [playbackRate, player]);
+
+  const handleSetPlaybackRate = useCallback((rate: number) => {
+    setPlaybackRateState(rate);
+    AsyncStorage.setItem("hikmah:playback-rate", String(rate)).catch(() => {});
+  }, []);
 
   // Reading mode — default / sepia / dark (loaded from AsyncStorage, set in Quick Settings)
   const [readingMode, setReadingMode] = useState<"default" | "sepia" | "dark">("default");
@@ -479,6 +637,28 @@ export default function SurahDetail() {
   const [selectedAyahForGrammar, setSelectedAyahForGrammar] = useState<{ surah: number; ayah: number; text: string; translation: string } | null>(null);
   const [grammarLoading, setGrammarLoading] = useState(false);
   const [grammarWords, setGrammarWords] = useState<{ text: string; transliteration: string; translation: string; partOfSpeech?: string }[]>([]);
+
+  // TTS: track which ayah index is currently being spoken
+  const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+
+  const speakAyah = useCallback((i: number, text: string) => {
+    if (speakingIdx === i) {
+      // Already speaking this ayah — stop it
+      Speech.stop();
+      setSpeakingIdx(null);
+      return;
+    }
+    // Stop any ongoing speech first
+    Speech.stop();
+    setSpeakingIdx(i);
+    Speech.speak(text, {
+      language: "en",
+      rate: 0.9,
+      onDone: () => setSpeakingIdx(null),
+      onError: () => setSpeakingIdx(null),
+      onStopped: () => setSpeakingIdx(null),
+    });
+  }, [speakingIdx]);
 
   const openGrammarModal = useCallback(async (ayahNum: number, arabicText: string, transText: string) => {
     const surahId = Number(id);
@@ -801,6 +981,23 @@ export default function SurahDetail() {
     setAudioErr(false);
 
     const surahId = Number(id);
+
+    // Naqaa Studio reciters: look up per-surah URL directly from naqaaReciters.json
+    if (currentReciter.category === "Naqaa Studio" && (currentReciter as any).naqaaKey) {
+      const naqaaMap = (naqaaRecitersData as Record<string, Record<string, string>>)[(currentReciter as any).naqaaKey];
+      const naqaaUrl = naqaaMap?.[String(surahId)];
+      if (naqaaUrl) {
+        setAudioUrl(naqaaUrl);
+        setVerseTimings([]);
+        setAudioErr(false);
+        setAudioLoading(false);
+      } else {
+        setAudioErr(true);
+        setAudioLoading(false);
+      }
+      return;
+    }
+
     const chapterUrl = currentReciter.source === "quranicaudio" && currentReciter.path
       ? `${currentReciter.path}${String(surahId).padStart(3, "0")}.mp3`
       : null;
@@ -811,6 +1008,7 @@ export default function SurahDetail() {
       setAudioLoading(false);
       return;
     }
+
     const qdcId = currentReciter.qdcId ?? 7;
     const url = `https://api.qurancdn.com/api/qdc/audio/reciters/${qdcId}/audio_files?chapter=${surahId}&segments=true`;
 
@@ -1407,6 +1605,17 @@ export default function SurahDetail() {
             )}
           </Pressable>
         )}
+        <SpeedChipInline
+          rate={playbackRate}
+          brandColor={colors.brand}
+          mutedColor={colors.onSurfaceMuted}
+          onPress={() => {
+            const idx = SPEED_STEPS.indexOf(playbackRate);
+            const next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
+            handleSetPlaybackRate(next);
+          }}
+        />
+
         {audioErr ? (
           <Text style={[styles.bgHint, { color: colors.error }]}>⚠️ Audio unavailable</Text>
         ) : (
@@ -1446,6 +1655,11 @@ export default function SurahDetail() {
               if (Math.abs(p - lastScrollProgressRef.current) >= 0.02) {
                 lastScrollProgressRef.current = p;
                 setScrollProgress(p);
+                // Cancel TTS when user scrolls
+                if (speakingIdx !== null) {
+                  Speech.stop();
+                  setSpeakingIdx(null);
+                }
               }
             }
           }}
@@ -1491,6 +1705,8 @@ export default function SurahDetail() {
                 surahName={name}
                 onLayoutY={handleLayoutY}
                 resolvedTransColor={resolvedTransColor}
+                isSpeaking={speakingIdx === i}
+                onSpeakAyah={speakAyah}
               />
             );
           }}

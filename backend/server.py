@@ -24,7 +24,7 @@ from learn_quran.asr import (
     get_quran_asr_service,
 )
 from quran_corpus import CorpusUnavailableError
-from quran_identify_matcher import NoConfidentMatchError, identify_from_transcript
+from quran_identify_matcher import NoConfidentMatchError, identify_from_transcript, find_best_match
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -508,6 +508,11 @@ def get_sunnah_hadiths(
     The API key is deliberately read only on the server, never bundled into
     the Expo application. The response is passed through without changing
     hadith text, grades, chapter data, or official numbering.
+
+    TERMS & USAGE BOUNDARY:
+    Sunnah.com's developer guidelines permit in-app display and cached retrieval.
+    Do NOT bypass caching to stream or bulk-export un-cached hadith data to external
+    API consumers or automated AI scraping pipelines.
     """
     if collection not in SUNNAH_COLLECTIONS:
         raise HTTPException(status_code=404, detail="This collection is not available from Sunnah.com.")
@@ -908,7 +913,286 @@ async def identify_quran_recitation(req: IdentifyQuranRequest):
     }
 
 
-# Include routes & CORS middleware configuration
+# ──────────────────────────────────────────────────────────────────────────────
+# Smart Arabic Scanner — text/image → Quran match
+# ──────────────────────────────────────────────────────────────────────────────
+
+OCR_SPACE_API_KEY = os.environ.get("OCR_SPACE_API_KEY", "")
+
+# Free tier limit is 1 MB; 900 KB leaves headroom for base64/HTTP overhead.
+MAX_OCR_IMAGE_BYTES = 900_000
+
+# Tuned independently from the ASR threshold: OCR errors (character-shape
+# confusions, missing diacritics) differ from ASR errors (phonetic substitution).
+QURAN_IDENTIFY_OCR_MIN_CONFIDENCE = float(
+    os.environ.get("QURAN_IDENTIFY_OCR_MIN_CONFIDENCE", "0.65")
+)
+
+# Arabic diacritics (harakat) that OCR frequently drops — strip before matching
+# so the fuzzy matcher sees the same normalisation on both sides.
+_ARABIC_DIACRITICS = "".join(chr(c) for c in range(0x064B, 0x0653))
+_DIACRITIC_TABLE = str.maketrans("", "", _ARABIC_DIACRITICS)
+
+
+def _strip_diacritics(text: str) -> str:
+    return text.translate(_DIACRITIC_TABLE)
+
+
+class IdentifyTextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    arabic_text: Optional[str] = None
+    image_b64: Optional[str] = None
+    mime: Optional[str] = None
+
+
+def _decode_ocr_image(image_b64: str) -> bytes:
+    """Decode the base64 image payload and validate its size."""
+    encoded = image_b64.strip()
+    # Strip data-URL prefix if present
+    if encoded.startswith("data:"):
+        if ";base64," not in encoded:
+            raise ValueError("The image data URL is not base64 encoded.")
+        encoded = encoded.split(";base64,", 1)[1]
+    try:
+        image_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError, TypeError) as exc:
+        raise ValueError("The image payload is not valid base64.") from exc
+    if not image_bytes:
+        raise ValueError("The image is empty.")
+    if len(image_bytes) > MAX_OCR_IMAGE_BYTES:
+        raise ValueError(
+            f"The image exceeds the {MAX_OCR_IMAGE_BYTES // 1024} KB limit. "
+            "Please use a smaller or more compressed image."
+        )
+    return image_bytes
+
+
+def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
+    """Call OCR.space synchronously and return the extracted Arabic text.
+
+    Raises ValueError with a typed 'ocr_failed' or 'ocr_empty' message
+    that the route handler surfaces to the client.
+    """
+    if not OCR_SPACE_API_KEY:
+        raise ValueError("ocr_failed:OCR service is not configured on the server.")
+
+    import base64 as _b64
+    b64_str = _b64.b64encode(image_bytes).decode()
+    data_url = f"data:{mime};base64,{b64_str}"
+
+    try:
+        resp = requests.post(
+            "https://api.ocr.space/parse/image",
+            data={
+                "apikey": OCR_SPACE_API_KEY,
+                "language": "ara",
+                "isOverlayRequired": "false",
+                "scale": "true",
+                "OCREngine": "1",
+                "base64Image": data_url,
+            },
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise ValueError(f"ocr_failed:Could not reach the OCR service. Please check your connection.") from exc
+
+    # HTTP 401 → invalid key (FileParseExitCode -30)
+    if resp.status_code == 401:
+        raise ValueError("ocr_failed:The OCR service rejected the request. Please check the server configuration.")
+    if resp.status_code != 200:
+        raise ValueError(f"ocr_failed:The OCR service returned an unexpected error (HTTP {resp.status_code}).")
+
+    try:
+        payload = resp.json()
+    except Exception:
+        raise ValueError("ocr_failed:The OCR service returned an unreadable response.")
+
+    # OCRExitCode >= 3 or IsErroredOnProcessing means a hard failure
+    exit_code = payload.get("OCRExitCode", 0)
+    if payload.get("IsErroredOnProcessing") or int(exit_code) >= 3:
+        err = payload.get("ErrorMessage") or payload.get("ErrorDetails") or "Unknown OCR error."
+        raise ValueError(f"ocr_failed:{err}")
+
+    parsed_results = payload.get("ParsedResults") or []
+    texts = [
+        r.get("ParsedText", "")
+        for r in parsed_results
+        if r.get("FileParseExitCode") == 1 and r.get("ParsedText")
+    ]
+    combined = " ".join(texts).strip()
+    if not combined:
+        raise ValueError(
+            "ocr_empty:No Arabic text was detected. Try better lighting or a clearer photo."
+        )
+    return combined
+
+
+@api_router.post("/quran/identify-text")
+async def identify_quran_text(req: IdentifyTextRequest):
+    """Match Arabic text (typed or from a scanned image) against the Quran corpus.
+
+    Accepts either:
+      - { arabic_text: str }           — direct fuzzy match, no OCR
+      - { image_b64: str, mime: str }  — OCR via server-side proxy, then fuzzy match
+
+    The OCR.space key is kept server-side and never exposed to the client.
+    """
+    # Validate: exactly one input mode must be provided
+    has_text = bool(req.arabic_text and req.arabic_text.strip())
+    has_image = bool(req.image_b64)
+    if has_text == has_image:  # both or neither
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide either 'arabic_text' or 'image_b64' (not both, not neither).",
+        )
+
+    # --- Image path: OCR first ---
+    if has_image:
+        try:
+            image_bytes = _decode_ocr_image(req.image_b64)  # type: ignore[arg-type]
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+        mime = req.mime or "image/jpeg"
+        try:
+            arabic_text = await run_in_threadpool(_call_ocr_space, image_bytes, mime)
+        except ValueError as exc:
+            err_msg = str(exc)
+            # Distinguish ocr_failed vs ocr_empty by the typed prefix
+            if err_msg.startswith("ocr_empty:"):
+                return {"status": "ocr_empty", "message": err_msg[len("ocr_empty:"):]}
+            user_msg = err_msg[len("ocr_failed:"):] if err_msg.startswith("ocr_failed:") else err_msg
+            return {"status": "ocr_failed", "message": user_msg}
+    else:
+        arabic_text = req.arabic_text  # type: ignore[assignment]
+
+    # --- Fuzzy match against the Quran corpus ---
+    cleaned = _strip_diacritics(arabic_text.strip())
+    try:
+        match = await run_in_threadpool(find_best_match, cleaned)
+    except NoConfidentMatchError as exc:
+        return {
+            "status": "no_match",
+            "message": str(exc),
+            "extracted_text": arabic_text,
+        }
+    except CorpusUnavailableError as exc:
+        logger.exception("Quran corpus unavailable for text identification")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The Quran text-matching service is not ready.",
+        ) from exc
+
+    # Check OCR-specific confidence threshold (separate from ASR threshold)
+    if match.confidence < QURAN_IDENTIFY_OCR_MIN_CONFIDENCE:
+        return {
+            "status": "no_match",
+            "message": (
+                f"The best match ({match.confidence:.0%}) was below the confidence threshold. "
+                "This text doesn\u2019t appear to be a Quran verse \u2014 paste it to search instead."
+            ),
+            "extracted_text": arabic_text,
+        }
+
+    return {
+        "status": "success",
+        "source": "text",
+        "surah_number": match.surah_number,
+        "surah_name_english": match.surah_name_english,
+        "surah_name_arabic": match.surah_name_arabic,
+        "verse_start": match.ayah_start,
+        "verse_end": match.ayah_end,
+        "reciter_name": None,
+        "reciter_id": None,
+        "reciter_country": None,
+        "reciter_style": None,
+        "reciter_status": "not_available",
+        "confidence": match.confidence,
+        "matched_text_arabic": match.matched_text_arabic,
+        "matched_text_english": match.matched_text_english,
+        "transcript": arabic_text,
+        "modelName": "text-fuzzy-match",
+        "modelRevision": "1.0",
+        "processingTimeMs": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Halal Scanner OCR proxy — fixes the existing client-side key exposure.
+# The OCR.space key is read from server env; the frontend sends only the image.
+# ---------------------------------------------------------------------------
+class HalalOcrRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image_b64: str
+    mime: Optional[str] = "image/jpeg"
+
+
+def _call_ocr_space_eng(image_bytes: bytes, mime: str) -> str:
+    """Call OCR.space for English ingredient text. Returns extracted text."""
+    if not OCR_SPACE_API_KEY:
+        raise ValueError("OCR service is not configured on the server.")
+    import base64 as _b64
+    b64_str = _b64.b64encode(image_bytes).decode()
+    data_url = f"data:{mime};base64,{b64_str}"
+    try:
+        resp = requests.post(
+            "https://api.ocr.space/parse/image",
+            data={
+                "apikey": OCR_SPACE_API_KEY,
+                "language": "eng",
+                "isOverlayRequired": "false",
+                "scale": "true",
+                "OCREngine": "2",
+                "base64Image": data_url,
+            },
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise ValueError("Could not reach the OCR service.") from exc
+    if resp.status_code != 200:
+        raise ValueError(f"OCR service error (HTTP {resp.status_code}).")
+    payload = resp.json()
+    if payload.get("IsErroredOnProcessing") or int(payload.get("OCRExitCode", 0)) >= 3:
+        raise ValueError(payload.get("ErrorMessage") or "OCR failed.")
+    texts = [
+        r.get("ParsedText", "")
+        for r in (payload.get("ParsedResults") or [])
+        if r.get("FileParseExitCode") == 1 and r.get("ParsedText")
+    ]
+    return " ".join(texts).strip()
+
+
+@api_router.post("/halal/ocr-ingredients")
+async def halal_ocr_ingredients(req: HalalOcrRequest):
+    """Server-side OCR proxy for the Halal Scanner screen.
+
+    Replaces the previous client-side OCR.space call that exposed the API key
+    in the app bundle. The key is now kept in backend/.env only.
+    """
+    try:
+        image_bytes = _decode_ocr_image(req.image_b64)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    try:
+        text = await run_in_threadpool(_call_ocr_space_eng, image_bytes, req.mime or "image/jpeg")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No readable text was found. Try a clearer label photo.",
+        )
+    return {"text": text}
+
 api_router.include_router(create_learn_quran_router(db, get_current_user_profile))
 app.include_router(api_router)
 

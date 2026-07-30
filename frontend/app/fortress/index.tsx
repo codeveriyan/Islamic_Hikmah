@@ -85,6 +85,11 @@ export default function FortressIndexScreen() {
         ListEmptyComponent={(
           <Text style={[styles.empty, { color: colors.onSurfaceMuted }]}>No chapters found.</Text>
         )}
+        ListFooterComponent={(
+          <Text style={[styles.attribution, { color: colors.onSurfaceMuted }]}>
+            Du&apos;as sourced from HisnMuslim.com
+          </Text>
+        )}
       />
     </SafeAreaView>
   );
@@ -104,4 +109,5 @@ const styles = StyleSheet.create({
   chapterTitle: { fontSize: 15, fontWeight: "700", lineHeight: 20 },
   duaCount: { fontSize: 12, marginTop: 3 },
   empty: { textAlign: "center", marginTop: 48 },
+  attribution: { textAlign: "center", marginTop: 16, marginBottom: 24, fontSize: 11, opacity: 0.7 },
 });

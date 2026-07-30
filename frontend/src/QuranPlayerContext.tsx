@@ -7,10 +7,12 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
 } from "react";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // ──────────────────────────────────────────────────────────
 // CDN URL builder  (uses the Islamic Network free CDN)
@@ -34,11 +36,13 @@ type QuranPlayerContextValue = {
   isVisible: boolean;
   position: number;    // seconds
   duration: number;    // seconds
+  playbackRate: number;
   play: (track: QuranTrack) => void;
   togglePlayPause: () => void;
   skipNext: () => void;
   skipPrev: () => void;
   dismiss: () => void;
+  setPlaybackRate: (rate: number) => void;
 };
 
 // ──────────────────────────────────────────────────────────
@@ -50,11 +54,13 @@ const QuranPlayerContext = createContext<QuranPlayerContextValue>({
   isVisible: false,
   position: 0,
   duration: 0,
+  playbackRate: 1.0,
   play: () => {},
   togglePlayPause: () => {},
   skipNext: () => {},
   skipPrev: () => {},
   dismiss: () => {},
+  setPlaybackRate: () => {},
 });
 
 export function useQuranPlayer() {
@@ -67,6 +73,15 @@ export function useQuranPlayer() {
 export function QuranPlayerProvider({ children }: { children: React.ReactNode }) {
   const [track, setTrack] = useState<QuranTrack | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [playbackRate, setPlaybackRateState] = useState(1.0);
+
+  // Persist playback rate across app sessions
+  useEffect(() => {
+    AsyncStorage.getItem("hikmah:playback-rate").then((v) => {
+      const parsed = parseFloat(v ?? "");
+      if (!isNaN(parsed) && parsed > 0) setPlaybackRateState(parsed);
+    }).catch(() => {});
+  }, []);
 
   // We use a stable placeholder so useAudioPlayer is always called with a value
   const [audioSource, setAudioSource] = useState<{ uri: string } | null>(null);
@@ -83,10 +98,17 @@ export function QuranPlayerProvider({ children }: { children: React.ReactNode })
       // replace triggers a reload; then play automatically after brief delay
       try {
         player.replace({ uri: url });
-        setTimeout(() => { try { player.play(); } catch {} }, 300);
+        setTimeout(() => {
+          try {
+            // Re-apply rate after replace (replace resets rate to 1.0)
+            player.setPlaybackRate(playbackRate);
+            player.shouldCorrectPitch = true;
+            player.play();
+          } catch {}
+        }, 300);
       } catch {}
     },
-    [player]
+    [player, playbackRate]
   );
 
   const togglePlayPause = useCallback(() => {
@@ -114,6 +136,15 @@ export function QuranPlayerProvider({ children }: { children: React.ReactNode })
     setTrack(null);
   }, [player]);
 
+  const handleSetPlaybackRate = useCallback((rate: number) => {
+    setPlaybackRateState(rate);
+    AsyncStorage.setItem("hikmah:playback-rate", String(rate)).catch(() => {});
+    try {
+      player.setPlaybackRate(rate);
+      player.shouldCorrectPitch = true;
+    } catch {}
+  }, [player]);
+
   return (
     <QuranPlayerContext.Provider
       value={{
@@ -122,11 +153,13 @@ export function QuranPlayerProvider({ children }: { children: React.ReactNode })
         isVisible,
         position: status.currentTime ?? 0,
         duration: status.duration ?? 0,
+        playbackRate,
         play,
         togglePlayPause,
         skipNext,
         skipPrev,
         dismiss,
+        setPlaybackRate: handleSetPlaybackRate,
       }}
     >
       {children}

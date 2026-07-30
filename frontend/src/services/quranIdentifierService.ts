@@ -33,7 +33,19 @@ export interface UnidentifiedRecitationResult {
 
 export type QuranIdentificationResponse =
   | IdentifiedRecitationResult
-  | UnidentifiedRecitationResult;
+  | UnidentifiedRecitationResult
+  | OcrFailedResult
+  | OcrEmptyResult;
+
+export interface OcrFailedResult {
+  status: "ocr_failed";
+  message: string;
+}
+
+export interface OcrEmptyResult {
+  status: "ocr_empty";
+  message: string;
+}
 
 function readableApiError(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;
@@ -125,4 +137,56 @@ export async function identifyQuranRecording(
     );
   }
   return result;
+}
+
+/**
+ * Identify a Quran verse from Arabic text (typed or OCR-extracted).
+ * The image is sent to the backend which proxies to OCR.space server-side —
+ * no API key is ever included in the app bundle.
+ */
+export async function identifyQuranText(
+  input:
+    | { arabic_text: string; image_b64?: never; mime?: never }
+    | { image_b64: string; mime?: string; arabic_text?: never },
+): Promise<QuranIdentificationResponse> {
+  if (!API_BASE_URL) {
+    throw new Error("The identification service is not configured.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/quran/identify-text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach the identification backend at ${API_BASE_URL}.`,
+    );
+  }
+
+  const payload = await response.json().catch(() => ({}));
+
+  // ocr_failed and ocr_empty come back as 200 with a typed status field
+  const statusVal = String((payload as { status?: unknown }).status ?? "");
+  if (statusVal === "ocr_failed" || statusVal === "ocr_empty") {
+    return payload as QuranIdentificationResponse;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      readableApiError(payload, "The text could not be identified."),
+    );
+  }
+
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !["success", "no_match", "ocr_failed", "ocr_empty"].includes(statusVal)
+  ) {
+    throw new Error("The identification service returned an invalid response.");
+  }
+
+  return payload as QuranIdentificationResponse;
 }

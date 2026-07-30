@@ -3,7 +3,7 @@
  * Slides up from the bottom when a Quran surah is playing.
  * Sits above the tab bar and animates waveform bars when audio plays.
  */
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -73,6 +73,66 @@ const pb = StyleSheet.create({
   fill: { height: 2, borderRadius: 1 },
 });
 
+const SPEED_STEPS = [0.75, 1.0, 1.25, 1.5, 2.0];
+
+// ──────────────────────────────────────────────────────────
+// Speed chip — animated glow when not at 1×
+// ──────────────────────────────────────────────────────────
+function SpeedChip({ rate, onPress }: { rate: number; onPress: () => void }) {
+  const { colors } = useTheme();
+  const glowOpacity = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const isActive = rate !== 1.0;
+
+  useEffect(() => {
+    if (isActive) {
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.6, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.15, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        true
+      );
+    } else {
+      glowOpacity.value = withTiming(0, { duration: 300 });
+    }
+  }, [isActive]);
+
+  const chipStyle = useAnimatedStyle(() => ({
+    shadowOpacity: glowOpacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  const label = rate === 1.0 ? "1×" : rate === 0.75 ? "¾×" : `${rate}×`;
+
+  return (
+    <Pressable
+      onPress={() => {
+        scale.value = withSequence(withTiming(0.85, { duration: 80 }), withTiming(1, { duration: 120 }));
+        onPress();
+      }}
+      hitSlop={10}
+    >
+      <Animated.View
+        style={[
+          s.speedChip,
+          {
+            backgroundColor: isActive ? colors.brand + "28" : "transparent",
+            borderColor: isActive ? colors.brand : colors.border,
+            shadowColor: colors.brand,
+          },
+          chipStyle,
+        ]}
+      >
+        <Text style={[s.speedChipTxt, { color: isActive ? colors.brand : colors.onSurfaceMuted }]}>
+          {label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 // ──────────────────────────────────────────────────────────
 // Main component
 // ──────────────────────────────────────────────────────────
@@ -80,9 +140,15 @@ const BAR_HEIGHT = 64;
 
 export function MiniPlayerBar() {
   const { colors, mode } = useTheme();
-  const { track, isPlaying, isVisible, position, duration, togglePlayPause, skipNext, skipPrev, dismiss } =
+  const { track, isPlaying, isVisible, position, duration, togglePlayPause, skipNext, skipPrev, dismiss, playbackRate, setPlaybackRate } =
     useQuranPlayer();
   const insets = useSafeAreaInsets();
+
+  const cycleSpeed = () => {
+    const idx = SPEED_STEPS.indexOf(playbackRate);
+    const next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
+    setPlaybackRate(next);
+  };
 
   // Slide-up animation
   const translateY = useSharedValue(BAR_HEIGHT + 100);
@@ -156,6 +222,8 @@ export function MiniPlayerBar() {
           <MaterialCommunityIcons name="skip-next" size={22} color={colors.onSurface} />
         </Pressable>
 
+        <SpeedChip rate={playbackRate} onPress={cycleSpeed} />
+
         <Pressable onPress={dismiss} hitSlop={10} style={[s.ctrlBtn, { marginLeft: 2 }]}>
           <MaterialCommunityIcons name="close" size={18} color={colors.onSurfaceMuted} />
         </Pressable>
@@ -216,5 +284,22 @@ const s = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+  },
+  speedChip: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 6,
+    elevation: 0,
+  },
+  speedChipTxt: {
+    fontSize: 11,
+    fontWeight: "700",
+    fontFamily: "Outfit_600SemiBold",
+    letterSpacing: 0.3,
   },
 });

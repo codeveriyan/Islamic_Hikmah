@@ -6,7 +6,8 @@ export type QuranAudioCategory =
   | "Recitations"
   | "Haramain Taraweeh"
   | "Non-Hafs Recitations"
-  | "Recitations with Translations";
+  | "Recitations with Translations"
+  | "Naqaa Studio";
 
 export type QuranAudioCatalogReciter = {
   id: string;
@@ -15,6 +16,8 @@ export type QuranAudioCatalogReciter = {
   path: string;
   category: QuranAudioCategory;
   categoryGroup?: string;
+  /** For Naqaa Studio reciters: the key into naqaaReciters.json for per-surah URL lookup */
+  naqaaKey?: string;
 };
 
 const chapter = (
@@ -94,7 +97,21 @@ const TRANSLATIONS = [
 ] as const;
 
 export const QURAN_AUDIO_CATEGORIES: QuranAudioCategory[] = [
-  "Recitations", "Haramain Taraweeh", "Non-Hafs Recitations", "Recitations with Translations",
+  "Recitations", "Haramain Taraweeh", "Non-Hafs Recitations", "Recitations with Translations", "Naqaa Studio",
+];
+
+// ── Naqaa Studio reciters ──────────────────────────────────────────────────────
+// URLs are looked up per-surah from naqaaReciters.json at play time.
+// Names sourced from the app's own [page].tsx fallback reciter list.
+const NAQAA_RECITERS_LIST: { id: string; name: string; naqaaKey: string }[] = [
+  { id: "naqaa-norain",    name: "Sheikh Noreen Mohammed Siddiq",     naqaaKey: "norain" },
+  { id: "naqaa-soufi",     name: "Sheikh Abd El-Rashid Sufi",         naqaaKey: "soufi" },
+  { id: "naqaa-abdu",      name: "Sheikh Abdulrahman Nour al-Islam",  naqaaKey: "mushaf-abdu" },
+  { id: "naqaa-halim",     name: "Sheikh Abd El-Halim Hussein",       naqaaKey: "abd_alhalim" },
+  { id: "naqaa-noralislam",name: "Sheikh Mohammed Nour al-Islam",     naqaaKey: "noralislam" },
+  { id: "naqaa-osman",     name: "Sheikh Mohamed Othman",             naqaaKey: "sh-moh-osman" },
+  { id: "naqaa-moha",      name: "Sheikh Mohammed Abdulkarim",        naqaaKey: "mushaf_moha" },
+  { id: "naqaa-asad",      name: "Sheikh Asaad Abdulkarim Al-Sheikh", naqaaKey: "mushaf_asad" },
 ];
 
 export const QURAN_AUDIO_CATALOG: QuranAudioCatalogReciter[] = [
@@ -102,4 +119,12 @@ export const QURAN_AUDIO_CATALOG: QuranAudioCatalogReciter[] = [
   ...HARAMAIN.map(([id, mosque, year]) => chapter(id, `${mosque} Taraweeh ${year}`, `${mosque.toLowerCase()}_${year}${year >= 1443 ? "/mp3" : ""}`, "Taraweeh", "Haramain Taraweeh", mosque)),
   ...NON_HAFS.map(([id, name, folder, style]) => chapter(id, name, folder, style, "Non-Hafs Recitations", style)),
   ...TRANSLATIONS.map(([id, name, folder, style]) => chapter(id, name, folder, style, "Recitations with Translations", style)),
+  ...NAQAA_RECITERS_LIST.map((r) => ({
+    id: r.id,
+    name: r.name,
+    style: "Murattal",
+    path: "", // resolved at runtime from naqaaReciters.json via naqaaKey
+    category: "Naqaa Studio" as QuranAudioCategory,
+    naqaaKey: r.naqaaKey,
+  })),
 ];
