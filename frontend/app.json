@@ -15,6 +15,7 @@
         "NSMotionUsageDescription": "Detect compass heading for Qibla direction",
         "NSCameraUsageDescription": "Take a profile photo or capture food ingredient labels for halal checking",
         "NSPhotoLibraryUsageDescription": "Choose a profile photo or ingredient label image from your library",
+        "NSMicrophoneUsageDescription": "Record Quran recitation audio for Surah and Ayah identification",
         "UIBackgroundModes": [
           "audio"
         ]

@@ -15,20 +15,32 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
 
 import { useTheme } from "@/src/ThemeContext";
 import {
-  identifyQuranAudio,
+  identifyQuranRecording,
   IdentifiedRecitationResult,
 } from "@/src/services/quranIdentifierService";
+
+const MIN_RECORDING_MILLIS = 2500;
 
 export default function IdentifyQuranScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder, 250);
 
   const [isListening, setIsListening] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<IdentifiedRecitationResult | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   // Pulse animation for recording ring
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -57,68 +69,102 @@ export default function IdentifyQuranScreen() {
     }
   }, [isListening, pulseAnim]);
 
-  const handleStartListening = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setResult(null);
-    setIsListening(true);
-
-    let recordedB64 = "";
-
-    // Web MediaRecorder capture
-    if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.mediaDevices) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new (window as any).MediaRecorder(stream);
-        const chunks: any[] = [];
-
-        mediaRecorder.ondataavailable = (e: any) => {
-          if (e.data.size > 0) chunks.push(e.data);
-        };
-
-        mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunks, { type: "audio/webm" });
-          const reader = new FileReader();
-          reader.readAsDataURL(blob);
-          reader.onloadend = async () => {
-            recordedB64 = (reader.result as string) || "";
-            stream.getTracks().forEach((track) => track.stop());
-            await processAudio(recordedB64);
-          };
-        };
-
-        mediaRecorder.start();
-        setTimeout(() => {
-          if (mediaRecorder.state !== "inactive") {
-            mediaRecorder.stop();
-          }
-        }, 3000);
-        return;
-      } catch (e) {
-        console.warn("Web audio recording error, falling back to simulated capture:", e);
-      }
-    }
-
-    // Default timer fallback for Native / Fallback
-    setTimeout(async () => {
-      // Generate unique sample audio token for demonstration if microphone permission was skipped
-      recordedB64 = `sample_audio_${Date.now()}_${Math.random()}`;
-      await processAudio(recordedB64);
-    }, 3200);
-  };
-
-  const processAudio = async (b64Payload: string) => {
-    setIsListening(false);
-    setIsAnalyzing(true);
+  const startListening = async () => {
     try {
-      const data = await identifyQuranAudio(b64Payload);
-      setResult(data);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    } catch (err) {
-      Alert.alert("Identification Error", "Could not analyze audio. Please try reciting again.");
-    } finally {
-      setIsAnalyzing(false);
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          "Microphone permission needed",
+          "Allow microphone access to identify a Quran recitation.",
+        );
+        return;
+      }
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        interruptionMode: "doNotMix",
+        shouldPlayInBackground: false,
+        shouldRouteThroughEarpiece: false,
+      });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setResult(null);
+      setFeedback(null);
+      setIsListening(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    } catch (error: any) {
+      setIsListening(false);
+      Alert.alert(
+        "Could not start recording",
+        error?.message || "Please try again.",
+      );
     }
   };
+
+  const stopAndIdentify = async () => {
+    if (recorderState.durationMillis < MIN_RECORDING_MILLIS) {
+      setFeedback("Keep reciting for at least 3 seconds, then tap again.");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setFeedback(null);
+    try {
+      await recorder.stop();
+      setIsListening(false);
+      const audioUri = recorder.uri;
+      if (!audioUri) throw new Error("The recording could not be saved.");
+
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+        interruptionMode: "duckOthers",
+        shouldPlayInBackground: false,
+        shouldRouteThroughEarpiece: false,
+      });
+      const data = await identifyQuranRecording(audioUri);
+      if (data.status === "no_match") {
+        setResult(null);
+        setFeedback(data.message);
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Warning,
+        ).catch(() => {});
+        return;
+      }
+      setResult(data);
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success,
+      ).catch(() => {});
+    } catch (error: any) {
+      setResult(null);
+      setFeedback(
+        error?.message || "Could not analyze the recording. Please try again.",
+      );
+    } finally {
+      setIsListening(false);
+      setIsAnalyzing(false);
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+        interruptionMode: "duckOthers",
+        shouldPlayInBackground: true,
+        shouldRouteThroughEarpiece: false,
+      }).catch(() => {});
+    }
+  };
+
+  const handleRecordingPress = () => {
+    if (isListening) {
+      void stopAndIdentify();
+    } else {
+      void startListening();
+    }
+  };
+
+  const recordingSeconds = Math.max(
+    0,
+    Math.round(recorderState.durationMillis / 1000),
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surfaceSecondary || "#0B141A" }]} edges={["top", "bottom"]}>
@@ -134,7 +180,7 @@ export default function IdentifyQuranScreen() {
         <View style={styles.headerTitleContainer}>
           <Text style={[styles.headerTitle, { color: colors.onSurface }]}>Identify Recitation</Text>
           <Text style={[styles.headerSubtitle, { color: colors.onSurfaceMuted || "#8696A0" }]}>
-            Shazam for the Quran
+            Surah & Ayah matching
           </Text>
         </View>
         <View style={{ width: 40 }} />
@@ -155,11 +201,19 @@ export default function IdentifyQuranScreen() {
                 ]}
               />
               <Pressable
-                onPress={handleStartListening}
-                disabled={isListening || isAnalyzing}
+                onPress={handleRecordingPress}
+                disabled={isAnalyzing}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isListening ? "Stop and identify recitation" : "Start recording recitation"
+                }
                 style={({ pressed }) => [
                   styles.micCircle,
-                  { backgroundColor: colors.brand || "#00A884" },
+                  {
+                    backgroundColor: isListening
+                      ? colors.warning || "#F59E0B"
+                      : colors.brand || "#00A884",
+                  },
                   pressed && { transform: [{ scale: 0.95 }] },
                 ]}
               >
@@ -180,14 +234,34 @@ export default function IdentifyQuranScreen() {
               {isListening
                 ? "Listening to recitation..."
                 : isAnalyzing
-                ? "Analyzing audio fingerprint..."
+                ? "Matching Quran transcript..."
                 : "Tap to Identify Recitation"}
             </Text>
             <Text style={[styles.instructionSub, { color: colors.onSurfaceMuted }]}>
               {isListening
-                ? "Hold your phone near the speaker or recitation"
-                : "Identify Surah, Ayah & Reciter from any audio source"}
+                ? `${recordingSeconds}s recorded · tap again to identify`
+                : "Record a clear 5–15 second Quran passage"}
             </Text>
+            {feedback ? (
+              <View
+                style={[
+                  styles.feedbackCard,
+                  {
+                    backgroundColor: `${colors.warning || "#F59E0B"}18`,
+                    borderColor: `${colors.warning || "#F59E0B"}66`,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="information-outline"
+                  size={20}
+                  color={colors.warning || "#F59E0B"}
+                />
+                <Text style={[styles.feedbackText, { color: colors.onSurface }]}>
+                  {feedback}
+                </Text>
+              </View>
+            ) : null}
           </View>
         )}
 
@@ -204,17 +278,17 @@ export default function IdentifyQuranScreen() {
               </View>
             </View>
 
-            {/* Reciter Card */}
+            {/* Reciter availability */}
             <View style={[styles.reciterCard, { backgroundColor: colors.surface || "#111B21", borderColor: colors.border }]}>
               <View style={styles.reciterAvatar}>
-                <MaterialCommunityIcons name="account-voice" size={32} color="#00A884" />
+                <MaterialCommunityIcons name="account-question" size={32} color="#00A884" />
               </View>
               <View style={styles.reciterDetails}>
                 <Text style={[styles.reciterName, { color: colors.onSurface }]}>
-                  {result.reciter_name}
+                  Reciter voice not identified
                 </Text>
-                <Text style={[styles.reciterStyle, { color: colors.warning || "#F59E0B" }]}>
-                  {result.reciter_style} • {result.reciter_country}
+                <Text style={[styles.reciterStyle, { color: colors.onSurfaceMuted }]}>
+                  Voice identification needs a separate speaker model.
                 </Text>
               </View>
             </View>
@@ -245,6 +319,23 @@ export default function IdentifyQuranScreen() {
               </View>
             </View>
 
+            <View
+              style={[
+                styles.transcriptCard,
+                {
+                  backgroundColor: colors.surface || "#111B21",
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.transcriptLabel, { color: colors.onSurfaceMuted }]}>
+                AI HEARD · {result.processingTimeMs} MS
+              </Text>
+              <Text style={[styles.transcriptText, { color: colors.onSurface }]}>
+                {result.transcript}
+              </Text>
+            </View>
+
             {/* Action Buttons */}
             <View style={styles.actionButtons}>
               <Pressable
@@ -262,6 +353,7 @@ export default function IdentifyQuranScreen() {
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                   setResult(null);
+                  setFeedback(null);
                 }}
                 style={[styles.secondaryBtn, { borderColor: colors.border }]}
               >
@@ -353,6 +445,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 280,
     lineHeight: 20,
+  },
+  feedbackCard: {
+    width: "100%",
+    maxWidth: 360,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginTop: 20,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  feedbackText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
   },
   resultContainer: {
     width: "100%",
@@ -456,6 +564,22 @@ const styles = StyleSheet.create({
   englishVerseText: {
     fontSize: 14,
     lineHeight: 22,
+  },
+  transcriptCard: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 8,
+  },
+  transcriptLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.7,
+  },
+  transcriptText: {
+    fontSize: 16,
+    lineHeight: 26,
+    textAlign: "right",
   },
   actionButtons: {
     gap: 12,

@@ -163,7 +163,7 @@ const QUICK_ACTIONS = [
   { id: "duas",              label: "Du'as",                   route: "/dua-hub",               emoji: "🤲" },
   { id: "namesOfAllah",      label: "Asma Al-Husna",          route: "/names",                  emoji: "🕌" },
   { id: "views360",          label: "360° Views",             route: "/views360",               emoji: "🌐" },
-  { id: "identifyRecitation", label: "Reciter ID",            route: "/quran/identify",         emoji: "🎙️" },
+  { id: "identifyRecitation", label: "Recitation ID",         route: "/quran/identify",         emoji: "🎙️" },
   { id: "qadhaTracker",      label: "Qadha Tracker",           route: "/qadha",                  emoji: "📝" },
   { id: "ramadanCompanion",  label: "Ramadan Mode",            route: "/ramadan",                emoji: "✨" },
   { id: "hijriCalendar",     label: "Islamic Calendar",        route: "/hijri-calendar",         emoji: "📅" },
