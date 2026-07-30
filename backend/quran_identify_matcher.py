@@ -19,7 +19,7 @@ from quran_corpus import AyahEntry, get_corpus
 
 
 MAX_WINDOW_AYAHS = 3
-MAX_CANDIDATE_AYAHS = 160
+MAX_CANDIDATE_AYAHS = 64
 MAX_FRAGMENT_FINALISTS = 120
 MIN_TRANSCRIPT_WORDS = 2
 MIN_CONFIDENT_MATCH = float(
@@ -184,6 +184,11 @@ def _fragment_finalists(
         for length in lengths:
             for word_start in range(0, len(words) - length + 1):
                 fragment = words[word_start : word_start + length]
+                # Single-ayah windows already evaluate fragments wholly inside
+                # one ayah. Multi-ayah windows only need boundary-crossing
+                # fragments; skipping duplicates keeps request latency bounded.
+                if start_index != end_index and fragment[0][2] == fragment[-1][2]:
+                    continue
                 regular_words = [word[0] for word in fragment]
                 dagger_alif_words = [word[1] for word in fragment]
                 overlap = max(
