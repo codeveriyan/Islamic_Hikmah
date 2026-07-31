@@ -197,7 +197,13 @@ class QuranAsrService:
 
         import numpy as np
 
-        return np.frombuffer(process.stdout, dtype=np.float32).copy()
+        array = np.frombuffer(process.stdout, dtype=np.float32).copy()
+        duration_sec = len(array) / 16000.0
+        if duration_sec > 30.0:
+            raise AsrTranscriptionError(
+                f"The audio recording duration ({duration_sec:.1f}s) exceeds the 30-second limit."
+            )
+        return array
 
     def transcribe(self, audio_bytes: bytes) -> AsrTranscript:
         self.ensure_loaded()

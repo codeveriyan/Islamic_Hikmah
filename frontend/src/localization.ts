@@ -3,6 +3,7 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
     tasbihCounter: "Tasbih Counter",
     nobleQuran: "Al-Qur'aan",
     hadithCollections: "Hadith Collections",
+    fatawaAnswers: "Fatawa & Scholarly Answers",
     namesOfAllah: "Asma Al-Husna",
     prayerTimes: "Prayer Times",
     qiblaFinder: "Qibla Finder",

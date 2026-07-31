@@ -159,6 +159,7 @@ const QUICK_ACTIONS = [
   { id: "dawah",             label: "Dawah (Why Islam)",       route: "/dawah",                  emoji: "📖" },
   { id: "nobleQuran",        label: "Al-Qur'aan",             route: "/quran",                  image: require("@/assets/images/quran_icon.png") },
   { id: "hadithCollections", label: "Hadith Collections",      route: "/hadith",                 emoji: "📚" },
+  { id: "fatawaAnswers",     label: "Fatawa Answers",          route: "/fatawa",                 emoji: "⚖️" },
   { id: "seerah",            label: "Seerah",                  route: "/seerah",                 emoji: "🌙" },
   { id: "duas",              label: "Du'as",                   route: "/dua-hub",               emoji: "🤲" },
   { id: "namesOfAllah",      label: "Asma Al-Husna",          route: "/names",                  emoji: "🕌" },

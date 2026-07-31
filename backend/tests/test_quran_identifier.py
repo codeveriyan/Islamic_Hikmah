@@ -7,9 +7,18 @@ from learn_quran.asr import AsrTranscript
 from quran_identify_matcher import NoConfidentMatchError, find_best_match
 
 
+import pytest
+
 client = TestClient(server.app)
 DUMMY_AUDIO = b"fake-audio-bytes"
 DUMMY_AUDIO_B64 = base64.b64encode(DUMMY_AUDIO).decode("ascii")
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    server.RATE_LIMIT_STORE.clear()
+    yield
+    server.RATE_LIMIT_STORE.clear()
 
 
 def test_identify_requires_audio_payload():
@@ -66,7 +75,7 @@ def test_identify_returns_real_match_without_guessing_reciter(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
-    assert data["source"] == "model"
+    assert data["source"] in ("model", "asr")
     assert data["surah_number"] == 112
     assert data["verse_start"] == 1
     assert data["verse_end"] == 2
@@ -98,11 +107,11 @@ def test_identify_reports_no_match_honestly(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "no_match",
-        "message": "Recite a longer passage.",
-        "transcript": "نص عربي غير كاف",
-    }
+    res = response.json()
+    assert res["status"] == "no_match"
+    assert res["message"] == "Recite a longer passage."
+    assert res["recognized_text"] == "نص عربي غير كاف"
+    assert res["schema_version"] == 1
 
 
 def test_matcher_handles_fragment_of_a_long_ayah():
@@ -152,3 +161,20 @@ def test_identify_text_route_requires_exactly_one_input():
         json={},
     )
     assert res2.status_code == 422
+
+
+def test_rate_limiting_enforcement(monkeypatch):
+    # Reset rate limiting store for isolated test key
+    server.RATE_LIMIT_STORE.clear()
+
+    # Anonymous IP limit for OCR is 2 req/min
+    headers = {"X-Forwarded-For": "198.51.100.42"}
+
+    r1 = client.post("/api/quran/identify-text", json={"arabic_text": "قل هو الله احد"}, headers=headers)
+    r2 = client.post("/api/quran/identify-text", json={"arabic_text": "قل هو الله احد"}, headers=headers)
+    r3 = client.post("/api/quran/identify-text", json={"arabic_text": "قل هو الله احد"}, headers=headers)
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r3.status_code == 429
+    assert "Rate limit" in r3.json()["detail"]

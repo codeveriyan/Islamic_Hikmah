@@ -33,6 +33,14 @@ type FeatureCard = {
 
 const FEATURED: FeatureCard[] = [
   {
+    id: "fatawa",
+    title: "Fatawa Answers",
+    subtitle: "Scholarly Q&A Summaries",
+    icon: "scale-balance",
+    route: "/fatawa",
+    gradient: ["#005C4B", "#00A884"],
+  },
+  {
     id: "hadith",
     title: "Hadith Collections",
     subtitle: "14 authentic books",
@@ -90,6 +98,7 @@ type QuickLink = {
 };
 
 const QUICK_LINKS: QuickLink[] = [
+  { id: "fatawa", label: "Fatawa Answers", icon: "scale-balance", route: "/fatawa" },
   { id: "ramadan", label: "Ramadan Guide", icon: "moon-waning-crescent", route: "/ramadan" },
   { id: "hajj", label: "Hajj & Umrah", icon: "map-marker-path", route: "/hajj-umrah-guide" },
   { id: "zakat", label: "Zakat Calculator", icon: "calculator", route: "/zakat-calculator" },

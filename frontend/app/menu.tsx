@@ -10,6 +10,7 @@ const ITEMS = [
   { id: "tasbihCounter", icon: "circle-double", route: "/dhikr" },
   { id: "nobleQuran", icon: "book-open-variant", route: "/quran" },
   { id: "hadithCollections", icon: "book-open", route: "/hadith" },
+  { id: "fatawaAnswers", icon: "scale-balance", route: "/fatawa" },
   { id: "namesOfAllah", icon: "mosque", route: "/names" },
   { id: "qiblaFinder", icon: "compass", route: "/qibla" },
   { id: "hijriCalendar", icon: "calendar-month", route: "/hijri-calendar" },

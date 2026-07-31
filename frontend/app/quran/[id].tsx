@@ -166,7 +166,7 @@ type AyahItemProps = {
   onLayoutY: (i: number, y: number) => void;
   resolvedTransColor: string;
   isSpeaking: boolean;
-  onSpeakAyah: (i: number, text: string) => void;
+  onSpeakAyah: (i: number, text: string, ayahNum?: number) => void;
 };
 
 // ── Animated speaker button used inside AyahItem ──────────────────────────
@@ -321,7 +321,7 @@ const AyahItem = React.memo(
             {showTranslation && (
               <SpeakerButton
                 isSpeaking={isSpeaking}
-                onPress={() => onSpeakAyah(i, transText)}
+                onPress={() => onSpeakAyah(i, transText, a.numberInSurah)}
                 colors={colors}
               />
             )}
@@ -641,16 +641,29 @@ export default function SurahDetail() {
   // TTS: track which ayah index is currently being spoken
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
 
-  const speakAyah = useCallback((i: number, text: string) => {
+  const speakAyah = useCallback((i: number, text: string, ayahNum?: number) => {
     if (speakingIdx === i) {
-      // Already speaking this ayah — stop it
       Speech.stop();
+      try { player.pause(); } catch {}
       setSpeakingIdx(null);
       return;
     }
-    // Stop any ongoing speech first
     Speech.stop();
+    try { player.pause(); } catch {}
     setSpeakingIdx(i);
+
+    const surahId = Number(id);
+    if (surahId && ayahNum) {
+      const sPad = String(surahId).padStart(3, "0");
+      const aPad = String(ayahNum).padStart(3, "0");
+      const humanTranslationUrl = `https://everyayah.com/data/Ibrahim_Walk_192kbps/${sPad}${aPad}.mp3`;
+      try {
+        player.replace({ uri: humanTranslationUrl });
+        player.play();
+        return;
+      } catch {}
+    }
+
     Speech.speak(text, {
       language: "en",
       rate: 0.9,
@@ -658,7 +671,13 @@ export default function SurahDetail() {
       onError: () => setSpeakingIdx(null),
       onStopped: () => setSpeakingIdx(null),
     });
-  }, [speakingIdx]);
+  }, [speakingIdx, id, player]);
+
+  useEffect(() => {
+    if (speakingIdx !== null && !status.playing && status.currentTime > 0 && status.duration > 0 && status.currentTime >= (status.duration - 0.5)) {
+      setSpeakingIdx(null);
+    }
+  }, [status.playing, status.currentTime, status.duration, speakingIdx]);
 
   const openGrammarModal = useCallback(async (ayahNum: number, arabicText: string, transText: string) => {
     const surahId = Number(id);

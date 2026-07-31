@@ -29,12 +29,72 @@ import {
   addQuranBookmark, removeQuranBookmark, getQuranBookmarks, QuranBookmark,
 } from "@/src/storage";
 import { getTajweedColor, parseTajweedText } from "@/src/utils/parseTajweed";
+import * as Speech from "expo-speech";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withRepeat,
+  withSequence,
+  Easing,
+} from "react-native-reanimated";
 import {
   AppButton,
   AppIconButton,
   AppSwitch,
   AppTextInput,
 } from "@/src/components/ui";
+
+function SpeakerButton({ isSpeaking, onPress, colors }: { isSpeaking: boolean; onPress: () => void; colors: any }) {
+  const glowOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (isSpeaking) {
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.8, { duration: 600, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.2, { duration: 600, easing: Easing.inOut(Easing.ease) })
+        ),
+        -1,
+        true
+      );
+    } else {
+      glowOpacity.value = withTiming(0, { duration: 300 });
+    }
+  }, [isSpeaking]);
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
+
+  return (
+    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="button" accessibilityLabel="Speak Ayah">
+      <View style={{ position: "relative", width: 26, height: 26, alignItems: "center", justifyContent: "center" }}>
+        <Animated.View
+          style={[
+            glowStyle,
+            {
+              position: "absolute",
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              backgroundColor: colors.brand,
+              shadowColor: colors.brand,
+              shadowRadius: 8,
+              shadowOpacity: 1,
+              elevation: 6,
+            },
+          ]}
+        />
+        <MaterialCommunityIcons
+          name={(isSpeaking ? "volume-high" : "volume-medium") as any}
+          size={22}
+          color={isSpeaking ? colors.onBrandPrimary ?? "#fff" : colors.onSurfaceMuted}
+        />
+      </View>
+    </Pressable>
+  );
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type LocalAyah = { numberInSurah: number; arabic: string; translation: string; transliteration: string };
@@ -648,6 +708,7 @@ export default function QuranPageReader() {
   const [surahSearchQuery, setSurahSearchQuery] = useState("");
 
   // ─── Modals ────────────────────────────────────────────────────────────────
+  const [speakingAyahKey, setSpeakingAyahKey] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"arabic" | "translation" | "wbw" | "tafsir">("arabic");
   const [showInfo, setShowInfo] = useState<LocalSurah | null>(null);
@@ -747,6 +808,43 @@ export default function QuranPageReader() {
 
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
+
+  const toggleSpeakAyah = useCallback((key: string, text: string, surahNum?: number, ayahNum?: number) => {
+    if (speakingAyahKey === key) {
+      Speech.stop();
+      try { player.pause(); } catch {}
+      setSpeakingAyahKey(null);
+      return;
+    }
+    Speech.stop();
+    try { player.pause(); } catch {}
+    setSpeakingAyahKey(key);
+
+    if (surahNum && ayahNum) {
+      const sPad = String(surahNum).padStart(3, "0");
+      const aPad = String(ayahNum).padStart(3, "0");
+      const humanTranslationUrl = `https://everyayah.com/data/Ibrahim_Walk_192kbps/${sPad}${aPad}.mp3`;
+      try {
+        player.replace({ uri: humanTranslationUrl });
+        player.play();
+        return;
+      } catch {}
+    }
+
+    Speech.speak(text, {
+      language: "en",
+      rate: 0.9,
+      onDone: () => setSpeakingAyahKey(null),
+      onError: () => setSpeakingAyahKey(null),
+      onStopped: () => setSpeakingAyahKey(null),
+    });
+  }, [speakingAyahKey, player]);
+
+  useEffect(() => {
+    if (speakingAyahKey && !status.playing && status.currentTime > 0 && status.duration > 0 && status.currentTime >= (status.duration - 0.5)) {
+      setSpeakingAyahKey(null);
+    }
+  }, [status.playing, status.currentTime, status.duration, speakingAyahKey]);
 
   const getTimingReciterId = (reciter: ApiReciter) => {
     if (reciter.url_type === "api" && reciter.path && /^\d+$/.test(reciter.path)) return Number(reciter.path);
@@ -2232,6 +2330,11 @@ export default function QuranPageReader() {
                       <Pressable onPress={() => handlePlaySingle(verse.surahNumber, verse.ayahNumber, verse.absoluteNumber)}>
                         <MaterialCommunityIcons name={isPlaying && status.playing ? "pause-circle" : "play-circle-outline"} size={24} color={colors.brand} />
                       </Pressable>
+                      <SpeakerButton
+                        isSpeaking={speakingAyahKey === vKey}
+                        onPress={() => toggleSpeakAyah(vKey, verse.translationText || verse.arabicText)}
+                        colors={colors}
+                      />
                       <Pressable onPress={() => toggleVerseBookmark(verse.surahNumber, verse.ayahNumber, verse.surahName)}>
                         <MaterialCommunityIcons name={isBm ? "bookmark" : "bookmark-outline"} size={22} color={isBm ? colors.brand : colors.onSurfaceMuted} />
                       </Pressable>
@@ -3102,6 +3205,11 @@ export default function QuranPageReader() {
                     <Pressable onPress={() => handlePlaySingle(focusedVerse.surahNumber, focusedVerse.ayahNumber, focusedVerse.absoluteNumber)}>
                       <MaterialCommunityIcons name={playingAyah?.absolute === focusedVerse.absoluteNumber && status.playing ? "pause-circle" : "play-circle-outline"} size={26} color={colors.brand} />
                     </Pressable>
+                    <SpeakerButton
+                      isSpeaking={speakingAyahKey === `${focusedVerse.surahNumber}-${focusedVerse.ayahNumber}`}
+                      onPress={() => toggleSpeakAyah(`${focusedVerse.surahNumber}-${focusedVerse.ayahNumber}`, focusedVerse.translationText || focusedVerse.arabicText)}
+                      colors={colors}
+                    />
                     <Pressable onPress={() => toggleVerseBookmark(focusedVerse.surahNumber, focusedVerse.ayahNumber, focusedVerse.surahName)}>
                       <MaterialCommunityIcons name={isBm ? "bookmark" : "bookmark-outline"} size={24} color={isBm ? colors.brand : colors.onSurfaceMuted} />
                     </Pressable>

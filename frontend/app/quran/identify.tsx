@@ -12,6 +12,7 @@ import {
   Alert,
   TextInput,
   Image,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -36,11 +37,11 @@ import {
 } from "@/src/services/quranIdentifierService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ScreenMode = "listen" | "scan";
+type ScreenMode = "speak" | "scan";
 type ScanStep = "entry" | "preview" | "result";
 type FeedbackType = "warning" | "error" | "ocr_empty";
 
-const MIN_RECORDING_MILLIS = 2500;
+const MIN_RECORDING_MILLIS = 3000;
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function IdentifyQuranScreen() {
@@ -48,7 +49,9 @@ export default function IdentifyQuranScreen() {
   const { colors } = useTheme();
 
   // ── Mode toggle ─────────────────────────────────────────────────────────────
-  const [screenMode, setScreenMode] = useState<ScreenMode>("listen");
+  const [screenMode, setScreenMode] = useState<ScreenMode>("speak");
+  const [voiceSubMode, setVoiceSubMode] = useState<"speak" | "listen">("speak");
+  const [isVoiceModalVisible, setIsVoiceModalVisible] = useState(false);
 
   // ── Audio (Listen) mode state ────────────────────────────────────────────────
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -111,7 +114,29 @@ export default function IdentifyQuranScreen() {
     setIsCameraOpen(false);
   };
 
-  // ─── LISTEN MODE handlers ─────────────────────────────────────────────────
+  // Unlink temp file helper (only deletes temporary app-created files, never user gallery photos)
+  const unlinkTempFile = async (uri: string | null) => {
+    if (!uri) return;
+    try {
+      if (
+        uri.includes("/cache/") ||
+        uri.includes("/tmp/") ||
+        uri.includes("Recording_") ||
+        uri.includes("Camera_")
+      ) {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      }
+    } catch {}
+  };
+
+  // Auto-stop recording at 25 seconds limit
+  useEffect(() => {
+    if (isListening && recorderState.durationMillis >= 25000) {
+      void stopAndIdentify();
+    }
+  }, [isListening, recorderState.durationMillis]);
+
+  // ─── SPEAK MODE handlers ──────────────────────────────────────────────────
   const startListening = async () => {
     try {
       const permission = await requestRecordingPermissionsAsync();
@@ -184,6 +209,9 @@ export default function IdentifyQuranScreen() {
     } finally {
       setIsListening(false);
       setIsAnalyzing(false);
+      if (recorder.uri) {
+        await unlinkTempFile(recorder.uri);
+      }
       await setAudioModeAsync({
         allowsRecording: false,
         playsInSilentMode: true,
@@ -217,7 +245,7 @@ export default function IdentifyQuranScreen() {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       if (!photo) return;
       setIsCameraOpen(false);
-      await processImageUri(photo.uri, "image/jpeg");
+      await processImageUri(photo.uri, "image/jpeg", true);
     } catch {
       setIsCameraOpen(false);
       Alert.alert("Capture failed", "Could not take a photo. Please try again.");
@@ -238,10 +266,10 @@ export default function IdentifyQuranScreen() {
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     const mime = asset.mimeType || "image/jpeg";
-    await processImageUri(asset.uri, mime);
+    await processImageUri(asset.uri, mime, false);
   };
 
-  const processImageUri = async (uri: string, mime: string) => {
+  const processImageUri = async (uri: string, mime: string, isCamera: boolean = false) => {
     setCapturedImageUri(uri);
     setCapturedMime(mime);
     setIsScanLoading(true);
@@ -292,6 +320,9 @@ export default function IdentifyQuranScreen() {
       setScanStep("entry");
     } finally {
       setIsScanLoading(false);
+      if (isCamera) {
+        await unlinkTempFile(uri);
+      }
     }
   };
 
@@ -398,26 +429,38 @@ export default function IdentifyQuranScreen() {
       <View style={[styles.toggleRow, { borderBottomColor: colors.border || "#222E35" }]}>
         <View style={[styles.togglePill, { backgroundColor: colors.surface || "#111B21" }]}>
           <Pressable
-            onPress={() => switchMode("listen")}
+            onPress={() => {
+              if (screenMode === "speak") {
+                setIsVoiceModalVisible(true);
+              } else {
+                switchMode("speak");
+              }
+            }}
             style={[
               styles.toggleOption,
-              screenMode === "listen" && styles.toggleOptionActive,
-              screenMode === "listen" && { backgroundColor: colors.brand || "#00A884" },
+              screenMode === "speak" && styles.toggleOptionActive,
+              screenMode === "speak" && { backgroundColor: colors.brand || "#00A884" },
             ]}
           >
             <MaterialCommunityIcons
-              name="microphone"
+              name={voiceSubMode === "speak" ? "microphone" : "headphones"}
               size={15}
-              color={screenMode === "listen" ? "#FFF" : colors.onSurfaceMuted || "#8696A0"}
+              color={screenMode === "speak" ? "#FFF" : colors.onSurfaceMuted || "#8696A0"}
             />
             <Text
               style={[
                 styles.toggleLabel,
-                { color: screenMode === "listen" ? "#FFF" : colors.onSurfaceMuted || "#8696A0" },
+                { color: screenMode === "speak" ? "#FFF" : colors.onSurfaceMuted || "#8696A0" },
               ]}
             >
-              Listen
+              {voiceSubMode === "speak" ? "Speak Mode" : "Listen Mode"}
             </Text>
+            <MaterialCommunityIcons
+              name="chevron-down"
+              size={14}
+              color={screenMode === "speak" ? "#FFF" : colors.onSurfaceMuted || "#8696A0"}
+              style={{ marginLeft: 2 }}
+            />
           </Pressable>
           <Pressable
             onPress={() => switchMode("scan")}
@@ -447,10 +490,19 @@ export default function IdentifyQuranScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* ════════════════════════════════════════════════════════
-            LISTEN MODE
+            SPEAK / LISTEN MODE CONTAINER
         ════════════════════════════════════════════════════════ */}
-        {screenMode === "listen" && !result && (
+        {screenMode === "speak" && !result && voiceSubMode === "speak" && (
           <View style={styles.listenContainer}>
+            <Pressable
+              onPress={() => setIsVoiceModalVisible(true)}
+              style={[styles.modeBadgeSelector, { backgroundColor: colors.surface || "#111B21", borderColor: colors.border }]}
+            >
+              <MaterialCommunityIcons name="microphone" size={14} color="#00A884" />
+              <Text style={[styles.modeBadgeSelectorText, { color: colors.onSurface }]}>Speak Mode</Text>
+              <MaterialCommunityIcons name="chevron-down" size={14} color={colors.onSurfaceMuted} />
+            </Pressable>
+
             <View style={styles.pulseWrapper}>
               <Animated.View
                 style={[
@@ -496,10 +548,97 @@ export default function IdentifyQuranScreen() {
             </Text>
             <Text style={[styles.instructionSub, { color: colors.onSurfaceMuted }]}>
               {isListening
-                ? `${recordingSeconds}s recorded · tap again to identify`
-                : "Record a clear 5–15 second Quran passage"}
+                ? `${recordingSeconds}s / 25s recorded · tap to identify`
+                : "Recite a clear 3–25 second Quran passage"}
             </Text>
             {feedback && <FeedbackCard message={feedback} icon={feedbackMeta.icon} color={feedbackMeta.color} />}
+          </View>
+        )}
+
+        {/* ════════════════════════════════════════════════════════
+            LISTEN MODE (Live Ambient Sync)
+        ════════════════════════════════════════════════════════ */}
+        {screenMode === "speak" && !result && voiceSubMode === "listen" && (
+          <View style={styles.listenContainer}>
+            <Pressable
+              onPress={() => setIsVoiceModalVisible(true)}
+              style={[
+                styles.modeBadgeSelector,
+                { backgroundColor: colors.surface || "#111B21", borderColor: colors.border },
+              ]}
+            >
+              <MaterialCommunityIcons name="headphones" size={14} color="#00A884" />
+              <Text style={[styles.modeBadgeSelectorText, { color: colors.onSurface }]}>
+                Listen Mode
+              </Text>
+              <MaterialCommunityIcons name="chevron-down" size={14} color={colors.onSurfaceMuted} />
+            </Pressable>
+
+            <View style={styles.pulseWrapper}>
+              <Animated.View
+                style={[
+                  styles.pulseRing,
+                  {
+                    transform: [{ scale: pulseAnim }],
+                    backgroundColor: "rgba(0, 168, 132, 0.15)",
+                  },
+                ]}
+              />
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  Alert.alert(
+                    "Live Sync Active",
+                    "Listen Mode syncs with ambient Quran recitation in real-time. Stand near a reciter or speaker to follow along."
+                  );
+                }}
+                style={({ pressed }) => [
+                  styles.micCircle,
+                  { backgroundColor: colors.brand || "#00A884" },
+                  pressed && { transform: [{ scale: 0.95 }] },
+                ]}
+              >
+                <MaterialCommunityIcons name="headphones" size={48} color="#FFFFFF" />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.instructionTitle, { color: colors.onSurface }]}>
+              Live Recitation Sync
+            </Text>
+            <Text style={[styles.instructionSub, { color: colors.onSurfaceMuted }]}>
+              Sync with live recitation nearby in real-time
+            </Text>
+
+            <View
+              style={[
+                styles.listenNoticeCard,
+                {
+                  backgroundColor: colors.surface || "#111B21",
+                  borderColor: colors.border || "#222E35",
+                },
+              ]}
+            >
+              <MaterialCommunityIcons name="broadcast" size={20} color="#00A884" />
+              <Text style={[styles.listenNoticeText, { color: colors.onSurfaceMuted }]}>
+                Listen Mode automatically follows ambient recitation in real time. To recite a specific verse yourself, switch to Speak Mode.
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => {
+                setVoiceSubMode("speak");
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              }}
+              style={[
+                styles.secondaryBtn,
+                { borderColor: colors.border, marginTop: 16, paddingHorizontal: 20 },
+              ]}
+            >
+              <MaterialCommunityIcons name="microphone" size={18} color={colors.brand || "#00A884"} />
+              <Text style={[styles.secondaryBtnText, { color: colors.onSurface }]}>
+                Switch to Speak Mode 🎙
+              </Text>
+            </Pressable>
           </View>
         )}
 
@@ -603,6 +742,11 @@ export default function IdentifyQuranScreen() {
             {feedback && !isScanLoading && (
               <FeedbackCard message={feedback} icon={feedbackMeta.icon} color={feedbackMeta.color} />
             )}
+
+            {/* Privacy notice for OCR scanning */}
+            <Text style={[styles.privacyNotice, { color: colors.onSurfaceMuted }]}>
+              Islamic Hikmah does not retain uploaded audio or images. Images sent to the external OCR provider are subject to that provider's retention and privacy policy.
+            </Text>
           </View>
         )}
 
@@ -679,8 +823,8 @@ export default function IdentifyQuranScreen() {
               </View>
             </View>
 
-            {/* Source badge — only show for Listen mode (has reciter card) */}
-            {screenMode === "listen" && (
+            {/* Source badge — only show for Speak mode (has reciter card) */}
+            {screenMode === "speak" && (
               <View style={[styles.reciterCard, { backgroundColor: colors.surface || "#111B21", borderColor: colors.border }]}>
                 <View style={styles.reciterAvatar}>
                   <MaterialCommunityIcons name="account-question" size={32} color="#00A884" />
@@ -733,7 +877,7 @@ export default function IdentifyQuranScreen() {
             {/* Transcript / source text */}
             <View style={[styles.transcriptCard, { backgroundColor: colors.surface || "#111B21", borderColor: colors.border }]}>
               <Text style={[styles.transcriptLabel, { color: colors.onSurfaceMuted }]}>
-                {screenMode === "listen"
+                {screenMode === "speak"
                   ? `AI HEARD · ${result.processingTimeMs} MS`
                   : "TEXT MATCHED"}
               </Text>
@@ -765,13 +909,104 @@ export default function IdentifyQuranScreen() {
               >
                 <MaterialCommunityIcons name="refresh" size={20} color={colors.onSurface} />
                 <Text style={[styles.secondaryBtnText, { color: colors.onSurface }]}>
-                  {screenMode === "listen" ? "Identify Another" : "Scan Again"}
+                  {screenMode === "speak" ? "Identify Another" : "Scan Again"}
                 </Text>
               </Pressable>
             </View>
           </View>
         )}
       </ScrollView>
+
+      {/* ════════════════════════════════════════════════════════
+          SELECT VOICE MODE MODAL (Image-2 Reference)
+      ════════════════════════════════════════════════════════ */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isVoiceModalVisible}
+        onRequestClose={() => setIsVoiceModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setIsVoiceModalVisible(false)}
+        >
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.surface || "#111B21" }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Select Voice Mode</Text>
+              <Pressable
+                onPress={() => setIsVoiceModalVisible(false)}
+                hitSlop={12}
+                style={styles.modalCloseBtn}
+              >
+                <MaterialCommunityIcons name="close" size={20} color={colors.onSurfaceMuted || "#8696A0"} />
+              </Pressable>
+            </View>
+
+            {/* Option 1: Speak Mode */}
+            <Pressable
+              onPress={() => {
+                setVoiceSubMode("speak");
+                setIsVoiceModalVisible(false);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              }}
+              style={({ pressed }) => [
+                styles.voiceOptionCard,
+                { backgroundColor: colors.surfaceSecondary || "#1F2C34" },
+                voiceSubMode === "speak" && styles.voiceOptionCardSelected,
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <View style={styles.voiceIconBox}>
+                <MaterialCommunityIcons name="microphone" size={24} color="#00A884" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.voiceTitleRow}>
+                  <Text style={[styles.voiceOptionTitle, { color: colors.onSurface }]}>Speak Mode</Text>
+                  <View style={styles.badgePill}>
+                    <Text style={styles.badgeText}>AR</Text>
+                  </View>
+                </View>
+                <Text style={[styles.voiceOptionSub, { color: colors.onSurfaceMuted }]}>
+                  Recite a verse and we'll find its exact location in the Quran
+                </Text>
+              </View>
+            </Pressable>
+
+            {/* Option 2: Listen Mode */}
+            <Pressable
+              onPress={() => {
+                setVoiceSubMode("listen");
+                setIsVoiceModalVisible(false);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              }}
+              style={({ pressed }) => [
+                styles.voiceOptionCard,
+                { backgroundColor: colors.surfaceSecondary || "#1F2C34" },
+                voiceSubMode === "listen" && styles.voiceOptionCardSelected,
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <View style={styles.voiceIconBox}>
+                <MaterialCommunityIcons name="headphones" size={24} color="#00A884" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.voiceTitleRow}>
+                  <Text style={[styles.voiceOptionTitle, { color: colors.onSurface }]}>Listen Mode</Text>
+                  <View style={styles.badgePill}>
+                    <Text style={styles.badgeText}>AR</Text>
+                  </View>
+                </View>
+                <Text style={[styles.voiceOptionSub, { color: colors.onSurfaceMuted }]}>
+                  Sync with live recitation nearby in real-time
+                </Text>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1067,4 +1302,116 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   secondaryBtnText: { fontSize: 15, fontWeight: "600" },
+  privacyNotice: {
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
+    marginTop: 14,
+    paddingHorizontal: 12,
+  },
+  modeBadgeSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  modeBadgeSelectorText: { fontSize: 13, fontWeight: "600" },
+  listenNoticeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 16,
+    width: "100%",
+  },
+  listenNoticeText: { flex: 1, fontSize: 12, lineHeight: 18 },
+
+  // Select Voice Mode Modal Styles (Image-2 Reference)
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 24,
+    padding: 20,
+    gap: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  voiceOptionCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 16,
+    borderRadius: 18,
+    gap: 14,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  voiceOptionCardSelected: {
+    borderColor: "#00A884",
+  },
+  voiceIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "rgba(0, 168, 132, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  voiceTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  voiceOptionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  voiceOptionSub: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  badgePill: {
+    backgroundColor: "#00A884",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
 });
