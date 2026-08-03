@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, FlatList, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
@@ -15,6 +14,7 @@ import {
   AppTextInput,
 } from "@/src/components/ui";
 import { AppEmptyState } from "@/src/components/states";
+import { getNotifications } from "@/src/notifications";
 
 export default function ReminderScreen() {
   const [items, setItems] = useState<Reminder[]>([]);
@@ -38,6 +38,8 @@ export default function ReminderScreen() {
 
   const ensurePerm = async () => {
     if (Platform.OS === "web") return true;
+    const Notifications = await getNotifications();
+    if (!Notifications) return false;
     const { status } = await Notifications.getPermissionsAsync();
     if (status === "granted") return true;
     const r = await Notifications.requestPermissionsAsync();
@@ -46,6 +48,8 @@ export default function ReminderScreen() {
 
   const scheduleAll = async (list: Reminder[]) => {
     if (Platform.OS === "web") return;
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
     await Notifications.cancelAllScheduledNotificationsAsync();
     for (const r of list) {
       if (!r.enabled) continue;

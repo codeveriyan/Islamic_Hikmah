@@ -6,9 +6,6 @@ import {
   Pressable, 
   ScrollView, 
   Alert,
-  Modal,
-  Platform,
-  Linking
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -17,14 +14,17 @@ import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import * as Clipboard from "expo-clipboard";
 import { auth } from "@/src/firebase";
-import { API_BASE_URL } from "@/src/apiBaseUrl";
-import { initPurchaseService, purchasePlan, restorePurchases } from "@/src/services/purchaseService";
+import {
+  getPlanOfferings,
+  initPurchaseService,
+  purchasePlan,
+  restorePurchases,
+  type PremiumPlan,
+} from "@/src/services/purchaseService";
 import {
   AppButton,
   AppIconButton,
-  AppTextInput,
 } from "@/src/components/ui";
 
 export default function PremiumScreen() {
@@ -32,15 +32,27 @@ export default function PremiumScreen() {
   const { colors } = useTheme();
   const { profile, startTrial, refreshEntitlements, isGuest } = useAuth();
   
-  const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly" | "lifetime">("yearly");
-  const [upiModalVisible, setUpiModalVisible] = useState(false);
-  const [utr, setUtr] = useState("");
-  const [verifying, setVerifying] = useState(false);
-  const [showQR, setShowQR] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PremiumPlan>("yearly");
+  const [planPrices, setPlanPrices] = useState<Partial<Record<PremiumPlan, string>>>({});
   const [purchasingNative, setPurchasingNative] = useState(false);
 
   useEffect(() => {
-    initPurchaseService(auth.currentUser?.uid).catch(() => {});
+    let cancelled = false;
+    const loadGooglePlayOfferings = async () => {
+      const configured = await initPurchaseService(auth.currentUser?.uid);
+      if (!configured) return;
+      const offerings = await getPlanOfferings();
+      if (cancelled) return;
+      const prices: Partial<Record<PremiumPlan, string>> = {};
+      offerings.forEach((offering) => {
+        prices[offering.plan] = offering.priceString;
+      });
+      setPlanPrices(prices);
+    };
+    loadGooglePlayOfferings().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleStartTrial = async () => {
@@ -68,13 +80,7 @@ export default function PremiumScreen() {
     }
   };
 
-  const getPlanPrice = () => {
-    switch (selectedPlan) {
-      case "monthly": return 99;
-      case "yearly": return 199;
-      case "lifetime": return 499;
-    }
-  };
+  const getPlanPrice = (plan: PremiumPlan) => planPrices[plan] || "Price in Google Play";
 
   const handleSubscribe = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -88,8 +94,15 @@ export default function PremiumScreen() {
     }
 
     setPurchasingNative(true);
-    const result = await purchasePlan(selectedPlan, profile?.email);
-    setPurchasingNative(false);
+    let result;
+    try {
+      result = await purchasePlan(selectedPlan, profile?.email);
+    } catch {
+      Alert.alert("Purchase Error", "The purchase could not be started. Please try again.");
+      return;
+    } finally {
+      setPurchasingNative(false);
+    }
 
     if (result.success) {
       await refreshEntitlements();
@@ -99,13 +112,7 @@ export default function PremiumScreen() {
       return;
     }
 
-    if (result.error) {
-      Alert.alert("Purchase Notice", result.error);
-      return;
-    }
-
-    // Fallback to UPI flow if native store billing isn't configured
-    setUpiModalVisible(true);
+    Alert.alert("Google Play Billing", result.error || "Google Play billing is unavailable.");
   };
 
   const handleRestorePurchases = async () => {
@@ -118,85 +125,6 @@ export default function PremiumScreen() {
       Alert.alert("Purchases Restored! 🎉", "Your Pro subscription has been restored successfully.");
     } else {
       Alert.alert("Restore Notice", result.error || "No active purchases found to restore.");
-    }
-  };
-
-  const handlePayViaUPI = async () => {
-    Haptics.selectionAsync().catch(() => {});
-    const price = getPlanPrice();
-    const upiUrl = `upi://pay?pa=islamichikmah@ybl&pn=Islamic%20Hikmah&am=${price}&cu=INR&tn=Islamic%20Hikmah%20${selectedPlan}`;
-    
-    try {
-      const supported = await Linking.canOpenURL(upiUrl);
-      if (supported) {
-        await Linking.openURL(upiUrl);
-      } else {
-        Alert.alert(
-          "UPI App Not Found",
-          "We couldn't detect any active UPI apps (like Google Pay, PhonePe, or Paytm) on this device. Please scan the QR Code manually to complete the payment.",
-          [{ text: "Show QR Code", onPress: () => setShowQR(true) }]
-        );
-      }
-    } catch {
-      Alert.alert("Error", "Unable to launch UPI application. Please pay manually using the QR code.");
-    }
-  };
-
-  const handleCopyUPI = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    try {
-      await Clipboard.setStringAsync("islamichikmah@ybl");
-      Alert.alert("Copied", "UPI ID copied to clipboard!");
-    } catch (err) {
-      console.warn("Failed to copy to clipboard:", err);
-      Alert.alert("Error", "Could not copy to clipboard. Please copy it manually.");
-    }
-  };
-
-  const handleVerifyUTR = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const cleanUTR = utr.trim();
-    
-    if (!/^\d{12}$/.test(cleanUTR)) {
-      Alert.alert("Invalid UTR", "The UPI Ref No. (UTR) must be exactly a 12-digit number. Please check your payment receipt.");
-      return;
-    }
-
-    setVerifying(true);
-    try {
-      if (!API_BASE_URL || !auth.currentUser || isGuest) {
-        throw new Error("Sign in and connect to the payment service before submitting a UTR.");
-      }
-      const token = await auth.currentUser.getIdToken();
-      const res = await fetch(`${API_BASE_URL}/api/payment-submissions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          utr: cleanUTR,
-          plan: selectedPlan
-        })
-      });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(result.detail || "Payment submission failed.");
-      }
-
-      setVerifying(false);
-      setUpiModalVisible(false);
-      setUtr("");
-      setShowQR(false);
-
-      Alert.alert(
-        "Payment Submitted",
-        "JazakAllah! Your UTR is pending manual review. Premium will be activated only after the payment is confirmed.",
-        [{ text: "Done", onPress: () => router.back() }]
-      );
-    } catch (err: any) {
-      setVerifying(false);
-      Alert.alert("Error", err.message || "Failed to submit verification. Please check your internet connection.");
     }
   };
 
@@ -305,7 +233,7 @@ export default function PremiumScreen() {
               <Text style={[styles.planSub, { color: colors.onSurfaceMuted }]}>Cancel anytime</Text>
             </View>
             <View style={styles.planPriceInfo}>
-              <Text style={[styles.planPrice, { color: colors.onSurface }]}>₹99</Text>
+              <Text style={[styles.planPrice, { color: colors.onSurface }]}>{getPlanPrice("monthly")}</Text>
               <Text style={[styles.planPeriod, { color: colors.onSurfaceMuted }]}>/ month</Text>
             </View>
           </Pressable>
@@ -322,13 +250,13 @@ export default function PremiumScreen() {
               <View style={styles.yearlyHeader}>
                 <Text style={[styles.planName, { color: colors.onSurface }]}>Yearly Access</Text>
                 <View style={[styles.saveBadge, { backgroundColor: colors.brand }]}>
-                  <Text style={[styles.saveBadgeTxt, { color: colors.onBrandPrimary }]}>SAVE 80%</Text>
+                  <Text style={[styles.saveBadgeTxt, { color: colors.onBrandPrimary }]}>BEST VALUE</Text>
                 </View>
               </View>
               <Text style={[styles.planSub, { color: colors.onSurfaceMuted }]}>Best spiritual value</Text>
             </View>
             <View style={styles.planPriceInfo}>
-              <Text style={[styles.planPrice, { color: colors.onSurface }]}>₹199</Text>
+              <Text style={[styles.planPrice, { color: colors.onSurface }]}>{getPlanPrice("yearly")}</Text>
               <Text style={[styles.planPeriod, { color: colors.onSurfaceMuted }]}>/ year</Text>
             </View>
           </Pressable>
@@ -346,7 +274,7 @@ export default function PremiumScreen() {
               <Text style={[styles.planSub, { color: colors.onSurfaceMuted }]}>Pay once, own forever</Text>
             </View>
             <View style={styles.planPriceInfo}>
-              <Text style={[styles.planPrice, { color: colors.onSurface }]}>₹499</Text>
+              <Text style={[styles.planPrice, { color: colors.onSurface }]}>{getPlanPrice("lifetime")}</Text>
               <Text style={[styles.planPeriod, { color: colors.onSurfaceMuted }]}>one-time</Text>
             </View>
           </Pressable>
@@ -376,6 +304,7 @@ export default function PremiumScreen() {
           
           <AppButton
             fullWidth
+            loading={purchasingNative}
             label={
               selectedPlan === "lifetime"
                 ? "Unlock lifetime access"
@@ -387,6 +316,7 @@ export default function PremiumScreen() {
           <View style={styles.linksRow}>
             <AppButton
               label="Restore purchase"
+              loading={purchasingNative}
               onPress={handleRestore}
               variant="text"
             />
@@ -396,131 +326,6 @@ export default function PremiumScreen() {
 
       </ScrollView>
 
-      {/* UPI Billing Sheet Modal */}
-      <Modal
-        visible={upiModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setUpiModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            
-            {/* Crown Icon Header */}
-            <View style={styles.modalHeader}>
-              <MaterialCommunityIcons name="crown" size={32} color="#FFD700" />
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>UPI Payment Checkout</Text>
-              <Text style={[styles.modalSubtitle, { color: colors.onSurfaceMuted }]}>
-                No platform commissions. 100% of your support goes to the application&apos;s servers.
-              </Text>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalForm} contentContainerStyle={{ paddingBottom: 24 }}>
-              
-              {/* Plan Summary Card */}
-              <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.summaryPlanName, { color: colors.onSurface }]}>
-                  {selectedPlan === "lifetime" ? "Lifetime Pro" : selectedPlan === "yearly" ? "Yearly Pro" : "Monthly Pro"}
-                </Text>
-                <Text style={[styles.summaryPlanPrice, { color: colors.brand }]}>₹{getPlanPrice()}</Text>
-              </View>
-
-              {/* Pay Button for Mobile */}
-              {Platform.OS !== "web" && (
-                <AppButton
-                  fullWidth
-                  icon="flash"
-                  label="Open UPI payment apps"
-                  onPress={handlePayViaUPI}
-                />
-              )}
-
-              {/* Manual UPI/QR Trigger */}
-              <AppButton
-                fullWidth
-                icon="qrcode"
-                label={showQR ? "Hide QR code" : "Show static UPI QR code"}
-                onPress={() => setShowQR(!showQR)} 
-                variant="outlined"
-              />
-
-              {/* Static QR Section */}
-              {showQR && (
-                <View style={styles.qrSection}>
-                  <View style={styles.qrBox}>
-                    {/* Mock styled QR code patterns */}
-                    <View style={styles.qrPatternRow}>
-                      <View style={styles.qrCornerMark} />
-                      <View style={{ flex: 1 }} />
-                      <View style={styles.qrCornerMark} />
-                    </View>
-                    <View style={styles.qrPatternMid}>
-                      <MaterialCommunityIcons name="crown" size={32} color={colors.brand} />
-                    </View>
-                    <View style={styles.qrPatternRow}>
-                      <View style={styles.qrCornerMark} />
-                      <View style={{ flex: 1 }} />
-                      <View style={styles.qrCornerMark} />
-                    </View>
-                  </View>
-                  
-                  <View style={styles.upiIdRow}>
-                    <Text style={[styles.upiIdTxt, { color: colors.onSurfaceMuted }]}>UPI ID: islamichikmah@ybl</Text>
-                    <AppIconButton
-                      accessibilityLabel="Copy UPI ID"
-                      icon="content-copy"
-                      onPress={handleCopyUPI}
-                    />
-                  </View>
-                </View>
-              )}
-
-              {/* Verification Section */}
-              <View style={styles.verificationWrap}>
-                <Text style={[styles.verificationLabel, { color: colors.onSurface }]}>
-                  Enter 12-digit UPI Ref No. (UTR)
-                </Text>
-                <Text style={[styles.verificationDesc, { color: colors.onSurfaceMuted }]}>
-                  After completing the transfer, submit the UTR for manual payment review.
-                </Text>
-                <AppTextInput
-                  autoCorrect={false}
-                  keyboardType="numeric"
-                  label="UPI reference number"
-                  leadingIcon="receipt-text-outline"
-                  maxLength={12}
-                  onChangeText={setUtr}
-                  placeholder="e.g. 620478193024"
-                  value={utr}
-                />
-              </View>
-
-              {/* Action Buttons */}
-              <View style={styles.modalActions}>
-                <AppButton
-                  fullWidth
-                  label="Submit for review"
-                  loading={verifying}
-                  onPress={handleVerifyUTR}
-                />
-
-                <AppButton
-                  fullWidth
-                  label="Cancel"
-                  onPress={() => {
-                    setUpiModalVisible(false);
-                    setUtr("");
-                    setShowQR(false);
-                  }}
-                  variant="text"
-                />
-              </View>
-
-            </ScrollView>
-
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -681,164 +486,6 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    paddingTop: 24,
-    maxHeight: "90%",
-  },
-  modalHeader: {
-    alignItems: "center",
-    paddingHorizontal: 24,
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: "center",
-    paddingHorizontal: 12,
-  },
-  modalForm: {
-    paddingHorizontal: 24,
-  },
-  summaryCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  summaryPlanName: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  summaryPlanPrice: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  upiPayButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 50,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  upiPayButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  qrTrigger: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    marginBottom: 16,
-  },
-  qrTriggerTxt: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  qrSection: {
-    alignItems: "center",
-    marginBottom: 18,
-    gap: 12,
-  },
-  qrBox: {
-    width: 140,
-    height: 140,
-    backgroundColor: "#FFFFFF",
-    padding: 12,
-    borderRadius: 12,
-    borderColor: "#E2E8F0",
-    borderWidth: 1,
-    justifyContent: "space-between",
-  },
-  qrPatternRow: {
-    flexDirection: "row",
-    height: 32,
-  },
-  qrCornerMark: {
-    width: 32,
-    height: 32,
-    borderWidth: 3,
-    borderColor: "#0F172A",
-    borderRadius: 4,
-  },
-  qrPatternMid: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  upiIdRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  upiIdTxt: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  copyBtn: {
-    padding: 4,
-  },
-  verificationWrap: {
-    gap: 8,
-    marginBottom: 24,
-  },
-  verificationLabel: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  verificationDesc: {
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  utrInput: {
-    height: 50,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    letterSpacing: 1.5,
-  },
-  modalActions: {
-    gap: 10,
-  },
-  verifyBtn: {
-    height: 52,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  verifyBtnTxt: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  cancelBtn: {
-    alignItems: "center",
-    paddingVertical: 12,
-  },
-  cancelBtnTxt: {
-    fontSize: 14,
-    fontWeight: "600",
   },
   trialBtn: {
     flexDirection: "row",

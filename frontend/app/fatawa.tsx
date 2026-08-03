@@ -50,13 +50,13 @@ import {
   fetchFatawaCategories,
   searchFatawa,
   askFatawaQuestion,
+  FatawaHttpError,
   CATEGORY_ICON_MAP,
   CATEGORY_COLOR_MAP,
   getReviewStatusLabel,
   getReviewStatusColor,
   getEvidenceIcon,
 } from "@/src/services/fatawaService";
-import { API_BASE_URL } from "@/src/apiBaseUrl";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -72,7 +72,6 @@ const DISCLAIMER =
 // ---------------------------------------------------------------------------
 
 function ReviewBadge({ status }: { status: ReviewStatus }) {
-  const { colors } = useTheme();
   const color = getReviewStatusColor(status);
   const label = getReviewStatusLabel(status);
   return (
@@ -88,7 +87,6 @@ function ReviewBadge({ status }: { status: ReviewStatus }) {
 }
 
 function EvidenceTag({ citation }: { citation: EvidenceCitation }) {
-  const { colors } = useTheme();
   const icon = getEvidenceIcon(citation.type);
   const color =
     citation.type === "quran"
@@ -126,12 +124,9 @@ export default function FatawaScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
-
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<FatawaCategory | null>(null);
-  const [page, setPage] = useState(1);
 
   // Bookmarks
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
@@ -157,8 +152,17 @@ export default function FatawaScreen() {
     try {
       const result = await askFatawaQuestion(q);
       openItem(result);
-    } catch {
-      Alert.alert("Error", "Could not resolve question. Please try again.");
+    } catch (err) {
+      if (err instanceof FatawaHttpError) {
+        const title = err.status === 404
+          ? "No confident match"
+          : err.status === 0
+          ? "Live search unavailable"
+          : "Could not answer";
+        Alert.alert(title, err.message);
+      } else {
+        Alert.alert("Could not answer", "Please try again.");
+      }
     } finally {
       setAsking(false);
     }
@@ -169,27 +173,6 @@ export default function FatawaScreen() {
 
   // nextPageRef tracks the next page to fetch for "load more".
   const nextPageRef = useRef(2);
-
-  // ---------------------------------------------------------------------------
-  // Bootstrap
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    loadBookmarks();
-    loadCategories();
-  }, []);
-
-  useEffect(() => {
-    loadItems(true);
-  }, [debouncedQuery, selectedCategory]);
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [items]);
 
   // ---------------------------------------------------------------------------
   // Data loaders
@@ -209,7 +192,6 @@ export default function FatawaScreen() {
       const currentPage = reset ? 1 : nextPageRef.current;
       if (reset) {
         setItems([]);
-        setPage(1);
         nextPageRef.current = 2; // after page 1 loads, next fetch is page 2
         setLoading(true);
         fadeAnim.setValue(0);
@@ -231,17 +213,37 @@ export default function FatawaScreen() {
         } else {
           setItems((prev) => [...prev, ...resp.results]);
           nextPageRef.current = currentPage + 1;
-          setPage(currentPage + 1);
         }
-      } catch (err: any) {
+      } catch {
         setError("Unexpected error loading content.");
       } finally {
         setLoading(false);
         setLoadingMore(false);
       }
     },
-    [debouncedQuery, selectedCategory]
+    [debouncedQuery, selectedCategory, fadeAnim]
   );
+
+  // ---------------------------------------------------------------------------
+  // Bootstrap
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    loadBookmarks();
+    loadCategories();
+  }, []);
+
+  useEffect(() => {
+    loadItems(true);
+  }, [loadItems]);
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [items, fadeAnim]);
 
   const loadMore = () => {
     if (!loadingMore && items.length < total) {
@@ -396,7 +398,7 @@ export default function FatawaScreen() {
         {/* Question summary */}
         <View style={[styles.cardQuestionBox, { backgroundColor: mode === "dark" ? "#0F172A" : "#F8FAFC" }]}>
           <Text style={[styles.cardQuestion, { color: colors.onSurfaceMuted }]} numberOfLines={2}>
-            "{item.question_summary}"
+            “{item.question_summary}”
           </Text>
         </View>
 
@@ -631,11 +633,38 @@ export default function FatawaScreen() {
           <View style={styles.headerCenter}>
             <Text style={[styles.headerTitle, { color: colors.onSurface }]}>Fatawa & Scholarly Answers</Text>
             <Text style={[styles.headerSubtitle, { color: colors.onSurfaceMuted }]}>
-              Islamic Q&A — Original Summaries
+              Curated summaries and source lookup
             </Text>
           </View>
           <MaterialCommunityIcons name="scale-balance" size={24} color={colors.brand} />
         </View>
+
+        <Pressable
+          onPress={() => setDisclaimerExpanded((expanded) => !expanded)}
+          style={[
+            styles.disclaimerBanner,
+            { backgroundColor: "#F59E0B12", borderColor: "#F59E0B35" },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Educational guidance disclaimer"
+        >
+          <View style={styles.disclaimerBannerRow}>
+            <MaterialCommunityIcons name="shield-alert-outline" size={17} color="#F59E0B" />
+            <Text style={[styles.disclaimerBannerTitle, { color: colors.onSurface }]}>
+              Educational guidance
+            </Text>
+            <MaterialCommunityIcons
+              name={disclaimerExpanded ? "chevron-up" : "chevron-down"}
+              size={18}
+              color={colors.onSurfaceMuted}
+            />
+          </View>
+          {disclaimerExpanded ? (
+            <Text style={[styles.disclaimerBannerText, { color: colors.onSurfaceMuted }]}>
+              {DISCLAIMER}
+            </Text>
+          ) : null}
+        </Pressable>
 
         {/* ── Search bar ── */}
         <View style={[styles.searchRow, { backgroundColor: mode === "dark" ? colors.surfaceSecondary : "#FFFFFF", borderColor: colors.border }]}>
@@ -722,8 +751,8 @@ export default function FatawaScreen() {
             </Text>
             <Text style={[styles.emptyBody, { color: colors.onSurfaceMuted }]}>
               {searchQuery
-                ? `Ask our Scholarly Knowledge Engine for a grounded ruling summary on "${searchQuery}".`
-                : "Ask any Islamic question below to receive a grounded scholarly ruling summary with evidence citations."}
+                ? `Search trusted scholarly sources for a relevant ruling on "${searchQuery}". If no confident match exists, the app will tell you.`
+                : "Ask a question to search the reviewed catalog and trusted scholarly sources."}
             </Text>
             {searchQuery ? (
               <Pressable
@@ -737,7 +766,7 @@ export default function FatawaScreen() {
                 ) : (
                   <>
                     <MaterialCommunityIcons name="auto-fix" size={18} color="#fff" />
-                    <Text style={styles.askCtaBtnText}>Ask Scholar Assistant ✨</Text>
+                    <Text style={styles.askCtaBtnText}>Search for an Answer</Text>
                   </>
                 )}
               </Pressable>

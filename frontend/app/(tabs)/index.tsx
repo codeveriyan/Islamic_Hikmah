@@ -34,7 +34,7 @@ import {
   saveActiveGoalIds, getGoalNotifTimes, scheduleGoalNotifications,
   getPrayerTimingsCache,
 } from "@/src/storage";
-
+import { useTabBarVisibility } from "@/src/TabBarVisibilityContext";
 import { Image as ExpoImage } from "expo-image";
 import {
   AppIconButton,
@@ -76,8 +76,8 @@ const CATEGORY_IMAGES: Record<string, any> = {
 };
 
 // Countdown ring size
-const RING = 80;
-const STROKE = 6;
+const RING = 112;
+const STROKE = 7;
 const RADIUS = (RING - STROKE) / 2;
 const CIRC = 2 * Math.PI * RADIUS;
 
@@ -162,7 +162,10 @@ const QUICK_ACTIONS = [
   { id: "fatawaAnswers",     label: "Fatawa Answers",          route: "/fatawa",                 emoji: "⚖️" },
   { id: "seerah",            label: "Seerah",                  route: "/seerah",                 emoji: "🌙" },
   { id: "duas",              label: "Du'as",                   route: "/dua-hub",               emoji: "🤲" },
-  { id: "namesOfAllah",      label: "Asma Al-Husna",          route: "/names",                  emoji: "🕌" },
+  { id: "fortressMuslim",    label: "Fortress of Muslim",      route: "/fortress",              emoji: "🛡️" },
+  { id: "namesOfAllah",      label: "Asma Al-Husna",          route: "/names",                  emoji: "✨" },
+  { id: "qiblaDirection",    label: "Qiblah Direction",        route: "/qibla",                  emoji: "🧭" },
+  { id: "zakatCalculator",   label: "Zakat Calculator",        route: "/zakat-calculator",       emoji: "💰" },
   { id: "views360",          label: "360° Views",             route: "/views360",               emoji: "🌐" },
   { id: "identifyRecitation", label: "Recitation ID",         route: "/quran/identify",         emoji: "🎙️" },
   { id: "qadhaTracker",      label: "Qadha Tracker",           route: "/qadha",                  emoji: "📝" },
@@ -174,19 +177,28 @@ const QUICK_ACTIONS = [
   { id: "halalFoodScanner",  label: "Halal Product Scanner",   route: "/halal-scanner",          emoji: "🔎",  premium: true },
 ];
 
-// Keep Asma Al-Husna available from the Du'as hub, and surface Zakat here.
-const HOME_QUICK_ACTIONS = QUICK_ACTIONS.map((action) => action.id === "namesOfAllah"
-  ? { id: "zakat", label: "Zakat Calculator", route: "/zakat-calculator", emoji: "💰" }
-  : action);
+const HOME_QUICK_ACTIONS = QUICK_ACTIONS;
 
-function getGreeting() {
+function getGreeting(prayerName?: string) {
   const hour = new Date().getHours();
+  let timePrefix = "Good morning";
+  if (hour >= 12 && hour < 17) timePrefix = "Good afternoon";
+  else if (hour >= 17 && hour < 21) timePrefix = "Good evening";
+  else if (hour >= 21 || hour < 5) timePrefix = "Good night";
+
+  if (prayerName) {
+    const pName = prayerName.trim();
+    return {
+      salaam: "Assalamu Alaikum",
+      sub: `${timePrefix}, it is now ${pName} time`,
+    };
+  }
+
   if (hour < 5) return { salaam: "Assalamu Alaikum", sub: "May your night be blessed" };
   if (hour < 12) return { salaam: "Assalamu Alaikum", sub: "Good morning, may Allah bless your day" };
-  if (hour < 15) return { salaam: "Assalamu Alaikum", sub: "Good afternoon, remember your Dhuhr prayer" };
-  if (hour < 18) return { salaam: "Assalamu Alaikum", sub: "Good afternoon, Asr time approaches" };
-  if (hour < 20) return { salaam: "Assalamu Alaikum", sub: "Good evening, don't forget Maghrib" };
-  return { salaam: "Assalamu Alaikum", sub: "Good evening, may your night be peaceful" };
+  if (hour < 17) return { salaam: "Assalamu Alaikum", sub: "Good afternoon, remember your prayers" };
+  if (hour < 21) return { salaam: "Assalamu Alaikum", sub: "Good evening, may your evening be blessed" };
+  return { salaam: "Assalamu Alaikum", sub: "Good night, may your sleep be peaceful" };
 }
 
 // format12Hour imported from @/src/utils/time
@@ -347,7 +359,15 @@ export default function HomeScreen() {
   const { showPremiumModal } = usePremiumModal();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
-  const greeting = useMemo(() => getGreeting(), []);
+  const { onScroll, onScrollEndDrag, onMomentumScrollEnd } = useTabBarVisibility();
+  // Prayer times & countdown
+  const [times, setTimes] = useState<Record<string, string> | null>(null);
+  const [city, setCity] = useState("");
+  const [countdown, setCountdown] = useState("--:--:--");
+  const [progress, setProgress] = useState(0);
+
+  const prayerPeriods = useMemo(() => times ? getPrayerPeriods(times) : null, [times]);
+  const greeting = useMemo(() => getGreeting(prayerPeriods?.current?.name), [prayerPeriods?.current?.name]);
   const hijri = useMemo(() => getHijriDate(), []);
   const nextIslamicEvent = useMemo(() => getNextIslamicEvent([]), []);
   const [dynamicIslamicEvent, setDynamicIslamicEvent] = useState(nextIslamicEvent);
@@ -357,7 +377,6 @@ export default function HomeScreen() {
       if (next) setDynamicIslamicEvent(next);
     }).catch(() => {});
   }, []);
-
 
   // Time-aware greeting gradient + Arabic phrase
   const greetingGrad = useMemo((): [string, string] => {
@@ -376,12 +395,6 @@ export default function HomeScreen() {
     if (h < 20) return { arabic: "مَسَاءُ الْخَيْرِ", english: greeting.sub };
     return { arabic: "اللَّهُمَّ بِكَ أَمْسَيْنَا", english: "Blessed evening" };
   }, [greeting]);
-
-  // Prayer times & countdown
-  const [times, setTimes] = useState<Record<string, string> | null>(null);
-  const [city, setCity] = useState("");
-  const [countdown, setCountdown] = useState("--:--:--");
-  const [progress, setProgress] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastNotifMin = useRef<number | null>(null);
 
@@ -733,8 +746,6 @@ export default function HomeScreen() {
       return false;
     });
   }, [allGoals, activeIds, selectedAdhkarCount]);
-
-  const prayerPeriods = useMemo(() => times ? getPrayerPeriods(times) : null, [times]);
 
   // Goal counts by category
   const goalCounts = useMemo(() => {
@@ -1447,6 +1458,10 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         removeClippedSubviews
+        onScroll={onScroll}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1459,102 +1474,79 @@ export default function HomeScreen() {
       >
 
 
-        {/* ── Time-Aware Greeting Hero ── */}
+        {/* ── Unified Combined Hero Banner (User Greeting + Prayer Times + Countdown Ring) ── */}
         <AnimatedCard
           onPress={() => router.push('/prayer-times')}
-          style={{ marginHorizontal: theme.spacing.lg, marginBottom: 14, borderRadius: 20, overflow: 'hidden' }}
+          style={{
+            marginHorizontal: theme.spacing.lg,
+            marginBottom: theme.spacing.lg,
+            borderRadius: 24,
+            overflow: "hidden",
+            borderWidth: 1,
+            borderColor: colors.mode === "dark" ? "rgba(0,168,132,0.3)" : "rgba(6,95,70,0.18)",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: 0.16,
+            shadowRadius: 20,
+            elevation: 8,
+          }}
         >
           <LinearGradient
-            colors={greetingGrad}
+            colors={colors.mode === "dark" ? ["#0B2D25", "#0A382C", "#10251F"] : ["#065F46", "#047857", "#0F766E"]}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFillObject}
           />
+
           <View style={{ padding: 18 }}>
-            <Text style={{ fontFamily: 'NotoNaskhArabic', fontSize: 22, color: '#fff', textAlign: 'right', marginBottom: 10 }}>
-              {arabicGreeting.arabic}
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.72)', fontFamily: 'Figtree_400Regular' }}>
-                  {arabicGreeting.english}
-                </Text>
-                {profile?.name ? (
-                  <Text style={{ fontSize: 17, color: '#fff', fontFamily: 'Outfit_600SemiBold', fontWeight: '700', marginTop: 3 }}>
-                    {profile.name}
-                  </Text>
-                ) : null}
-                {city ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
-                    <MaterialCommunityIcons name="map-marker" size={13} color="rgba(255,255,255,0.65)" />
-                    <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', fontFamily: 'Figtree_400Regular' }}>{city}</Text>
-                  </View>
-                ) : null}
-              </View>
-              {hijri ? (
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', fontFamily: 'Figtree_400Regular', textTransform: 'uppercase', letterSpacing: 0.5 }}>Hijri</Text>
-                  <Text style={{ fontSize: 13, color: '#fff', fontFamily: 'Outfit_600SemiBold', fontWeight: '700', marginTop: 2 }}>{hijri}</Text>
-                </View>
-              ) : null}
+            {/* Top User Greeting */}
+            <View style={{ marginBottom: 10 }}>
+              <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.78)", fontFamily: "Figtree_400Regular" }}>
+                {arabicGreeting.english}
+              </Text>
+              <Text style={{ fontSize: 18, color: "#FFFFFF", fontFamily: "Outfit_600SemiBold", fontWeight: "800", marginTop: 2 }}>
+                {profile?.name || "Guest User"}
+              </Text>
             </View>
+
+            {/* Bottom Current Prayer & Countdown Ring Row */}
+            {prayerPeriods ? (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 26, fontWeight: "900", color: "#FFFFFF" }}>
+                    {t(prayerPeriods.current.name.toLowerCase())}
+                  </Text>
+                  <Text style={{ fontSize: 18, fontWeight: "800", color: "#70FF00", marginTop: 1 }}>
+                    {format12Hour(prayerPeriods.current.timeStr)}
+                  </Text>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.85)", marginTop: 6 }}>
+                    {t("viewAllPrayers")} →
+                  </Text>
+                </View>
+
+                {/* Countdown Ring on the RIGHT SIDE */}
+                <View style={styles.ringWrap}>
+                  <Svg width={RING} height={RING}>
+                    <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke="#70FF00" strokeWidth={STROKE} fill="transparent" opacity={0.85} />
+                    <Circle
+                      cx={RING/2} cy={RING/2} r={RADIUS}
+                      stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
+                      strokeDasharray={CIRC} strokeDashoffset={strokeDash}
+                      strokeLinecap="round" rotation="-90" origin={`${RING/2},${RING/2}`}
+                    />
+                  </Svg>
+                  <View style={styles.ringCenter}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.75)" }}>
+                      {t(prayerPeriods.next.name.toLowerCase())}
+                    </Text>
+                    <Text style={{ fontSize: 14, fontWeight: "900", color: "#FFFFFF", marginTop: 2 }}>
+                      {countdown}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
           </View>
         </AnimatedCard>
-
-        {/* Prayer Countdown Card */}
-        {prayerPeriods && (
-          <AnimatedCard onPress={() => router.push("/prayer-times")} style={[styles.prayerCard, { overflow: "hidden" }]}>
-            <LinearGradient
-              colors={colors.mode === "dark" ? ["#0B2D25", "#10251F", "#1E3528"] : ["#FFFFFF", "#F3FAF2", "#FFF7E0"]}
-              style={{ ...require("react-native").StyleSheet.absoluteFillObject }}
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.prayerLabel, { color: colors.onSurfaceMuted }]}>{t("currentPrayer")}</Text>
-              <Text style={[styles.prayerName, { color: colors.onSurface }]}>{t(prayerPeriods.current.name.toLowerCase())}</Text>
-              <Text style={[styles.prayerTime, { color: colors.brand }]}>{format12Hour(prayerPeriods.current.timeStr)}</Text>
-              <Text style={[styles.viewAll, { color: colors.brand }]}>{t("viewAllPrayers")}</Text>
-            </View>
-            {/* Countdown Ring */}
-            <View style={styles.ringWrap}>
-              <Svg width={RING} height={RING}>
-                <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke="#70FF00" strokeWidth={STROKE} fill="transparent" opacity={0.85} />
-                <Circle
-                  cx={RING/2} cy={RING/2} r={RADIUS}
-                  stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
-                  strokeDasharray={CIRC} strokeDashoffset={strokeDash}
-                  strokeLinecap="round" rotation="-90" origin={`${RING/2},${RING/2}`}
-                />
-              </Svg>
-              <View style={styles.ringCenter}>
-                <Text style={[styles.nextLabel, { color: colors.onSurfaceMuted }]}>
-                  {t(prayerPeriods.next.name.toLowerCase())}
-                </Text>
-                <Text style={[styles.countdown, { color: colors.onSurface }]}>{countdown}</Text>
-              </View>
-            </View>
-          </AnimatedCard>
-        )}
-
-        {/* ── Continue Reading Quran ── */}
-        {lastReadQuran && (
-          <AnimatedCard
-            onPress={() => router.push(`/quran/${lastReadQuran.surahNumber}` as any)}
-            style={{ marginHorizontal: theme.spacing.lg, marginBottom: 14, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.brand + '33' }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceSecondary, padding: 14, gap: 12 }}>
-              <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: colors.brand + '18', alignItems: 'center', justifyContent: 'center' }}>
-                <MaterialCommunityIcons name="book-open-page-variant" size={20} color={colors.brand} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 10, color: colors.onSurfaceMuted, fontFamily: 'Figtree_400Regular', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 2 }}>Continue Reading</Text>
-                <Text style={{ fontSize: 15, color: colors.onSurface, fontFamily: 'Outfit_600SemiBold', fontWeight: '700' }}>{lastReadQuran.surahName}</Text>
-                {lastReadQuran.ayahNumber ? (
-                  <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, fontFamily: 'Figtree_400Regular', marginTop: 1 }}>Ayah {lastReadQuran.ayahNumber}</Text>
-                ) : null}
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={20} color={colors.brand} />
-            </View>
-          </AnimatedCard>
-        )}
 
         {/* ── Islamic Event Countdown ── */}
         {dynamicIslamicEvent && (
@@ -1589,57 +1581,6 @@ export default function HomeScreen() {
           </AnimatedCard>
         )}
 
-        {/* Quick Actions */}
-        {/* Daily Dua Card (UmmahAPI) */}
-        {!dailyDuaDismissed && dailyDua && (
-          <View
-            style={{
-              marginHorizontal: 20, marginBottom: 16, padding: 16, borderRadius: 20,
-              backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.brand + "33",
-            }}
-          >
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <Pressable onPress={() => router.push("/dua-hub" as any)} style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 8 }}>
-                <MaterialCommunityIcons name="hands-pray" size={18} color={colors.brand} />
-                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.brand, flex: 1 }} numberOfLines={1}>
-                  Dua of the Day: {dailyDua.title}
-                </Text>
-              </Pressable>
-              
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Pressable onPress={() => router.push("/dua-hub" as any)} hitSlop={6}>
-                  <MaterialCommunityIcons name="chevron-right" size={20} color={colors.brand} />
-                </Pressable>
-                <Pressable
-                  onPress={async () => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                    setDailyDuaDismissed(true);
-                    const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-                    await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-                  }}
-                  hitSlop={10}
-                  accessibilityLabel="Dismiss Dua of the Day"
-                >
-                  <MaterialCommunityIcons name="close-circle-outline" size={20} color={colors.onSurfaceMuted} />
-                </Pressable>
-              </View>
-            </View>
-            <Pressable onPress={() => router.push("/dua-hub" as any)}>
-              <Text style={{ fontFamily: "AmiriBold", fontSize: 20, color: colors.onSurface, textAlign: "right", marginBottom: 6, lineHeight: 32 }}>
-                {dailyDua.arabic}
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.onSurfaceSecondary, lineHeight: 19 }} numberOfLines={2}>
-                "{dailyDua.translation}"
-              </Text>
-              {dailyDua.source ? (
-                <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 4, fontStyle: "italic" }}>
-                  Source: {dailyDua.source}
-                </Text>
-              ) : null}
-            </Pressable>
-          </View>
-        )}
-
         <ScrollView
           horizontal
           pagingEnabled
@@ -1663,15 +1604,13 @@ export default function HomeScreen() {
               style={[styles.quickBtn, reorderFrom === a.id && { opacity: 0.45 }, { overflow: "hidden" }]}>
               <View style={styles.quickIconOnly}>
                 {"image" in a && a.image ? (
-                  <Image 
+                  <ExpoImage 
                     source={a.image} 
-                    style={[
-                      styles.quickIconImage, 
-                      a.id === "nobleQuran" && { width: 56, height: 56 }
-                    ]} 
+                    contentFit="contain"
+                    style={styles.quickIconImage} 
                   />
                 ) : (
-                  <Text style={styles.quickEmoji}>{"emoji" in a ? a.emoji : ""}</Text>
+                  <Text style={styles.quickEmoji}>{"emoji" in a ? a.emoji : "✨"}</Text>
                 )}
                 {/* Premium lock badge */}
                 {(a as any).premium && profile?.tier !== "premium" && !profile?.trialActive && (
@@ -2326,11 +2265,87 @@ export default function HomeScreen() {
                 سُبْحَانَ ٱللَّٰهِ
               </Text>
               <Text style={{ fontSize: 24, color: "#FFFFFF", fontWeight: "800", textAlign: "center", lineHeight: 36, textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 }}>
-                You&apos;ve completed{"\n"}all your goals for today.
+                {"You've completed\nall your goals for today."}
               </Text>
             </View>
           </View>
         </Pressable>
+      </Modal>
+
+      {/* ── Dua of the Day Pop-up Modal ── */}
+      <Modal
+        visible={!dailyDuaDismissed && !!dailyDua}
+        transparent
+        animationType="fade"
+        onRequestClose={async () => {
+          setDailyDuaDismissed(true);
+          const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
+          await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", padding: 16 }}>
+          <View style={{ width: width * 0.92, maxWidth: 520, borderRadius: 28, padding: 26, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brand + "44", elevation: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.35, shadowRadius: 24 }}>
+            {/* Header */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
+                <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center" }}>
+                  <MaterialCommunityIcons name="hands-pray" size={22} color={colors.brand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: colors.brand, textTransform: "uppercase", letterSpacing: 0.9 }}>
+                    Dua of the Day
+                  </Text>
+                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.onSurface, marginTop: 1 }} numberOfLines={1}>
+                    {dailyDua?.title}
+                  </Text>
+                </View>
+              </View>
+
+              <Pressable
+                onPress={async () => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setDailyDuaDismissed(true);
+                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
+                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
+                }}
+                hitSlop={12}
+                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center" }}
+              >
+                <MaterialCommunityIcons name="close" size={22} color={colors.onSurfaceMuted} />
+              </Pressable>
+            </View>
+
+            {/* Arabic + Translation Scrollable Area */}
+            <ScrollView style={{ maxHeight: 300, marginVertical: 10 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ fontFamily: "AmiriBold", fontSize: 28, color: colors.onSurface, textAlign: "right", lineHeight: 48, marginBottom: 16 }}>
+                {dailyDua?.arabic}
+              </Text>
+              <Text style={{ fontSize: 14, color: colors.onSurfaceSecondary, lineHeight: 22, fontStyle: "italic", marginBottom: 12 }}>
+                "{dailyDua?.translation}"
+              </Text>
+              {dailyDua?.source ? (
+                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.brand, marginTop: 4 }}>
+                  Source: {dailyDua.source}
+                </Text>
+              ) : null}
+            </ScrollView>
+
+            {/* Single Full-Width Action Button ("Open Du'as Hub") */}
+            <View style={{ marginTop: 16 }}>
+              <Pressable
+                onPress={async () => {
+                  setDailyDuaDismissed(true);
+                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
+                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
+                  router.push("/dua-hub" as any);
+                }}
+                style={{ width: "100%", backgroundColor: colors.brand, paddingVertical: 14, borderRadius: 16, alignItems: "center", justifyContent: "center" }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: "800", color: "#FFFFFF" }}>{"Open Du'as Hub"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -2762,3 +2777,4 @@ const styles = StyleSheet.create({
     bottom: -100,
   },
 });
+// End of HomeScreen component

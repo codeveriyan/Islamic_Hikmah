@@ -43,6 +43,8 @@ interface BackendProfile {
   created_at: string;
   status: "Active" | "Blocked";
   tier: "free" | "premium";
+  premium_until?: string | null;
+  premium_source?: string | null;
   trial_started_at?: string | null;
   trial_active: boolean;
   trial_ends_at?: string | null;
@@ -143,6 +145,7 @@ function buildUserProfile(firebaseUser: User, backendProfile?: BackendProfile | 
       || (firebaseUser.metadata.creationTime ? new Date(firebaseUser.metadata.creationTime).getTime() : Date.now()),
     status: backendProfile?.status || "Active",
     tier: DEV_UNLOCK_PREMIUM || backendProfile?.tier === "premium" ? "premium" : "free",
+    premiumUntil: toTimestamp(backendProfile?.premium_until),
     trialStartedAt,
     trialActive,
     trialDaysLeft,

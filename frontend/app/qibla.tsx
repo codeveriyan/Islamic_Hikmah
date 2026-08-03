@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
+  PanResponder,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -24,6 +26,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { Accelerometer, Magnetometer } from 'expo-sensors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import Svg, { Line, Path, Rect } from 'react-native-svg';
 import { WebView } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/src/ThemeContext';
@@ -33,6 +37,8 @@ import { useAuth } from '@/src/AuthContext';
 import { usePremiumModal } from '@/src/PremiumModalContext';
 
 const { width, height } = Dimensions.get('window');
+const PANORAMA_VIEW_HEIGHT = Math.min(Math.max(height * 0.58, 420), 620);
+const PANORAMA_IMAGE_WIDTH = Math.max(width, PANORAMA_VIEW_HEIGHT * 2);
 
 interface LocationCoords {
   latitude: number;
@@ -51,6 +57,23 @@ const DIAL_SKINS = [
   { id: 'obsidian', name: 'Obsidian', ringColor: '#3498db', bg: '#101114', accent: '#5dade2', needleColorLight: '#00c896', needleColorDark: '#008f70', caseGradient: ['#5dade2', '#3498db', '#1f618d', '#061713'] },
 ];
 
+function KaabaOverlayIcon({ size = 170, color = '#050505' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 120" accessibilityLabel="Kaaba direction marker">
+      <Rect x="20" y="38" width="60" height="54" rx="6" fill="none" stroke={color} strokeWidth="8" />
+      <Path d="M35 58 L50 45 L65 58 V77 H35 Z" fill="none" stroke={color} strokeWidth="8" strokeLinejoin="round" />
+      <Line x1="28" y1="27" x2="28" y2="38" stroke={color} strokeWidth="8" strokeLinecap="round" />
+      <Line x1="42" y1="27" x2="42" y2="38" stroke={color} strokeWidth="8" strokeLinecap="round" />
+      <Line x1="58" y1="27" x2="58" y2="38" stroke={color} strokeWidth="8" strokeLinecap="round" />
+      <Line x1="72" y1="27" x2="72" y2="38" stroke={color} strokeWidth="8" strokeLinecap="round" />
+      <Line x1="28" y1="92" x2="28" y2="103" stroke={color} strokeWidth="8" strokeLinecap="round" />
+      <Line x1="42" y1="92" x2="42" y2="103" stroke={color} strokeWidth="8" strokeLinecap="round" />
+      <Line x1="58" y1="92" x2="58" y2="103" stroke={color} strokeWidth="8" strokeLinecap="round" />
+      <Line x1="72" y1="92" x2="72" y2="103" stroke={color} strokeWidth="8" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function QiblaScreen() {
   const router = useRouter();
   const { colors, language } = useTheme();
@@ -66,9 +89,12 @@ export default function QiblaScreen() {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [locationName, setLocationName] = useState<string>('Calculating...');
 
-  // Toggle modes: 'compass' | 'map'
-  const [mode, setMode] = useState<'compass' | 'map'>('compass');
+  // Display modes: compass, live camera AR, swipeable 360° panorama, and map.
+  const [mode, setMode] = useState<'compass' | 'ar' | 'view360' | 'map'>('compass');
   const [activeSkin, setActiveSkin] = useState(DIAL_SKINS[0]);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [panoramaOffset, setPanoramaOffset] = useState(-PANORAMA_IMAGE_WIDTH);
+  const [panoramaLive, setPanoramaLive] = useState(true);
 
   // Bubble level tilt state
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
@@ -83,6 +109,61 @@ export default function QiblaScreen() {
   const magnetometerRef = useRef<any>(null);
   const lastHapticRef = useRef<number>(0);
   const [needsCalibration, setNeedsCalibration] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const panoramaOffsetRef = useRef(-PANORAMA_IMAGE_WIDTH);
+  const panoramaGestureStartRef = useRef(-PANORAMA_IMAGE_WIDTH);
+  const panoramaPointerStartRef = useRef<number | null>(null);
+
+  const updatePanoramaOffset = useCallback((nextOffset: number) => {
+    const minOffset = -(PANORAMA_IMAGE_WIDTH * 2);
+    const next = Math.max(minOffset, Math.min(0, nextOffset));
+    panoramaOffsetRef.current = next;
+    setPanoramaOffset(next);
+  }, []);
+
+  const syncPanoramaToHeading = useCallback(() => {
+    updatePanoramaOffset(-PANORAMA_IMAGE_WIDTH - (heading / 360) * PANORAMA_IMAGE_WIDTH);
+  }, [heading, updatePanoramaOffset]);
+
+  useEffect(() => {
+    if (mode === 'view360' && panoramaLive) {
+      syncPanoramaToHeading();
+    }
+  }, [mode, panoramaLive, syncPanoramaToHeading]);
+
+  const panoramaPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 4,
+      onPanResponderGrant: () => {
+        setPanoramaLive(false);
+        panoramaGestureStartRef.current = panoramaOffsetRef.current;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        updatePanoramaOffset(panoramaGestureStartRef.current + gestureState.dx);
+      },
+      onPanResponderRelease: () => {
+        panoramaGestureStartRef.current = panoramaOffsetRef.current;
+      },
+    })
+  ).current;
+
+  const getPointerX = (event: any) => event?.clientX ?? event?.nativeEvent?.pageX ?? 0;
+  const handlePanoramaPointerDown = (event: any) => {
+    setPanoramaLive(false);
+    panoramaPointerStartRef.current = getPointerX(event);
+    panoramaGestureStartRef.current = panoramaOffsetRef.current;
+  };
+  const handlePanoramaPointerMove = (event: any) => {
+    if (panoramaPointerStartRef.current === null) return;
+    updatePanoramaOffset(
+      panoramaGestureStartRef.current + getPointerX(event) - panoramaPointerStartRef.current
+    );
+  };
+  const handlePanoramaPointerUp = () => {
+    panoramaPointerStartRef.current = null;
+    panoramaGestureStartRef.current = panoramaOffsetRef.current;
+  };
 
   // Calculate distance to Kaaba in kilometers using Haversine
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -274,6 +355,16 @@ export default function QiblaScreen() {
 
   // Calculate relative angle (Qibla - Device Heading)
   const relativeAngle = (qiblaDirection - heading + 360) % 360;
+  const signedRelativeAngle = relativeAngle > 180 ? relativeAngle - 360 : relativeAngle;
+  const signedRelativeRadians = (signedRelativeAngle * Math.PI) / 180;
+  const arTargetLeft = Math.max(
+    16,
+    Math.min(width - 176, width / 2 + Math.sin(signedRelativeRadians) * Math.min(width * 0.34, 260) - 80)
+  );
+  const arTargetTop = Math.max(
+    170,
+    Math.min(height - 340, height * 0.48 - Math.cos(signedRelativeRadians) * 34)
+  );
 
   // Reanimated 3D tilt style
   const tiltedChamberStyle = useAnimatedStyle(() => {
@@ -429,11 +520,11 @@ export default function QiblaScreen() {
         {/* Toggle Mode Button & Nav Buttons */}
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
           <Pressable 
-            onPress={() => setMode(mode === 'compass' ? 'map' : 'compass')} 
+            onPress={() => setMode(mode === 'map' ? 'compass' : 'map')}
             style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
           >
             <MaterialCommunityIcons 
-              name={mode === 'compass' ? "map-legend" : "compass-outline"} 
+              name={mode === 'map' ? "compass-outline" : "map-legend"}
               size={22} 
               color={colors.brand} 
             />
@@ -464,6 +555,33 @@ export default function QiblaScreen() {
           <MaterialCommunityIcons name="information-outline" size={18} color={colors.onSurfaceMuted} />
         </Pressable>
       )}
+
+      <View style={[styles.modeSelector, { backgroundColor: 'rgba(0,0,0,0.24)', borderColor: colors.border }]}>
+        {[
+          { id: 'compass', label: 'Compass', icon: 'compass-outline' },
+          { id: 'ar', label: 'Live AR', icon: 'camera-outline' },
+          { id: 'view360', label: '360°', icon: 'image-filter-hdr' },
+          { id: 'map', label: 'Map', icon: 'map-outline' },
+        ].map(item => (
+          <Pressable
+            key={item.id}
+            onPress={() => setMode(item.id as 'compass' | 'ar' | 'view360' | 'map')}
+            style={[
+              styles.modeSelectorItem,
+              mode === item.id && { backgroundColor: colors.brand },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={item.icon as any}
+              size={17}
+              color={mode === item.id ? '#061713' : colors.onSurfaceMuted}
+            />
+            <Text style={[styles.modeSelectorLabel, { color: mode === item.id ? '#061713' : colors.onSurfaceMuted }]}>
+              {item.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
 
       {mode === 'map' ? (
         // Live OSM Map View
@@ -498,6 +616,171 @@ export default function QiblaScreen() {
                   </TouchableOpacity>
                 )}
               </View>
+            </View>
+          </View>
+        </View>
+      ) : mode === 'ar' ? (
+        <View style={styles.featureMode}>
+          <View style={styles.arScene}>
+            {cameraEnabled && cameraPermission?.granted ? (
+              <CameraView style={StyleSheet.absoluteFillObject} facing="back" />
+            ) : (
+              <LinearGradient
+                colors={['#101817', '#061713']}
+                style={StyleSheet.absoluteFillObject}
+              />
+            )}
+
+            <View style={styles.arCompassBubble} pointerEvents="none">
+              <View style={[styles.arCompassWedge, { transform: [{ rotate: `${relativeAngle}deg` }] }]} />
+              <View style={styles.arCompassDot} />
+              <Text style={styles.arCompassNorth}>N</Text>
+            </View>
+
+            <View style={styles.arDistanceCard} pointerEvents="none">
+              <Text style={styles.arDistanceTitle}>Kaaba's Direction</Text>
+              <Text style={styles.arDistanceValue}>
+                {distanceToKaaba.toLocaleString(undefined, { maximumFractionDigits: 0 })} km away
+              </Text>
+            </View>
+
+            <View style={[styles.arKaabaMarker, { left: arTargetLeft, top: arTargetTop }]} pointerEvents="none">
+              <KaabaOverlayIcon size={160} />
+            </View>
+
+            <View style={styles.arInstructionPill} pointerEvents="none">
+              <MaterialCommunityIcons name="crosshairs-gps" size={16} color="#fff" />
+              <Text style={styles.arInstructionText}>
+                {isAligned ? 'You are facing the Qibla' : `Turn ${Math.round(Math.abs(signedRelativeAngle))}° ${signedRelativeAngle < 0 ? 'left' : 'right'}`}
+              </Text>
+            </View>
+
+            {cameraPermission && !cameraPermission.granted && (
+              <View style={styles.cameraPermissionCard}>
+                <MaterialCommunityIcons name="camera-off-outline" size={34} color="#fff" />
+                <Text style={styles.cameraPermissionTitle}>Camera access is needed for Live AR</Text>
+                <Text style={styles.cameraPermissionText}>Allow camera access to see the Qibla marker over your surroundings.</Text>
+                <Pressable
+                  onPress={() => requestCameraPermission()}
+                  style={styles.cameraPermissionButton}
+                >
+                  <Text style={styles.cameraPermissionButtonText}>Allow camera</Text>
+                </Pressable>
+              </View>
+            )}
+
+            <Pressable
+              onPress={() => setCameraEnabled(value => !value)}
+              style={styles.cameraToggle}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: cameraEnabled }}
+              accessibilityLabel="Toggle live camera"
+            >
+              <MaterialCommunityIcons
+                name={cameraEnabled ? 'video-outline' : 'video-off-outline'}
+                size={22}
+                color="#fff"
+              />
+              <View style={[styles.cameraToggleTrack, cameraEnabled && styles.cameraToggleTrackOn]}>
+                <View style={[styles.cameraToggleThumb, cameraEnabled && styles.cameraToggleThumbOn]} />
+              </View>
+            </Pressable>
+          </View>
+        </View>
+      ) : mode === 'view360' ? (
+        <View style={styles.featureMode}>
+          <View style={styles.viewerHeader}>
+            <View>
+              <Text style={[styles.viewerTitle, { color: colors.onSurface }]}>Kaaba 360° View</Text>
+              <Text style={[styles.viewerSubtitle, { color: colors.onSurfaceMuted }]}>Swipe to look around the Grand Mosque</Text>
+            </View>
+            <View style={styles.viewerHeaderActions}>
+              <Pressable
+                onPress={() => {
+                  const nextLiveState = !panoramaLive;
+                  setPanoramaLive(nextLiveState);
+                  if (nextLiveState) syncPanoramaToHeading();
+                }}
+                style={[styles.viewerLiveControl, panoramaLive && styles.viewerLiveControlActive]}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: panoramaLive }}
+                accessibilityLabel="Follow device orientation in 360 view"
+              >
+                <MaterialCommunityIcons name={panoramaLive ? 'motion-sensor' : 'gesture-swipe'} size={16} color={panoramaLive ? '#061713' : colors.onSurfaceMuted} />
+                <Text style={[styles.viewerLiveText, { color: panoramaLive ? '#061713' : colors.onSurfaceMuted }]}>
+                  {panoramaLive ? 'Live orientation' : 'Drag view'}
+                </Text>
+              </Pressable>
+              <View style={styles.viewerBearingBadge}>
+                <MaterialCommunityIcons name="compass-outline" size={17} color="#061713" />
+                <Text style={styles.viewerBearingText}>{Math.round(qiblaDirection)}° Qibla</Text>
+              </View>
+            </View>
+          </View>
+
+          <View
+            style={[styles.panoramaViewport, { height: PANORAMA_VIEW_HEIGHT }]}
+            {...panoramaPanResponder.panHandlers}
+            {...(Platform.OS === 'web' ? {
+              onPointerDown: handlePanoramaPointerDown,
+              onPointerMove: handlePanoramaPointerMove,
+              onPointerUp: handlePanoramaPointerUp,
+              onPointerCancel: handlePanoramaPointerUp,
+              onPointerLeave: handlePanoramaPointerUp,
+            } as any : {})}
+          >
+            <View
+              style={[
+                styles.panoramaStrip,
+                {
+                  width: PANORAMA_IMAGE_WIDTH * 3,
+                  height: PANORAMA_VIEW_HEIGHT,
+                  transform: [{ translateX: panoramaOffset }],
+                },
+              ]}
+            >
+              {[0, 1, 2].map(index => (
+                <Image
+                  key={`kaaba-panorama-${index}`}
+                  source={require('../assets/images/360/panos/hijr_ismail.jpg')}
+                  style={{ width: PANORAMA_IMAGE_WIDTH, height: PANORAMA_VIEW_HEIGHT }}
+                  resizeMode="cover"
+                  accessibilityLabel="Kaaba 360 degree panorama"
+                />
+              ))}
+            </View>
+
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(0,0,0,0.42)', 'transparent', 'rgba(0,0,0,0.28)']}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={styles.viewerCompassBubble} pointerEvents="none">
+              <View style={[styles.arCompassWedge, { transform: [{ rotate: `${relativeAngle}deg` }] }]} />
+              <View style={styles.arCompassDot} />
+            </View>
+            <View
+              style={[
+                styles.viewerTargetMarker,
+                { left: arTargetLeft, top: Math.max(120, PANORAMA_VIEW_HEIGHT * 0.42) },
+              ]}
+              pointerEvents="none"
+            >
+              <KaabaOverlayIcon size={132} />
+            </View>
+            <View style={styles.panoramaHint} pointerEvents="none">
+              <MaterialCommunityIcons name="gesture-swipe-horizontal" size={18} color="#fff" />
+              <Text style={styles.panoramaHintText}>Swipe left or right to explore</Text>
+            </View>
+          </View>
+
+          <View style={[styles.viewerInfoCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <View style={styles.viewerInfoIcon}>
+              <KaabaOverlayIcon size={48} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.viewerInfoTitle, { color: colors.onSurface }]}>Qibla bearing {Math.round(qiblaDirection)}°</Text>
+              <Text style={[styles.viewerInfoText, { color: colors.onSurfaceMuted }]}>The marker follows your current device heading. Keep location and compass permissions enabled for the most accurate alignment.</Text>
             </View>
           </View>
         </View>
@@ -806,6 +1089,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  modeSelector: {
+    flexDirection: 'row',
+    marginHorizontal: 14,
+    marginTop: 10,
+    marginBottom: 6,
+    padding: 4,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  modeSelectorItem: {
+    flex: 1,
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 4,
+    borderRadius: 14,
+  },
+  modeSelectorLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   scrollContent: {
     paddingVertical: 16,
     paddingHorizontal: 16,
@@ -832,6 +1138,303 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 8,
     borderWidth: 1.5,
+  },
+  featureMode: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 14,
+  },
+  arScene: {
+    flex: 1,
+    minHeight: 500,
+    overflow: 'hidden',
+    borderRadius: 22,
+    backgroundColor: '#061713',
+    position: 'relative',
+  },
+  arCompassBubble: {
+    position: 'absolute',
+    top: 18,
+    right: 18,
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: 'rgba(230,230,230,0.46)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arCompassWedge: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    borderTopWidth: 14,
+    borderBottomWidth: 14,
+    borderRightWidth: 34,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: 'rgba(65, 133, 235, 0.78)',
+    left: 22,
+    top: 27,
+  },
+  arCompassDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#ff4b3e',
+  },
+  arCompassNorth: {
+    position: 'absolute',
+    top: 5,
+    color: 'rgba(0,0,0,0.72)',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  arDistanceCard: {
+    position: 'absolute',
+    top: 28,
+    alignSelf: 'center',
+    minWidth: 196,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    alignItems: 'center',
+  },
+  arDistanceTitle: {
+    color: '#f7f4e9',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  arDistanceValue: {
+    color: '#f7f4e9',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  arKaabaMarker: {
+    position: 'absolute',
+    width: 160,
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#fff',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 7,
+  },
+  arInstructionPill: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 92,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  arInstructionText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cameraPermissionCard: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    top: '32%',
+    padding: 22,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.84)',
+    alignItems: 'center',
+  },
+  cameraPermissionTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  cameraPermissionText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  cameraPermissionButton: {
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: '#8fe38d',
+  },
+  cameraPermissionButtonText: {
+    color: '#061713',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  cameraToggle: {
+    position: 'absolute',
+    bottom: 20,
+    left: 18,
+    minWidth: 112,
+    height: 50,
+    paddingHorizontal: 12,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cameraToggleTrack: {
+    width: 44,
+    height: 25,
+    borderRadius: 13,
+    padding: 3,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  cameraToggleTrackOn: {
+    backgroundColor: '#8fe38d',
+  },
+  cameraToggleThumb: {
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: '#a7b0aa',
+    alignSelf: 'flex-start',
+  },
+  cameraToggleThumbOn: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#07572f',
+  },
+  viewerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 10,
+  },
+  viewerHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  viewerLiveControl: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  viewerLiveControlActive: {
+    borderColor: '#8fe38d',
+    backgroundColor: '#8fe38d',
+  },
+  viewerLiveText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  viewerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  viewerSubtitle: {
+    fontSize: 12,
+    marginTop: 3,
+  },
+  viewerBearingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: '#8fe38d',
+  },
+  viewerBearingText: {
+    color: '#061713',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  panoramaViewport: {
+    width: '100%',
+    overflow: 'hidden',
+    borderRadius: 22,
+    backgroundColor: '#101817',
+    position: 'relative',
+  },
+  panoramaStrip: {
+    flexDirection: 'row',
+  },
+  viewerCompassBubble: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(230,230,230,0.46)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerTargetMarker: {
+    position: 'absolute',
+    width: 132,
+    height: 150,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panoramaHint: {
+    position: 'absolute',
+    bottom: 18,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingVertical: 8,
+    paddingHorizontal: 13,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.66)',
+  },
+  panoramaHintText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  viewerInfoCard: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  viewerInfoIcon: {
+    width: 54,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 27,
+    backgroundColor: 'rgba(143,227,141,0.12)',
+  },
+  viewerInfoTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  viewerInfoText: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
   },
   tiltWarning: {
     flexDirection: 'row',

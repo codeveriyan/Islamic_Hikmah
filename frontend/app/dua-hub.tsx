@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ImageBackground, Dimensions } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Dimensions, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -12,53 +12,46 @@ import { useTranslation } from "@/src/localization";
 import { CATEGORIES } from "@/src/data/duas";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
 
-import { getCdnAssetUrl } from "@/src/utils/cdnAsset";
-
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md) / 2;
 
-const CATEGORY_IMAGES: Record<string, any> = {
-  ummah: { uri: getCdnAssetUrl("images/ummah_background.png") },
-  morning: { uri: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop&q=80" },
-  evening: { uri: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=500&auto=format&fit=crop&q=80" },
-  sleep: { uri: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=500&auto=format&fit=crop&q=80" },
-  tahajjud: { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
-  salah: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
-  "after-salah": { uri: "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=500&auto=format&fit=crop&q=80" },
-  ruqyah: { uri: "https://images.unsplash.com/photo-1552089123-2d26226fc2b7?w=500&auto=format&fit=crop&q=80" },
-  praises: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
-  salawat: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
-  quranic: { uri: "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?w=500&auto=format&fit=crop&q=80" },
-  "sunnah-duas": { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
-  "names-of-allah": { uri: "https://images.unsplash.com/photo-1519817650390-64a93db51149?w=500&auto=format&fit=crop&q=80" },
-  istighfar: { uri: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=500&auto=format&fit=crop&q=80" },
-  "dhikr-all-times": { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
-  "waking-up": { uri: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop&q=80" },
-  nightmares: { uri: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=500&auto=format&fit=crop&q=80" },
-  clothes: { uri: "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=500&auto=format&fit=crop&q=80" },
-  "lavatory-wudu": { uri: "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=500&auto=format&fit=crop&q=80" },
-  home: { uri: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=500&auto=format&fit=crop&q=80" },
-  "adhan-masjid": { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
-  "food-drink": { uri: "https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=500&auto=format&fit=crop&q=80" },
-  exams: { uri: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=500&auto=format&fit=crop&q=80" },
-  istikharah: { uri: "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500&auto=format&fit=crop&q=80" },
-  gatherings: { uri: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=500&auto=format&fit=crop&q=80" },
-  difficulties: { uri: "https://images.unsplash.com/photo-1428908728789-d2de25dbd4e2?w=500&auto=format&fit=crop&q=80" },
-  iman: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
-  hajj: { uri: "https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=500&auto=format&fit=crop&q=80" },
-  travel: { uri: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=500&auto=format&fit=crop&q=80" },
-  money: { uri: "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=500&auto=format&fit=crop&q=80" },
-  social: { uri: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=500&auto=format&fit=crop&q=80" },
-  marriage: { uri: "https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=500&auto=format&fit=crop&q=80" },
-  death: { uri: "https://images.unsplash.com/photo-1453791052107-5c843da62d97?w=500&auto=format&fit=crop&q=80" },
-  nature: { uri: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=500&auto=format&fit=crop&q=80" },
-  ramadan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
-  "daily-life": { uri: "https://images.unsplash.com/photo-1517842645767-c639042777db?w=500&auto=format&fit=crop&q=80" },
-  adhan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
-  wudu: { uri: "https://images.unsplash.com/photo-1548813730-e8f20cc74a4a?w=500&auto=format&fit=crop&q=80" },
-  masjid: { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
-  sickness: { uri: "https://images.unsplash.com/photo-1584017911766-d451b3d0e843?w=500&auto=format&fit=crop&q=80" },
-  forgiveness: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
+// The category data already carries a semantic icon and a two-colour theme.
+// Rendering those together keeps every card relevant without depending on
+// unrelated stock photography or unlicensed third-party artwork.
+const FALLBACK_ICON = "view-grid-outline" as const;
+const CATEGORY_IMAGES: Record<string, number> = {
+  morning: require("@/assets/images/dua-categories/morning.webp"),
+  evening: require("@/assets/images/dua-categories/evening.webp"),
+  sleep: require("@/assets/images/dua-categories/sleep.webp"),
+  tahajjud: require("@/assets/images/dua-categories/tahajjud.webp"),
+  salah: require("@/assets/images/dua-categories/salah.webp"),
+  "after-salah": require("@/assets/images/dua-categories/after-salah.webp"),
+  ruqyah: require("@/assets/images/dua-categories/ruqyah.webp"),
+  praises: require("@/assets/images/dua-categories/praises.webp"),
+  salawat: require("@/assets/images/dua-categories/salawat.webp"),
+  quranic: require("@/assets/images/dua-categories/quranic.webp"),
+  "sunnah-duas": require("@/assets/images/dua-categories/sunnah-duas.webp"),
+  "names-of-allah": require("@/assets/images/dua-categories/names-of-allah.webp"),
+  istighfar: require("@/assets/images/dua-categories/istighfar.webp"),
+  "waking-up": require("@/assets/images/dua-categories/waking-up.webp"),
+  nightmares: require("@/assets/images/dua-categories/nightmares.webp"),
+  clothes: require("@/assets/images/dua-categories/clothes.webp"),
+  "lavatory-wudu": require("@/assets/images/dua-categories/lavatory-wudu.webp"),
+  home: require("@/assets/images/dua-categories/home.webp"),
+  "adhan-masjid": require("@/assets/images/dua-categories/adhan-masjid.webp"),
+  istikharah: require("@/assets/images/dua-categories/istikharah.webp"),
+  gatherings: require("@/assets/images/dua-categories/gatherings.webp"),
+  "food-drink": require("@/assets/images/dua-categories/food-drink.webp"),
+  travel: require("@/assets/images/dua-categories/travel.webp"),
+  death: require("@/assets/images/dua-categories/death.webp"),
+  nature: require("@/assets/images/dua-categories/nature.webp"),
+  social: require("@/assets/images/dua-categories/social.webp"),
+  iman: require("@/assets/images/dua-categories/iman.webp"),
+  difficulties: require("@/assets/images/dua-categories/difficulties.webp"),
+  hajj: require("@/assets/images/dua-categories/hajj.webp"),
+  money: require("@/assets/images/dua-categories/money.webp"),
+  marriage: require("@/assets/images/dua-categories/marriage.webp"),
+  ummah: require("@/assets/images/dua-categories/ummah.webp"),
 };
 
 export default function DuaHubScreen() {
@@ -107,54 +100,36 @@ export default function DuaHubScreen() {
         removeClippedSubviews
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={({ item: c }) => {
-          const imgSource = CATEGORY_IMAGES[c.id] || { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" };
+          const iconName = c.id === "hajj" ? "mosque" : (c.icon || FALLBACK_ICON);
+          const categoryImage = CATEGORY_IMAGES[c.id];
           return (
             <AnimatedPressable
               onPress={() => handleCategoryPress(c.id)}
               style={[styles.card, { width: CARD_WIDTH }]}
             >
-              <ImageBackground source={imgSource} resizeMode="cover" style={styles.cardImage} imageStyle={{ borderRadius: theme.radius.lg }}>
-                <LinearGradient colors={["rgba(0,0,0,0.15)", "rgba(0,0,0,0.7)"]} style={styles.cardScrim}>
-                  <View style={styles.cardLabelContainer}>
-                    <Text style={styles.cardTitle}>{((t(c.id) && t(c.id) !== c.id ? t(c.id) : c.title) || c.title).toUpperCase()}</Text>
+              {categoryImage ? (
+                <View style={styles.cardVisual}>
+                  <Image source={categoryImage} resizeMode="cover" style={StyleSheet.absoluteFillObject} />
+                  <LinearGradient colors={["rgba(15,23,42,0.02)", "rgba(15,23,42,0.42)"]} style={styles.imageOverlay} />
+                </View>
+              ) : (
+                <LinearGradient colors={[...c.gradient]} style={styles.cardVisual}>
+                  <View style={styles.decorativeOrbLarge} />
+                  <View style={styles.decorativeOrbSmall} />
+                  <View style={styles.iconHalo}>
+                    <MaterialCommunityIcons name={iconName as keyof typeof MaterialCommunityIcons.glyphMap} size={42} color="#FFFFFF" />
                   </View>
                 </LinearGradient>
-              </ImageBackground>
+              )}
+              <View style={[styles.cardLabelContainer, { backgroundColor: colors.surfaceSecondary }]}>
+                <Text style={[styles.cardTitle, { color: colors.onSurface }]} numberOfLines={2}>
+                  {((t(c.id) && t(c.id) !== c.id ? t(c.id) : c.title) || c.title)}
+                </Text>
+              </View>
             </AnimatedPressable>
           );
         }}
         ListHeaderComponent={() => (<>
-        <AnimatedPressable
-          onPress={() => {
-            Haptics.selectionAsync().catch(() => {});
-            router.push("/fortress" as any);
-          }}
-          style={[styles.fortressCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
-        >
-          <LinearGradient colors={["#064E3B", "#0F766E"]} style={styles.fortressIcon}>
-            <MaterialCommunityIcons name="shield-outline" size={34} color="#FFFFFF" />
-          </LinearGradient>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.fortressTitle, { color: colors.onSurface }]}>Fortress of the Muslim</Text>
-            <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>132 chapters • 267 authentic du&apos;as</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={26} color={colors.onSurfaceMuted} />
-        </AnimatedPressable>
-
-        <AnimatedPressable
-          onPress={() => router.push("/names" as any)}
-          style={[styles.fortressCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
-        >
-          <LinearGradient colors={["#7C3AED", "#A855F7"]} style={styles.fortressIcon}>
-            <MaterialCommunityIcons name="mosque-outline" size={32} color="#FFFFFF" />
-          </LinearGradient>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.fortressTitle, { color: colors.onSurface }]}>Asma Al-Husna</Text>
-            <Text style={[styles.fortressSub, { color: colors.onSurfaceMuted }]}>Learn the 99 beautiful Names of Allah</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={26} color={colors.onSurfaceMuted} />
-        </AnimatedPressable>
-
         {/* Tab Switcher */}
         <View style={[styles.segment, { backgroundColor: colors.surfaceSecondary }]}>
           {(["main", "other"] as const).map((g) => {
@@ -276,34 +251,65 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
   },
   card: {
-    height: 140,
+    height: 174,
     borderRadius: theme.radius.lg,
     overflow: "hidden",
+    backgroundColor: theme.colors.surfaceSecondary,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  cardImage: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  cardScrim: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
-    padding: theme.spacing.sm,
-  },
-  cardLabelContainer: {
-    backgroundColor: "rgba(15, 23, 42, 0.82)",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+  cardVisual: {
+    height: 122,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  imageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  decorativeOrbLarge: {
+    position: "absolute",
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    top: -76,
+    right: -42,
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  decorativeOrbSmall: {
+    position: "absolute",
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    bottom: -48,
+    left: -24,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  iconHalo: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15,23,42,0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.34)",
+  },
+  cardLabelContainer: {
+    flex: 1,
+    minHeight: 52,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   cardTitle: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.8,
+    fontSize: 13,
+    fontWeight: "700",
     textAlign: "center",
   },
 });

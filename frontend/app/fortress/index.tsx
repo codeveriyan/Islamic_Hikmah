@@ -85,11 +85,6 @@ export default function FortressIndexScreen() {
         ListEmptyComponent={(
           <Text style={[styles.empty, { color: colors.onSurfaceMuted }]}>No chapters found.</Text>
         )}
-        ListFooterComponent={(
-          <Text style={[styles.attribution, { color: colors.onSurfaceMuted }]}>
-            Du&apos;as sourced from HisnMuslim.com
-          </Text>
-        )}
       />
     </SafeAreaView>
   );

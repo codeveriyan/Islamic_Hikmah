@@ -12,6 +12,7 @@ import { useAuth } from "@/src/AuthContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { getCompletedGoals, getActiveGoalIds, getHadithBookmarks, getQuranBookmarks, getDhikrStreak, type DhikrDay } from "@/src/storage";
 import { theme } from "@/src/theme";
+import { useTabBarVisibility } from "@/src/TabBarVisibilityContext";
 
 type MenuItem = {
   id: string;
@@ -27,6 +28,7 @@ export default function MeTab() {
   const router = useRouter();
   const { colors, mode } = useTheme();
   const { profile, user, isGuest } = useAuth();
+  const { onScroll, onScrollEndDrag, onMomentumScrollEnd } = useTabBarVisibility();
 
   const [goalProgress, setGoalProgress] = useState({ completed: 0, total: 0 });
   const [streak, setStreak] = useState({ current: 0, longest: 0 });
@@ -151,6 +153,10 @@ export default function MeTab() {
     <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={["top"]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           s.scroll,
           { width: "100%", maxWidth: theme.layout.readableWidth, alignSelf: "center" },
@@ -480,3 +486,4 @@ const s = StyleSheet.create({
   menuLabel: { fontSize: 15, fontFamily: "Figtree_400Regular", fontWeight: "500" },
   menuSub: { fontSize: 12, fontFamily: "Figtree_400Regular", marginTop: 1 },
 });
+// End of MeTab component

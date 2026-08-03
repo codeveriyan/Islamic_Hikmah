@@ -333,165 +333,33 @@ function _normalizeArabicOffline(text: string): string {
   return text.replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06dc\u06df-\u06e4\u06e7\u06e8\u06ea-\u06ed]/g, "");
 }
 
+const LOCAL_SEARCH_STOPWORDS = new Set([
+  "a", "an", "the", "is", "it", "to", "of", "in", "on", "for", "and", "or",
+  "do", "does", "can", "could", "should", "would", "i", "my", "me", "what",
+  "how", "are", "if", "with", "was", "be", "this", "that", "there",
+]);
+
+function _localQueryTokens(text: string): Set<string> {
+  const words = _normalizeArabicOffline(text.toLowerCase()).match(/[\p{L}\p{N}']+/gu) ?? [];
+  return new Set(words.filter((word) => word.length > 1 && !LOCAL_SEARCH_STOPWORDS.has(word)));
+}
+
 function _localItemMatches(item: FatawaItem, q: string): boolean {
   const qNorm = _normalizeArabicOffline(q.toLowerCase());
-  for (const field of ["title", "question_summary", "excerpt_or_summary", "scholar_or_author"] as const) {
-    const val = (item[field] ?? "") as string;
-    if (_normalizeArabicOffline(val.toLowerCase()).includes(qNorm)) return true;
-  }
-  return false;
+  const haystack = [item.title, item.question_summary, item.excerpt_or_summary, item.scholar_or_author ?? ""].join(" ");
+  const haystackNorm = _normalizeArabicOffline(haystack.toLowerCase());
+  if (qNorm && haystackNorm.includes(qNorm)) return true;
+
+  const queryTokens = _localQueryTokens(q);
+  if (queryTokens.size === 0) return false;
+  const haystackTokens = _localQueryTokens(haystack);
+  const overlap = [...queryTokens].filter((token) => haystackTokens.has(token)).length;
+  const required = queryTokens.size <= 2
+    ? queryTokens.size
+    : Math.max(2, Math.ceil(queryTokens.size * 0.6));
+  return overlap >= required;
 }
 
-function _generateDynamicLocalRuling(q: string): FatawaItem {
-  const qLower = q.toLowerCase();
-  const encodedQ = q.replace(/[^\w\s]/g, "").replace(/\s+/g, "+");
-
-  let title = `Ruling regarding: ${q.slice(0, 70)}`;
-  let summary = `Regarding "${q}": In Islamic jurisprudence, rulings are derived from the Quran, Sunnah, and consensus of qualified scholars. Specific conditions apply depending on circumstances. Please consult qualified local scholars or review canonical scholarly sources for complete legal verification.`;
-  let category: FatawaCategory = "aqeedah";
-  let catEn = "General Ruling";
-  let catAr = "فتوى شرعية";
-  let citations: EvidenceCitation[] = [
-    {
-      type: "quran",
-      reference: "Surah Al-Nahl 16:43 — Ask the people of knowledge if you do not know",
-      url: "https://quran.com/16/43",
-      verified: true,
-    },
-  ];
-  let sourceUrl = `https://islamqa.info/en/search?q=${encodedQ}`;
-
-  if (["cap", "hat", "kufi", "turban", "topi", "head cover", "cover head", "headcloth"].some(k => qLower.includes(k))) {
-    title = "Ruling on wearing a cap (head covering) during prayer";
-    summary = "Covering the head during Salah with a cap (kufi/turban/topi) is recommended and considered part of the Sunnah of the Prophet ﷺ and the Sahabah, as part of taking adornment for prayer. Praying bareheaded is valid, but covering the head is preferable according to the majority of Islamic scholars.";
-    category = "worship";
-    catEn = "Worship (Ibadah)";
-    catAr = "العبادة";
-    citations = [
-      {
-        type: "quran",
-        reference: "Surah Al-A'raf 7:31 — Take your adornment at every place of worship",
-        url: "https://quran.com/7/31",
-        verified: true,
-      },
-      {
-        type: "hadith",
-        reference: "Sunan Abi Dawud 4078 — The Prophet ﷺ used to wear a cap and turban during prayer",
-        url: "https://sunnah.com/abudawud:4078",
-        verified: true,
-      },
-    ];
-    sourceUrl = "https://islamqa.info/en/answers/219";
-  } else if (qLower.includes("shirt") || (qLower.includes("pray") && (qLower.includes("bare") || qLower.includes("naked") || qLower.includes("top") || qLower.includes("chest")))) {
-    title = "Ruling on praying without a shirt (uncovered upper body)";
-    summary = "Praying without a shirt is valid provided the 'awrah for men (the area between the navel and knee) is fully covered. However, the Sunnah and majority of scholars strongly recommend covering the shoulders and upper body during Salah.";
-    category = "worship";
-    catEn = "Worship (Ibadah)";
-    catAr = "العبادة";
-    citations = [
-      {
-        type: "quran",
-        reference: "Surah Al-A'raf 7:31 — Take your adornment at every masjid",
-        url: "https://quran.com/7/31",
-        verified: true,
-      },
-      {
-        type: "hadith",
-        reference: "Sahih Bukhari 352 — None of you should pray in a single garment without placing part of it over his shoulders",
-        url: "https://sunnah.com/bukhari:352",
-        verified: true,
-      },
-    ];
-    sourceUrl = "https://islamqa.info/en/answers/132332";
-  } else if (qLower.includes("fast") || qLower.includes("ramadan")) {
-    title = "Ruling on fasting, traveling, and exemptions";
-    summary = "Fasting during Ramadan is an obligatory pillar of Islam. A traveler or sick person is granted permission by Allah to break their fast and make up the missed days later. If traveling does not cause severe hardship, fasting remains permissible and rewarded.";
-    category = "worship";
-    catEn = "Worship (Ibadah)";
-    catAr = "العبادة";
-    citations = [
-      {
-        type: "quran",
-        reference: "Surah Al-Baqarah 2:185 — Whoever is ill or on a journey, then an equal number of other days",
-        url: "https://quran.com/2/185",
-        verified: true,
-      },
-    ];
-    sourceUrl = "https://islamqa.info/en/answers/20165";
-  } else if (["interest", "riba", "loan", "mortgage", "bank"].some(k => qLower.includes(k))) {
-    title = "Ruling on interest (Riba) and bank financial transactions";
-    summary = "Interest (Riba) in all forms is strictly prohibited (Haram) in Islamic law. Muslims are obligated to seek Halal financial alternatives and avoid interest-bearing contracts except under genuine extreme necessity.";
-    category = "transactions";
-    catEn = "Business & Transactions";
-    catAr = "المعاملات";
-    citations = [
-      {
-        type: "quran",
-        reference: "Surah Al-Baqarah 2:275 — Allah has permitted trade and forbidden interest (Riba)",
-        url: "https://quran.com/2/275",
-        verified: true,
-      },
-    ];
-    sourceUrl = "https://islamqa.info/en/answers/9026";
-  } else if (["stock", "trade", "crypto", "bitcoin", "invest", "share"].some(k => qLower.includes(k))) {
-    title = "Ruling on investing in stocks, trading, and digital currencies";
-    summary = "Investing in stocks is permissible provided the primary business of the company is Halal and its debt and impermissible revenue remain below established Shariah screening thresholds (e.g. AAOIFI standards).";
-    category = "transactions";
-    catEn = "Business & Transactions";
-    catAr = "المعاملات";
-    citations = [
-      {
-        type: "quran",
-        reference: "Surah Al-Ma'idah 5:1 — O you who believe, fulfill your contracts",
-        url: "https://quran.com/5/1",
-        verified: true,
-      },
-    ];
-    sourceUrl = "https://islamqa.info/en/answers/106094";
-  } else if (["wudu", "clean", "wash", "purity", "ghusl", "tayamum"].some(k => qLower.includes(k))) {
-    title = "Ruling on prerequisites, procedure, and nullifiers of Wudu";
-    summary = "Wudu (Ablution) is a mandatory condition for the validity of Salah. It requires washing the face, forearms to elbows, wiping the head, and washing feet to ankles. Wudu is nullified by deep sleep, answering the call of nature, or passing gas.";
-    category = "worship";
-    catEn = "Worship (Ibadah)";
-    catAr = "العبادة";
-    citations = [
-      {
-        type: "quran",
-        reference: "Surah Al-Ma'idah 5:6 — When you stand up for prayer, wash your faces and forearms...",
-        url: "https://quran.com/5/6",
-        verified: true,
-      },
-    ];
-    sourceUrl = "https://islamqa.info/en/answers/2146";
-  }
-
-  return {
-    schema_version: 1,
-    id: `ask-local-${Date.now()}`,
-    title,
-    question_summary: q,
-    excerpt_or_summary: summary,
-    summary_author: "Islamic Hikmah Knowledge Engine",
-    category,
-    category_name_english: catEn,
-    category_name_arabic: catAr,
-    evidence_citations: citations,
-    source_provider: "IslamQA.info & Authentic Sources",
-    source_url: sourceUrl,
-    source_reference: `Query: ${q.slice(0, 30)}`,
-    scholar_or_author: "Sheikh Muhammad Salih Al-Munajjid & Scholars",
-    reviewer_name_or_org: "Islamic Hikmah Editorial Team",
-    review_status: "published",
-    reviewed_at: "2024-01-01",
-    language: "en",
-    madhhab_or_scope: "General Islamic Jurisprudence",
-    license: "original_islamic_hikmah_summary",
-    rights_basis: "Original summary authored by Islamic Hikmah team; canonical search link provided to IslamQA.info",
-    published_at: "2024-01-01",
-    catalog_version: 1,
-    content_version: 1,
-  };
-}
 
 function _searchLocalCatalog(params: SearchFatawaParams): FatawaPaginatedResponse {
   const { q, category, page = 1, limit = 20 } = params;
@@ -501,14 +369,7 @@ function _searchLocalCatalog(params: SearchFatawaParams): FatawaPaginatedRespons
   if (category) results = results.filter((item) => item.category === category);
   if (q?.trim()) {
     const qClean = q.trim();
-    const matched = results.filter((item) => _localItemMatches(item, qClean));
-    if (matched.length > 0) {
-      results = matched;
-    } else if (qClean.length >= 3) {
-      results = [_generateDynamicLocalRuling(qClean)];
-    } else {
-      results = [];
-    }
+    results = results.filter((item) => _localItemMatches(item, qClean));
   }
   const total = results.length;
   const offset = (page - 1) * limit;
@@ -600,56 +461,42 @@ export async function askFatawaQuestion(question: string): Promise<FatawaItem> {
   const q = question.trim();
   if (!q) throw new Error("Question cannot be empty");
 
-  // Try API first
+  let res: Response;
   try {
-    const res = await fetch(`${BASE}/ask`, {
+    res = await fetch(`${BASE}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: q }),
     });
-    if (res.ok) return res.json();
   } catch {
-    // Offline / network fallback
+    // A reviewed catalog match remains useful while offline. Unknown
+    // questions must not receive a generated or guessed ruling.
+    const localMatch = LOCAL_CATALOG.find((item) => _localItemMatches(item, q));
+    if (localMatch) return localMatch;
+    throw new FatawaHttpError(
+      0,
+      "The live Fatwa search is unavailable. Check your connection and try again."
+    );
   }
 
-  // Offline local fallback Q&A resolution
-  const matched = LOCAL_CATALOG.find((item) => _localItemMatches(item, q));
-  if (matched) return matched;
+  if (res.ok) return res.json();
 
-  const encodedQ = q.replace(/[^\w\s]/g, "").replace(/\s+/g, "+");
-  return {
-    schema_version: 1,
-    id: `ask-local-${Date.now()}`,
-    title: q.length > 80 ? q.slice(0, 80) + "..." : q,
-    question_summary: q,
-    excerpt_or_summary: `Regarding "${q}": Rulings in Islamic jurisprudence are derived from the Quran, Sunnah, and consensus of qualified scholars. Specific conditions apply depending on circumstances. Please consult qualified local scholars or review canonical scholarly sources for complete legal verification.`,
-    summary_author: "Islamic Hikmah Knowledge Engine",
-    category: "aqeedah",
-    category_name_english: "General Ruling",
-    category_name_arabic: "فتوى عامة",
-    evidence_citations: [
-      {
-        type: "quran",
-        reference: "Surah Al-Nahl 16:43 — Ask the people of knowledge if you do not know",
-        url: "https://quran.com/16/43",
-        verified: true,
-      },
-    ],
-    source_provider: "IslamQA.info & Authentic Sources",
-    source_url: `https://islamqa.info/en/search?q=${encodedQ}`,
-    source_reference: `Query: ${q.slice(0, 30)}`,
-    scholar_or_author: "Various Qualified Scholars",
-    reviewer_name_or_org: "Islamic Hikmah Editorial Team",
-    review_status: "published",
-    reviewed_at: "2024-01-01",
-    language: "en",
-    madhhab_or_scope: "General Islamic Jurisprudence",
-    license: "original_islamic_hikmah_summary",
-    rights_basis: "Original summary authored by Islamic Hikmah team; canonical search link provided to IslamQA.info",
-    published_at: "2024-01-01",
-    catalog_version: 1,
-    content_version: 1,
-  };
+  let detail = "";
+  try {
+    const payload = await res.json();
+    if (typeof payload?.detail === "string") detail = payload.detail;
+  } catch {}
+
+  if (res.status === 404) {
+    throw new FatawaHttpError(
+      404,
+      detail || "No confident scholarly source match was found. Try rephrasing your question."
+    );
+  }
+  throw new FatawaHttpError(
+    res.status,
+    detail || `The Fatwa service could not answer this question (HTTP ${res.status}).`
+  );
 }
 
 // ---------------------------------------------------------------------------

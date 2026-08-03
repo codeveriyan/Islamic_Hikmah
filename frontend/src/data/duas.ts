@@ -2061,7 +2061,7 @@ export const CATEGORIES: DuaCategory[] = [
       "#059669",
       "#10B981"
     ],
-    "icon": "sparkles",
+    "icon": "star-four-points",
     "sourceUrl": "https://lifewithallah.com/dhikr-dua/main-adhkar/praises-of-allah/",
     "duas": [
       {
@@ -6144,7 +6144,7 @@ export const CATEGORIES: DuaCategory[] = [
       "#475569",
       "#94A3B8"
     ],
-    "icon": "grave",
+    "icon": "grave-stone",
     "sourceUrl": "https://lifewithallah.com/dhikr-dua/other-adhkar/death/",
     "duas": [
       {
@@ -7019,7 +7019,7 @@ export const CATEGORIES: DuaCategory[] = [
       "#B45309",
       "#F59E0B"
     ],
-    "icon": "kaaba",
+    "icon": "mosque",
     "sourceUrl": "https://lifewithallah.com/dhikr-dua/other-adhkar/hajj-and-umrah/",
     "duas": [
       {

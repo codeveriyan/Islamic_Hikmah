@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { pushKeyToCloud } from "@/src/services/cloudSyncService";
+import { getNotifications } from "@/src/notifications";
 
 const FAV_KEY = 'hikmah:favourites:v1';
 const DHIKR_KEY = 'hikmah:dhikr-counts:v1';
@@ -27,15 +27,17 @@ export type PrayerTimingsCache = {
   savedAt: number;
 };
 
-import { updateHomeScreenWidgetData } from "@/src/services/widgetService";
-
 export async function savePrayerTimingsCache(cache: PrayerTimingsCache) {
   await AsyncStorage.multiSet([
     [PRAYER_TIMINGS_CACHE_KEY, JSON.stringify(cache)],
     // Kept for existing goal and notification settings readers during migration.
     ['last_fetched_timings', JSON.stringify(cache.timings)],
   ]);
-  updateHomeScreenWidgetData().catch(() => {});
+  // Load the widget bridge after storage has initialized to avoid a module
+  // cycle during Expo Go startup: storage -> widgetService -> storage.
+  import("@/src/services/widgetService")
+    .then(({ updateHomeScreenWidgetData }) => updateHomeScreenWidgetData())
+    .catch(() => {});
 }
 
 export async function getPrayerTimingsCache(): Promise<PrayerTimingsCache | null> {
@@ -363,6 +365,8 @@ const PRAYER_NOTIF_KEY = 'scheduled_prayer_notifications';
 
 export const cancelPrevPrayerNotifications = async () => {
   try {
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
     const raw = await AsyncStorage.getItem(PRAYER_NOTIF_KEY);
     if (raw) {
       const ids = JSON.parse(raw) as string[];
@@ -390,6 +394,8 @@ export const cancelPrevPrayerNotifications = async () => {
 export const schedulePrayerNotifications = async (timings: Record<string, string>, adhanEnabled: Record<string, boolean>): Promise<{ success: boolean; error?: 'permission' | 'failed' }> => {
   if (Platform.OS === "web") return { success: true };
   try {
+    const Notifications = await getNotifications();
+    if (!Notifications) return { success: true };
     await cancelPrevPrayerNotifications();
     
     const { status } = await Notifications.getPermissionsAsync();
@@ -480,6 +486,8 @@ export const schedulePrayerNotifications = async (timings: Record<string, string
 export const setupNotificationCategories = async () => {
   if (Platform.OS === 'web') return;
   try {
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
     await Notifications.setNotificationCategoryAsync('prayer-actions', [
       {
         identifier: 'Tracker',
@@ -506,6 +514,8 @@ export const updateStickyPrayerNotification = async (timings: Record<string, str
   if (Platform.OS !== 'android') return;
 
   try {
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
     // 1. Calculate next prayer details
     const now = new Date();
     const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
@@ -648,6 +658,8 @@ export async function saveGoalNotifTimes(times: Partial<GoalNotifTimes>): Promis
 
 export async function cancelGoalNotifications(): Promise<void> {
   try {
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
     const raw = await AsyncStorage.getItem(GOAL_NOTIF_KEY);
     if (raw) {
       const ids = JSON.parse(raw) as string[];
@@ -699,6 +711,8 @@ export async function scheduleGoalNotifications(
 ): Promise<{ success: boolean; error?: 'permission' | 'failed' }> {
   if (Platform.OS === 'web') return { success: true };
   try {
+  const Notifications = await getNotifications();
+  if (!Notifications) return { success: true };
     await cancelGoalNotifications();
 
   const { status } = await Notifications.getPermissionsAsync();

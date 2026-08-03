@@ -10,6 +10,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { theme } from "@/src/theme";
+import { useTabBarVisibility } from "@/src/TabBarVisibilityContext";
 
 // ── 30-Juz data (juz number + first surah number + short name) ──────────────
 const JUZ_DATA: { juz: number; surah: number; name: string }[] = [
@@ -105,6 +106,7 @@ export default function QuranTab() {
   const router = useRouter();
   const { colors } = useTheme();
   const { width: viewportWidth } = useWindowDimensions();
+  const { onScroll, onScrollEndDrag, onMomentumScrollEnd } = useTabBarVisibility();
 
   const [lastRead, setLastRead] = useState<LastRead | null>(null);
 
@@ -122,7 +124,14 @@ export default function QuranTab() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surfaceSecondary || "#0B141A" }]} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        scrollEventThrottle={16}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.onSurface }]}>Al-Qur'an Al-Kareem</Text>

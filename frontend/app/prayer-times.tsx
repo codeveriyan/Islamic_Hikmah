@@ -6,7 +6,6 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import * as Notifications from "expo-notifications";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { theme } from "@/src/theme";
@@ -55,14 +54,29 @@ const PRAYER_ICONS: Record<string, string> = {
 
 
 const CALC_METHODS = [
-  { id: 1, name: "Karachi / MWL", note: "South Asia & parts of Europe" },
-  { id: 2, name: "ISNA", note: "North America" },
-  { id: 3, name: "Muslim World League", note: "Europe, Far East, parts of US" },
-  { id: 4, name: "Umm Al-Qura", note: "Saudi Arabia" },
-  { id: 5, name: "Egyptian", note: "Africa, Syria, Lebanon, Malaysia" },
-  { id: 7, name: "Tehran", note: "Iran, some Shia communities" },
-  { id: 8, name: "Gulf Region", note: "Kuwait, Qatar, UAE, Bahrain" },
-  { id: 13, name: "Diyanet (Turkey)", note: "Turkey & surrounding countries" },
+  { id: 3,  name: "Muslim World League (MWL)",                  note: "Fajr 18°, Isha 17°",                    region: "Europe, Far East, parts of US" },
+  { id: 1,  name: "University Of Islamic Sciences, Karachi (UISK)", note: "Fajr 18°, Isha 18°",                region: "South Asia & parts of Europe" },
+  { id: 2,  name: "North America (ISNA)",                       note: "Fajr 15°, Isha 15°",                    region: "North America" },
+  { id: 4,  name: "Umm Al-Qura Committee (UQU)",                note: "Fajr 18.5°, Isha 90 minutes after sunset", region: "Saudi Arabia" },
+  { id: 5,  name: "Egyptian General Authority of Survey (EGAS)", note: "Fajr 19.5°, Isha 17.5°",               region: "Africa, Syria, Lebanon, Malaysia" },
+  { id: 12, name: "Union of Islamic Organisations of France (UOIF)", note: "Fajr 12°, Isha 12°",               region: "France & parts of Europe" },
+  { id: 11, name: "Majlis Ugama Islam Singapura (MUIS)",        note: "Fajr 20°, Isha 18°",                    region: "Singapore" },
+  { id: 0,  name: "Shia Ithna-Ashari, Leva Institute, Qum (Jafri)", note: "Fajr 16°, Isha 14°",               region: "Iran, Iraq, Shia communities" },
+  { id: 20, name: "Sihat/Kemenag",                              note: "Fajr 20°, Isha 18°",                    region: "Indonesia" },
+  { id: 18, name: "Tunisian Ministry of Religious Affairs",      note: "Fajr 18°, Isha 18°",                    region: "Tunisia" },
+  { id: 17, name: "JAKIM",                                      note: "Fajr 18°, Isha 18°",                    region: "Malaysia" },
+  { id: 14, name: "Spiritual Administration of Muslims of Russia", note: "Fajr 16°, Isha 15°",                 region: "Russia & CIS countries" },
+  { id: 19, name: "Algerian Ministry of Religious Affairs and Wakfs", note: "Fajr 18°, Isha 17°",              region: "Algeria" },
+  { id: 13, name: "Diyanet İşleri Başkanlığı, Turkey",          note: "Fajr 18°, Isha 17°",                    region: "Turkey & surrounding countries" },
+  { id: 7,  name: "Institute of Geophysics, University of Tehran", note: "Fajr 17.7°, Isha 14°",               region: "Iran, some Shia communities" },
+  { id: 8,  name: "Gulf Region",                                note: "Fajr 19.5°, Isha 90 minutes after sunset", region: "Kuwait, Qatar, UAE, Bahrain" },
+  { id: 9,  name: "Kuwait",                                     note: "Fajr 18°, Isha 17.5°",                  region: "Kuwait" },
+  { id: 10, name: "Qatar",                                      note: "Fajr 18°, Isha 90 minutes after sunset", region: "Qatar" },
+  { id: 16, name: "Dubai (experimental)",                       note: "Fajr 18.2°, Isha 18.2°",                region: "Dubai, UAE" },
+  { id: 21, name: "Morocco",                                    note: "Fajr 19°, Isha 17°",                    region: "Morocco" },
+  { id: 15, name: "Moonsighting Committee Worldwide",           note: "Fajr 18°, Isha 18°",                    region: "Worldwide (Moonsighting.com)" },
+  { id: 22, name: "Comunidade Islamica de Lisboa",               note: "Fajr 18°, Isha 77 min after Maghrib",   region: "Portugal" },
+  { id: 23, name: "Ministry of Awqaf, Jordan",                  note: "Fajr 18°, Isha 18°",                    region: "Jordan" },
 ];
 
 const JURISTIC_METHODS = [
@@ -560,15 +574,15 @@ export default function PrayerTimesScreen() {
                 onPress={() => setShowMethodPicker(false)}
               />
             </View>
-            <ScrollView>
-              {CALC_METHODS.map(m => (
-                <Pressable key={m.id} onPress={() => selectMethod(m.id)}
-                  style={[styles.pickerRow, { backgroundColor: m.id === settings.method ? colors.brand + "18" : "transparent" }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {CALC_METHODS.map((m, idx) => (
+                <Pressable key={`${m.id}-${idx}`} onPress={() => selectMethod(m.id)}
+                  style={[styles.pickerRow, { backgroundColor: m.id === settings.method ? colors.brand + "18" : "transparent", borderBottomWidth: idx < CALC_METHODS.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.pickerName, { color: colors.onSurface }]}>{m.name}</Text>
+                    <Text style={[styles.pickerName, { color: m.id === settings.method ? colors.brand : colors.onSurface }]}>{m.name}</Text>
                     <Text style={[styles.pickerNote, { color: colors.onSurfaceMuted }]}>{m.note}</Text>
                   </View>
-                  {m.id === settings.method && <MaterialCommunityIcons name="check-circle" size={20} color={colors.brand} />}
+                  {m.id === settings.method && <MaterialCommunityIcons name="check-circle" size={22} color={colors.brand} />}
                 </Pressable>
               ))}
             </ScrollView>

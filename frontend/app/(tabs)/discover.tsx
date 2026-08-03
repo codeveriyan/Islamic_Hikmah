@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { theme } from "@/src/theme";
+import { useTabBarVisibility } from "@/src/TabBarVisibilityContext";
 
 type Ayah = { arabic: string; translation: string; ref: string; gradient: [string, string] };
 const AYAHS: Ayah[] = [
@@ -109,11 +110,10 @@ const QUICK_LINKS: QuickLink[] = [
 export default function DiscoverScreen() {
   const router = useRouter();
   const { colors, mode } = useTheme();
-
-  const bg = mode === "dark" ? colors.surface : "#F8FAFC";
   const cardBg = mode === "dark" ? colors.surfaceSecondary : "#FFFFFF";
+  const { onScroll, onScrollEndDrag, onMomentumScrollEnd } = useTabBarVisibility();
 
-  // Deterministic daily ayah rotation
+  // Random daily Ayah (stable per day)
   const todayAyah = useMemo(() => {
     const d = new Date();
     const dayOfYear = Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 0).getTime()) / 86400000);
@@ -121,7 +121,7 @@ export default function DiscoverScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={["top"]}>
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.surface }]} edges={["top"]}>
       {/* Header */}
       <View style={[s.header, { borderBottomColor: colors.border }]}>
         <View>
@@ -137,6 +137,10 @@ export default function DiscoverScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        scrollEventThrottle={16}
         contentContainerStyle={s.scroll}
       >
         {/* ── Ayah of the Day Hero ── */}

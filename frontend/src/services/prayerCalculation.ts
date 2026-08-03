@@ -7,7 +7,7 @@ export interface PrayerCalculationParams {
   latitude: number;
   longitude: number;
   date?: Date;
-  method?: number;   // Method ID: 1=Karachi/MWL, 2=ISNA, 3=MWL, 4=Umm Al-Qura, 5=Egyptian, 7=Tehran, 8=Gulf, 13=Diyanet
+  method?: number;   // Method ID — see METHOD_ANGLES below for the full list
   juristic?: number; // 0=Shafi/Standard (shadow length 1x), 1=Hanafi (shadow length 2x)
 }
 
@@ -22,16 +22,46 @@ export interface CalculatedPrayerTimes {
   Qiyam: string;
 }
 
-// Angles for calculation methods: [Fajr Angle, Isha Angle / Minute offset]
-const METHOD_ANGLES: Record<number, { fajr: number; isha: number; ishaIsMinutes?: boolean }> = {
-  1: { fajr: 18, isha: 18 },       // Karachi / MWL
-  2: { fajr: 15, isha: 15 },       // ISNA
-  3: { fajr: 18, isha: 17 },       // Muslim World League
-  4: { fajr: 18.5, isha: 90, ishaIsMinutes: true }, // Umm Al-Qura (90 mins after Maghrib)
-  5: { fajr: 19.5, isha: 17.5 },   // Egyptian
-  7: { fajr: 17.7, isha: 14 },     // Tehran
-  8: { fajr: 19.5, isha: 90, ishaIsMinutes: true }, // Gulf
-  13: { fajr: 18, isha: 17 },      // Diyanet (Turkey)
+/**
+ * Complete list of prayer-time calculation methods.
+ *
+ * IDs 0–23 match the Aladhan.com API: https://api.aladhan.com/v1/methods
+ *
+ * - `fajr`  / `isha`          : sun-angle degrees below the horizon
+ * - `ishaIsMinutes: true`     : `isha` is a minute offset after Maghrib instead of an angle
+ * - `maghribAngle`            : sun-angle for Maghrib  (when different from standard 0.833°)
+ * - `maghribMinutes`          : minute offset after sunset for Maghrib
+ */
+const METHOD_ANGLES: Record<number, {
+  fajr: number;
+  isha: number;
+  ishaIsMinutes?: boolean;
+  maghribAngle?: number;
+  maghribMinutes?: number;
+}> = {
+  0:  { fajr: 16,   isha: 14,   maghribAngle: 4 },        // Shia Ithna-Ashari, Leva Institute, Qum (Jafri)
+  1:  { fajr: 18,   isha: 18 },                            // University of Islamic Sciences, Karachi (UISK)
+  2:  { fajr: 15,   isha: 15 },                            // Islamic Society of North America (ISNA)
+  3:  { fajr: 18,   isha: 17 },                            // Muslim World League (MWL)
+  4:  { fajr: 18.5, isha: 90,  ishaIsMinutes: true },      // Umm Al-Qura University, Makkah
+  5:  { fajr: 19.5, isha: 17.5 },                          // Egyptian General Authority of Survey (EGAS)
+  7:  { fajr: 17.7, isha: 14,  maghribAngle: 4.5 },        // Institute of Geophysics, University of Tehran
+  8:  { fajr: 19.5, isha: 90,  ishaIsMinutes: true },      // Gulf Region
+  9:  { fajr: 18,   isha: 17.5 },                          // Kuwait
+  10: { fajr: 18,   isha: 90,  ishaIsMinutes: true },      // Qatar
+  11: { fajr: 20,   isha: 18 },                            // Majlis Ugama Islam Singapura (MUIS)
+  12: { fajr: 12,   isha: 12 },                            // Union of Islamic Organisations of France (UOIF)
+  13: { fajr: 18,   isha: 17 },                            // Diyanet İşleri Başkanlığı, Turkey
+  14: { fajr: 16,   isha: 15 },                            // Spiritual Administration of Muslims of Russia
+  15: { fajr: 18,   isha: 18 },                            // Moonsighting Committee Worldwide (fallback angles)
+  16: { fajr: 18.2, isha: 18.2 },                          // Dubai (experimental)
+  17: { fajr: 20,   isha: 18 },                            // Jabatan Kemajuan Islam Malaysia (JAKIM)
+  18: { fajr: 18,   isha: 18 },                            // Tunisia
+  19: { fajr: 18,   isha: 17 },                            // Algeria
+  20: { fajr: 20,   isha: 18 },                            // Kementerian Agama Republik Indonesia (Sihat/Kemenag)
+  21: { fajr: 19,   isha: 17 },                            // Morocco
+  22: { fajr: 18,   isha: 77,  ishaIsMinutes: true, maghribMinutes: 3 }, // Comunidade Islamica de Lisboa
+  23: { fajr: 18,   isha: 18,  maghribMinutes: 5 },        // Ministry of Awqaf, Jordan
 };
 
 const d2r = (d: number) => (d * Math.PI) / 180;
@@ -43,7 +73,7 @@ const fixHour = (h: number) => ((h % 24) + 24) % 24;
  * Calculates local prayer times offline.
  */
 export function calculateLocalPrayerTimes(params: PrayerCalculationParams): CalculatedPrayerTimes {
-  const { latitude: lat, longitude: lng, date = new Date(), method = 1, juristic = 0 } = params;
+  const { latitude: lat, longitude: lng, date = new Date(), method = 3, juristic = 0 } = params;
 
   // Day of year and solar declination
   const startOfYear = new Date(date.getFullYear(), 0, 0);
@@ -96,13 +126,24 @@ export function calculateLocalPrayerTimes(params: PrayerCalculationParams): Calc
     return dhuhrHour + H;
   };
 
-  const methodConfig = METHOD_ANGLES[method] || METHOD_ANGLES[1];
+  const methodConfig = METHOD_ANGLES[method] || METHOD_ANGLES[3];
 
   const fajrHour = sunAngleTime(methodConfig.fajr, 'ccw');
   const sunriseHour = sunAngleTime(0.833, 'ccw');
-  const maghribHour = sunAngleTime(0.833, 'cw');
   const asrFactor = juristic === 1 ? 2 : 1;
   const asrHour = asrTime(asrFactor);
+
+  // Maghrib: use maghribAngle if specified, otherwise standard 0.833° sunset,
+  // then add maghribMinutes offset if defined.
+  let maghribHour: number;
+  if (methodConfig.maghribAngle) {
+    maghribHour = sunAngleTime(methodConfig.maghribAngle, 'cw');
+  } else {
+    maghribHour = sunAngleTime(0.833, 'cw');
+  }
+  if (methodConfig.maghribMinutes) {
+    maghribHour += methodConfig.maghribMinutes / 60;
+  }
 
   let ishaHour: number;
   if (methodConfig.ishaIsMinutes) {

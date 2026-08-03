@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -808,21 +808,34 @@ export default function QuranIndex() {
         // READ MODE
         // ══════════════════════════════════════════════════════════════════════
         <View style={{ flex: 1 }}>
-          {/* Read Resume Banner */}
+          {/* Continue Reading Banner (Image-1 ref) */}
           <Pressable
-            onPress={() => router.push(`/quran/read/${lastReadPage}` as any)}
-            style={[styles.resumeBanner, { backgroundColor: colors.brandSecondary + "15" }]}
+            onPress={() => {
+              if (lastPlayed?.surahNumber) {
+                router.push(`/quran/${lastPlayed.surahNumber}` as any);
+              } else {
+                router.push(`/quran/read/${lastReadPage}` as any);
+              }
+            }}
+            style={[styles.resumeBanner, { backgroundColor: colors.surfaceSecondary, borderColor: colors.brand + "33", borderWidth: 1 }]}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <MaterialCommunityIcons name="book-open-outline" size={28} color={colors.brandSecondary} />
-              <View>
-                <Text style={[styles.resumeTitle, { color: colors.onSurface }]}>{t("pageNo").replace("{page}", String(lastReadPage))}</Text>
-                <Text style={[styles.resumeSub, { color: colors.onSurfaceMuted }]}>{t("continueRecitation")}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+              <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: colors.brand + "22", alignItems: "center", justifyContent: "center" }}>
+                <MaterialCommunityIcons name="book-open-page-variant" size={20} color={colors.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 10, color: colors.onSurfaceMuted, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: "700" }}>
+                  CONTINUE READING
+                </Text>
+                <Text style={[styles.resumeTitle, { color: colors.onSurface, marginTop: 1 }]}>
+                  {lastPlayed?.surahName ? lastPlayed.surahName : t("pageNo").replace("{page}", String(lastReadPage))}
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.onSurfaceMuted }}>
+                  {lastPlayed?.ayahNumber ? `Ayah ${lastPlayed.ayahNumber}` : t("continueRecitation")}
+                </Text>
               </View>
             </View>
-            <View style={[styles.resumeBtn, { backgroundColor: colors.brandSecondary }]}>
-              <Text style={[styles.resumeBtnTxt, { color: colors.onBrandPrimary }]}>{t("resume")}</Text>
-            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.brand} />
           </Pressable>
 
           {/* Read sub-tabs */}

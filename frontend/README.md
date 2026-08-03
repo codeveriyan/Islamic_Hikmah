@@ -25,6 +25,24 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Google Play premium billing setup
+
+Premium purchases use Google Play Billing through RevenueCat and
+`react-native-purchases`. Configure `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` and
+`EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID` from `.env`. In Google Play Console,
+create the monthly, annual, and lifetime products; then attach those products
+to a RevenueCat offering mapped to the `pro` entitlement.
+
+Real purchases require a Google Play internal-test, closed-test, or production
+build. Expo Go and non-Android builds do not contain a billing path. Prices are
+read from Google Play at runtime, so each user sees the store-localized price
+and currency. There is no UPI or manual payment fallback in the client.
+
+The backend must also have `REVENUECAT_API_KEY`,
+`REVENUECAT_WEBHOOK_AUTH_TOKEN`, and `REVENUECAT_ENTITLEMENT_ID` configured.
+Point the RevenueCat webhook at `/api/webhooks/revenuecat` and use the exact
+same authorization header value as the backend webhook token.
+
 ## Get a fresh project
 
 When you're ready, run:

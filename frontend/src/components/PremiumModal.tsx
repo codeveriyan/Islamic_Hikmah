@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, Pressable, Modal,
   ScrollView, Dimensions, Alert
@@ -16,6 +16,12 @@ import { useRouter } from "expo-router";
 import { useTheme } from "@/src/ThemeContext";
 import { useAuth } from "@/src/AuthContext";
 import { usePremiumModal } from "@/src/PremiumModalContext";
+import { auth } from "@/src/firebase";
+import {
+  getPlanOfferings,
+  initPurchaseService,
+  type PremiumPlan,
+} from "@/src/services/purchaseService";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 
@@ -30,10 +36,10 @@ const PREMIUM_FEATURES = [
   { icon: "calculator",         label: "Zakat Calculator",                desc: "Full Zakat calculation on your wealth"              },
 ];
 
-const PLANS = [
-  { id: "monthly",  label: "Monthly",  price: "₹199",   period: "/month", badge: "" },
-  { id: "yearly",   label: "Yearly",   price: "₹1199",  period: "/year",  badge: "Save 80%" },
-  { id: "lifetime", label: "Lifetime", price: "₹1499",  period: "once",  badge: "Best Value" },
+const PLANS: { id: PremiumPlan; label: string; period: string; badge: string }[] = [
+  { id: "monthly",  label: "Monthly",  period: "/month", badge: "" },
+  { id: "yearly",   label: "Yearly",   period: "/year",  badge: "Annual" },
+  { id: "lifetime", label: "Lifetime", period: "once",   badge: "One-time" },
 ];
 
 export default function PremiumModal() {
@@ -41,6 +47,7 @@ export default function PremiumModal() {
   const { profile, startTrial } = useAuth();
   const { colors } = useTheme();
   const router = useRouter();
+  const [planPrices, setPlanPrices] = useState<Partial<Record<PremiumPlan, string>>>({});
 
   const slideAnim = useSharedValue(SCREEN_H);
   const fadeAnim  = useSharedValue(0);
@@ -57,6 +64,7 @@ export default function PremiumModal() {
   const trialActive    = profile?.trialActive ?? false;
 
   useEffect(() => {
+    let cancelled = false;
     if (visible) {
       fadeAnim.value = withTiming(1, { duration: 240 });
       slideAnim.value = withSpring(0, { damping: 22, stiffness: 200 });
@@ -64,7 +72,26 @@ export default function PremiumModal() {
       fadeAnim.value = withTiming(0, { duration: 180 });
       slideAnim.value = withTiming(SCREEN_H, { duration: 220 });
     }
-  }, [visible]);
+
+    if (visible) {
+      const loadGooglePlayPrices = async () => {
+        const configured = await initPurchaseService(auth.currentUser?.uid);
+        if (!configured || cancelled) return;
+        const offerings = await getPlanOfferings();
+        if (cancelled) return;
+        const prices: Partial<Record<PremiumPlan, string>> = {};
+        offerings.forEach((offering) => {
+          prices[offering.plan] = offering.priceString;
+        });
+        setPlanPrices(prices);
+      };
+      loadGooglePlayPrices().catch(() => {});
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, fadeAnim, slideAnim]);
 
   const handleUpgrade = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -197,7 +224,7 @@ export default function PremiumModal() {
                   ) : null}
                   <Text style={[styles.planLabel, { color: colors.onSurface }]}>{plan.label}</Text>
                   <Text style={[styles.planPrice, { color: plan.id === "yearly" ? "#0f7a4a" : colors.onSurface }]}>
-                    {plan.price}
+                    {planPrices[plan.id] || "Google Play price"}
                   </Text>
                   <Text style={[styles.planPeriod, { color: colors.onSurfaceMuted }]}>{plan.period}</Text>
                 </Pressable>
@@ -246,7 +273,7 @@ export default function PremiumModal() {
               ) : null}
 
               <Text style={[styles.disclaimer, { color: colors.onSurfaceMuted }]}>
-                UPI payment • No platform fees • Cancel anytime
+                Secure Google Play billing • Localized pricing • Cancel anytime
               </Text>
             </View>
           </ScrollView>

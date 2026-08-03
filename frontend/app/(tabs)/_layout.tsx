@@ -61,8 +61,45 @@ function TabIcon({
   );
 }
 
+import { BottomTabBar, BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { TabBarVisibilityProvider, useTabBarVisibility } from "@/src/TabBarVisibilityContext";
+
+function AnimatedTabBar(props: BottomTabBarProps) {
+  const { isTabBarVisible } = useTabBarVisibility();
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        {
+          translateY: withTiming(isTabBarVisible.value ? 0 : 120, {
+            duration: 250,
+          }),
+        },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          elevation: 20,
+          zIndex: 1000,
+        },
+        animatedStyle,
+      ]}
+    >
+      <BottomTabBar {...props} />
+    </Animated.View>
+  );
+}
+
 // ─── Layout ──────────────────────────────────────────────────────────────────
-export default function TabsLayout() {
+function TabsLayoutInner() {
   const { colors, mode, language } = useTheme();
   const { t } = useTranslation(language);
 
@@ -77,6 +114,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <AnimatedTabBar {...props} />}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.brand,
@@ -195,5 +233,13 @@ export default function TabsLayout() {
         options={{ href: null }}
       />
     </Tabs>
+  );
+}
+
+export default function TabsLayout() {
+  return (
+    <TabBarVisibilityProvider>
+      <TabsLayoutInner />
+    </TabBarVisibilityProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { isRunningInExpoGo } from "expo";
 import React, { useEffect, Component } from "react";
 import { AppState, LogBox, Pressable, Text, View, Image, StyleSheet, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -18,7 +19,7 @@ import {
   Outfit_800ExtraBold,
 } from "@expo-google-fonts/outfit";
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import * as Notifications from "expo-notifications";
+import type { Notification } from "expo-notifications";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -36,7 +37,7 @@ import { QuranPlayerProvider } from "@/src/QuranPlayerContext";
 import { MiniPlayerBar } from "@/src/components/MiniPlayerBar";
 import { getPrayerTimingsCache, savePrayerTimingsCache, localDateKey } from "@/src/storage";
 
-async function checkPrayerNotificationExpired(notification: Notifications.Notification): Promise<boolean> {
+async function checkPrayerNotificationExpired(notification: Notification): Promise<boolean> {
   try {
     const title = notification.request.content.title || "";
     const data = notification.request.content.data;
@@ -80,44 +81,50 @@ async function checkPrayerNotificationExpired(notification: Notifications.Notifi
   }
 }
 
-Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    const title = notification.request.content.title || "";
-    const isPrayerTime = title.includes("Prayer Time");
-    const isStickyPrayerCard = notification.request.content.data?.notificationKind === "sticky-prayer";
+if (Platform.OS !== "web" && !isRunningInExpoGo()) {
+  import("expo-notifications").then(({ setNotificationHandler }) => {
+    setNotificationHandler({
+      handleNotification: async (notification) => {
+        const title = notification.request.content.title || "";
+        const isPrayerTime = title.includes("Prayer Time");
+        const isStickyPrayerCard = notification.request.content.data?.notificationKind === "sticky-prayer";
 
-    if (isStickyPrayerCard) {
-      return {
-        shouldShowAlert: false,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-        shouldShowBanner: false,
-        shouldShowList: true,
-      };
-    }
+        if (isStickyPrayerCard) {
+          return {
+            shouldShowAlert: false,
+            shouldPlaySound: false,
+            shouldSetBadge: false,
+            shouldShowBanner: false,
+            shouldShowList: true,
+          };
+        }
 
-    if (isPrayerTime) {
-      const expired = await checkPrayerNotificationExpired(notification);
-      if (expired) {
+        if (isPrayerTime) {
+          const expired = await checkPrayerNotificationExpired(notification);
+          if (expired) {
+            return {
+              shouldShowAlert: false,
+              shouldPlaySound: false,
+              shouldSetBadge: false,
+              shouldShowBanner: false,
+              shouldShowList: false,
+            };
+          }
+        }
+
         return {
-          shouldShowAlert: false,
-          shouldPlaySound: false,
+          shouldShowAlert: true,
+          shouldPlaySound: true,
           shouldSetBadge: false,
-          shouldShowBanner: false,
-          shouldShowList: false,
+          shouldShowBanner: true,
+          shouldShowList: true,
         };
-      }
-    }
-
-    return {
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    };
-  },
-});
+      },
+    });
+  }).catch(error => {
+    if (__DEV__) console.warn("Failed to configure notification handler:", error);
+  });
+}
 
 // Only suppress known noisy-but-harmless warnings in dev; never silence all logs in production
 if (__DEV__) {
@@ -164,8 +171,13 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, ErrorBounda
 function PushTokenRegistrar() {
   const { user } = useAuth();
   useEffect(() => {
-    if (Platform.OS === "web" || !user?.uid) return;
+    if (Platform.OS === "web" || !user?.uid || isRunningInExpoGo()) return;
+    // Expo Go removed Android remote-push support in SDK 53. Local scheduled
+    // notifications still work there, but requesting an Expo push token throws
+    // and opens the red LogBox screen. Push-token registration belongs in a
+    // development build or a standalone app instead.
     const register = async () => {
+      const Notifications = await import("expo-notifications");
       const permissions = await Notifications.getPermissionsAsync();
       if (permissions.status !== "granted") return;
       const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
@@ -254,8 +266,9 @@ export default function RootLayout() {
   useEffect(() => {
     // Request notification permissions and register push token to Firestore
     const requestPermissions = async () => {
-      if (Platform.OS === 'web') return;
+      if (Platform.OS === 'web' || isRunningInExpoGo()) return;
       try {
+        const Notifications = await import("expo-notifications");
         const { status } = await Notifications.getPermissionsAsync();
         if (status !== 'granted') {
           await Notifications.requestPermissionsAsync();
@@ -302,26 +315,39 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
-      try {
-        const title = notification.request.content.title || "";
-        if (title.includes("Prayer Time")) {
-          // Respect background azaan preference in foreground too
-          const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
-          const bgAzaanEnabled = bgAzaanRaw !== "false";
-          if (!bgAzaanEnabled) return;
+    if (Platform.OS === "web" || isRunningInExpoGo()) return;
+    let cancelled = false;
+    let subscription: { remove: () => void } | null = null;
 
-          // Do not play if notification is expired or prayer time window ended
-          const isExpired = await checkPrayerNotificationExpired(notification);
-          if (isExpired) return;
+    import("expo-notifications").then(Notifications => {
+      if (cancelled) return;
+      subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+        try {
+          const title = notification.request.content.title || "";
+          if (title.includes("Prayer Time")) {
+            // Respect background azaan preference in foreground too
+            const bgAzaanRaw = await AsyncStorage.getItem("background_azaan_enabled");
+            const bgAzaanEnabled = bgAzaanRaw !== "false";
+            if (!bgAzaanEnabled) return;
 
-          player.play();
+            // Do not play if notification is expired or prayer time window ended
+            const isExpired = await checkPrayerNotificationExpired(notification);
+            if (isExpired) return;
+
+            player.play();
+          }
+        } catch (err) {
+          console.warn("Failed to play foreground Adhan audio:", err);
         }
-      } catch (err) {
-        console.warn("Failed to play foreground Adhan audio:", err);
-      }
+      });
+    }).catch(error => {
+      if (__DEV__) console.warn("Failed to attach notification listener:", error);
     });
-    return () => subscription.remove();
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
   }, [player]);
 
   // Stop the foreground Azaan playback as soon as the user leaves the app
@@ -345,7 +371,13 @@ export default function RootLayout() {
   };
 
   useEffect(() => {
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+    if (Platform.OS === "web" || isRunningInExpoGo()) return;
+    let cancelled = false;
+    let responseSub: { remove: () => void } | null = null;
+
+    import("expo-notifications").then(Notifications => {
+      if (cancelled) return;
+      responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
         const data = response.notification.request.content.data as Record<string, string> | undefined;
         const actionId = response.actionIdentifier;
@@ -383,8 +415,15 @@ export default function RootLayout() {
       } catch (err) {
         console.warn("Error processing notification action:", err);
       }
+      });
+    }).catch(error => {
+      if (__DEV__) console.warn("Failed to attach notification response listener:", error);
     });
-    return () => responseSub.remove();
+
+    return () => {
+      cancelled = true;
+      responseSub?.remove();
+    };
   }, [router]);
 
   const ready = (iconLoaded || iconError) && (fontsLoaded || fontsError);

@@ -20,6 +20,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { format12Hour } from "@/src/utils/time";
 import { theme } from "@/src/theme";
+import { useTabBarVisibility } from "@/src/TabBarVisibilityContext";
 import {
   AppErrorState,
   AppLoadingState,
@@ -68,6 +69,7 @@ function getCountdown(targetDate: Date): string {
 export default function PrayerTab() {
   const router = useRouter();
   const { colors, mode } = useTheme();
+  const { onScroll, onScrollEndDrag, onMomentumScrollEnd } = useTabBarVisibility();
 
   const [times, setTimes] = useState<Record<string, string> | null>(null);
   const [city, setCity] = useState("");
@@ -219,6 +221,10 @@ export default function PrayerTab() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           s.scroll,
           { width: "100%", maxWidth: theme.layout.readableWidth, alignSelf: "center" },
