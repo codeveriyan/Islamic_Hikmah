@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useRef, useCallback } from "react";
 import { NativeSyntheticEvent, NativeScrollEvent } from "react-native";
-import { useSharedValue, withTiming, SharedValue } from "react-native-reanimated";
+import { useSharedValue, SharedValue } from "react-native-reanimated";
 
 interface TabBarVisibilityContextType {
   isTabBarVisible: SharedValue<boolean>;
@@ -90,11 +90,12 @@ export function TabBarVisibilityProvider({ children }: { children: React.ReactNo
 
 export function useTabBarVisibility() {
   const context = useContext(TabBarVisibilityContext);
+  // Hooks must always run in the same order — never after an early return.
+  const fallbackVisible = useSharedValue<boolean>(true);
+
   if (!context) {
-    // Fallback if used outside provider
-    const dummyValue = useSharedValue<boolean>(true);
     return {
-      isTabBarVisible: dummyValue,
+      isTabBarVisible: fallbackVisible,
       hideTabBar: () => {},
       showTabBar: () => {},
       onScroll: () => {},

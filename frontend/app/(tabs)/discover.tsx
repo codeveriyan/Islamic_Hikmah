@@ -162,7 +162,7 @@ export default function DiscoverScreen() {
             </Text>
             <View style={{ height: 0.5, backgroundColor: "rgba(255,255,255,0.25)", marginBottom: 14 }} />
             <Text style={{ fontSize: 14, color: "rgba(255,255,255,0.88)", fontStyle: "italic", lineHeight: 22, fontFamily: "Figtree_400Regular", marginBottom: 8 }}>
-              "{todayAyah.translation}"
+              {"\u201C"}{todayAyah.translation}{"\u201D"}
             </Text>
             <Text style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: "Figtree_400Regular", fontWeight: "700" }}>
               — {todayAyah.ref}

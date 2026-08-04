@@ -45,8 +45,6 @@ db_name = os.environ.get('DB_NAME', 'islamic_hikmah')
 client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
 db = client[db_name]
 
-# The in-memory store is an explicit local-development option only. Production
-# requests fail closed when MongoDB is unavailable.
 ALLOW_IN_MEMORY_DB = os.environ.get("ALLOW_IN_MEMORY_DB", "false").lower() == "true"
 IN_MEMORY_DB = {
     "users": {},
@@ -54,7 +52,6 @@ IN_MEMORY_DB = {
     "billing_events": {},
 }
 
-# Logger setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -97,7 +94,6 @@ def apply_development_entitlements(user: dict) -> dict:
         return development_user
     return user
 
-# Rate Limiting Configuration
 RATE_LIMIT_BACKEND = os.environ.get("RATE_LIMIT_BACKEND", "memory").lower()
 RATE_LIMIT_STORE: Dict[str, list[float]] = defaultdict(list)
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() == "true"
@@ -111,7 +107,6 @@ def _get_client_ip(request: Request) -> str:
 
 
 def check_rate_limit(key: str, limit_per_min: int):
-    """Sliding window rate limiter for audio and OCR requests."""
     now = datetime.now(timezone.utc).timestamp()
     cutoff = now - 60.0
     history = [t for t in RATE_LIMIT_STORE[key] if t > cutoff]
@@ -124,7 +119,6 @@ def check_rate_limit(key: str, limit_per_min: int):
     RATE_LIMIT_STORE[key] = history
 
 
-# Pydantic Schemas
 class AyahFinderResult(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())
 
@@ -180,10 +174,7 @@ class UserProfileResponse(BaseModel):
     trial_active: bool = False
     trial_ends_at: Optional[datetime] = None
 
-# Database check & query helpers
 def _use_development_memory_store() -> bool:
-    """Skip MongoDB entirely only when the local-development fallback is explicit."""
-
     return APP_ENV == "development" and ALLOW_IN_MEMORY_DB
 
 
@@ -309,7 +300,6 @@ async def db_insert_payment(payment_dict: dict):
 
 
 async def db_transition_payment(utr: str, expected_status: str, update_dict: dict) -> bool:
-    """Atomically apply a payment review only if it is still pending."""
     if _use_development_memory_store():
         payment = IN_MEMORY_DB["payments"].get(utr)
         if not payment or payment.get("status") != expected_status:
@@ -349,9 +339,6 @@ async def db_insert_billing_event(event_id: str, event_record: dict) -> bool:
         IN_MEMORY_DB["billing_events"][event_id] = event_record
         return True
 
-# Cache of Google public certificates for Firebase ID Token verification.
-# Persisting these public certificates lets a restarted local backend verify
-# tokens during a transient network outage without weakening signature checks.
 GOOGLE_CERTS_URL = (
     "https://www.googleapis.com/robot/v1/metadata/x509/"
     "securetoken@system.gserviceaccount.com"
@@ -468,13 +455,6 @@ def get_google_public_key(kid: str) -> Optional[str]:
 
 
 def prepare_firebase_verification_key(certificate_or_key: str | bytes) -> Any:
-    """Convert Google's cached X.509 certificate into an RSA public key.
-
-    Firebase's certificate endpoint returns PEM certificates. PyJWT 2.10 only
-    accepts PEM public keys, so passing the certificate string directly causes
-    every legitimate Firebase token to fail with InvalidKeyError.
-    """
-
     key_bytes = (
         certificate_or_key.encode("utf-8")
         if isinstance(certificate_or_key, str)
@@ -485,7 +465,6 @@ def prepare_firebase_verification_key(certificate_or_key: str | bytes) -> Any:
     return certificate_or_key
 
 
-# Firebase ID token verification dependency
 async def get_current_user_profile(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -506,12 +485,13 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
         if not public_key_pem:
             raise jwt.InvalidTokenError("Matching Firebase public key not found")
 
+        expected_issuer = "https://securetoken.google.com/" + FIREBASE_PROJECT_ID
         decoded = jwt.decode(
             token,
             prepare_firebase_verification_key(public_key_pem),
             algorithms=["RS256"],
             audience=FIREBASE_PROJECT_ID,
-            issuer=f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}",
+            issuer=expected_issuer,
             options={"require": ["exp", "iat", "auth_time", "sub"]},
         )
         email = decoded.get("email")
@@ -578,9 +558,6 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
 
 
 async def get_optional_user_profile(authorization: Optional[str] = Header(None)) -> Optional[dict]:
-    """Like get_current_user_profile, but returns None for unauthenticated requests
-    instead of raising 401. Use for endpoints that are public by default but grant
-    extra privileges to authenticated callers."""
     if not authorization or not authorization.startswith("Bearer "):
         return None
     try:
@@ -589,7 +566,6 @@ async def get_optional_user_profile(authorization: Optional[str] = Header(None))
         return None
 
 
-# FastAPI application initialization
 app = FastAPI(title="Islamic Hikmah Authentication Backend")
 api_router = APIRouter(prefix="/api")
 
@@ -597,9 +573,6 @@ SUNNAH_API_BASE_URL = os.environ.get("SUNNAH_API_BASE_URL", "https://api.sunnah.
 SUNNAH_API_KEY = os.environ.get("SUNNAH_API_KEY")
 SUNNAH_CACHE_DIR = Path(os.environ.get("SUNNAH_CACHE_DIR", ROOT_DIR / "data" / "sunnah_cache"))
 
-# These collection names are the identifiers exposed by the official Sunnah.com
-# API. Keeping this mapping on the server prevents the mobile client from
-# constructing arbitrary upstream URLs.
 SUNNAH_COLLECTIONS = {
     "bukhari", "muslim", "nasai", "abudawud", "tirmidhi", "ibnmajah",
     "malik", "ahmad", "darimi", "adab", "shamail", "nawawi40",
@@ -672,17 +645,6 @@ def get_sunnah_hadiths(
     limit: int = Query(100, ge=1, le=100),
     refresh: bool = Query(False),
 ):
-    """Return a page of verified hadith directly from Sunnah.com's API.
-
-    The API key is deliberately read only on the server, never bundled into
-    the Expo application. The response is passed through without changing
-    hadith text, grades, chapter data, or official numbering.
-
-    TERMS & USAGE BOUNDARY:
-    Sunnah.com's developer guidelines permit in-app display and cached retrieval.
-    Do NOT bypass caching to stream or bulk-export un-cached hadith data to external
-    API consumers or automated AI scraping pipelines.
-    """
     if collection not in SUNNAH_COLLECTIONS:
         raise HTTPException(status_code=404, detail="This collection is not available from Sunnah.com.")
 
@@ -703,7 +665,6 @@ def get_sunnah_hadiths(
             return stale
         raise
 
-# Helper to check and expire trial on retrieval
 def check_and_update_trial_status(user_dict: dict) -> dict:
     trial_ends_at = user_dict.get("trial_ends_at")
     trial_active = user_dict.get("trial_active", False)
@@ -738,7 +699,6 @@ def _parse_provider_datetime(value: Any) -> Optional[datetime]:
     if value is None:
         return None
     if isinstance(value, (int, float)):
-        # RevenueCat webhook timestamps are milliseconds since Unix epoch.
         return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
     if not isinstance(value, str) or not value.strip():
         return None
@@ -761,11 +721,6 @@ def _provider_entitlement_is_active(entitlement: Any) -> bool:
 
 
 async def fetch_revenuecat_entitlement(app_user_id: str) -> dict[str, Any]:
-    """Fetch the authoritative entitlement state from RevenueCat.
-
-    The app may identify the customer, but it cannot supply entitlement data.
-    The secret RevenueCat API key is server-only.
-    """
     if not REVENUECAT_SECRET_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -851,19 +806,16 @@ async def persist_revenuecat_entitlement(user: dict, provider_state: dict[str, A
             }
         )
     elif user.get("premium_source") == "revenuecat":
-        # Do not remove an independently granted UPI/manual entitlement.
         update_data.update({"tier": "free", "premium_until": None})
 
     await db_update_user(user["email"], update_data)
     user.update(update_data)
     return user
 
-# GET /profile
 @api_router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(current_user: dict = Depends(get_current_user_profile)):
     return check_and_update_trial_status(current_user)
 
-# PUT /profile
 @api_router.put("/profile", response_model=UserProfileResponse)
 async def update_profile(profile_in: ProfileUpdate, current_user: dict = Depends(get_current_user_profile)):
     update_data = {}
@@ -893,9 +845,6 @@ class PaymentSubmissionInput(BaseModel):
     plan: Literal["monthly", "yearly", "lifetime"]
 
 
-# This is a containment path for the existing static-UPI flow. It records a
-# submission for manual review but never grants an entitlement. Replace it with
-# a signed payment-provider webhook before enabling automatic fulfilment.
 @api_router.post("/payment-submissions", status_code=status.HTTP_202_ACCEPTED)
 async def submit_payment(
     submission: PaymentSubmissionInput,
@@ -956,12 +905,6 @@ async def verify_iap_entitlements(
     submission: VerifyIapInput,
     current_user: dict = Depends(get_current_user_profile),
 ):
-    """Refresh the signed-in user's entitlement from RevenueCat.
-
-    The request body is deliberately not allowed to contain entitlement state.
-    The authenticated Firebase UID is the only customer identifier trusted by
-    this endpoint; RevenueCat is queried with the server-only API key.
-    """
     expected_app_user_id = current_user["id"]
     if submission.app_user_id and submission.app_user_id != expected_app_user_id:
         raise HTTPException(
@@ -987,7 +930,6 @@ async def verify_iap_entitlements(
 
 @api_router.post("/webhooks/revenuecat", include_in_schema=False)
 async def revenuecat_webhook(request: Request):
-    """Process RevenueCat lifecycle events with an idempotent server update."""
     authorization = request.headers.get("authorization", "")
     if (
         not REVENUECAT_WEBHOOK_AUTH_TOKEN
@@ -1011,7 +953,6 @@ async def revenuecat_webhook(request: Request):
 
     user = await db_find_user_by_id(app_user_id)
     if not user:
-        # A deleted/unlinked RevenueCat customer is not a processing failure.
         return {"status": "ignored", "reason": "account_not_found"}
 
     provider_state = await fetch_revenuecat_entitlement(app_user_id)
@@ -1047,7 +988,6 @@ async def review_payment_submission(
     review: PaymentReviewInput,
     current_user: dict = Depends(get_current_user_profile),
 ):
-    """Allow explicitly configured verified staff to reconcile a UPI payment."""
     if (
         not current_user.get("email_verified", False)
         or current_user.get("email", "").lower() not in PAYMENT_ADMIN_EMAILS
@@ -1090,7 +1030,6 @@ async def review_payment_submission(
     return {"status": payment_update["status"], "utr": clean_utr}
 
 
-# POST /start-trial
 @api_router.post("/start-trial")
 async def start_trial_backend(current_user: dict = Depends(get_current_user_profile)):
     if not current_user.get("email_verified", False):
@@ -1139,8 +1078,6 @@ MAX_IDENTIFY_AUDIO_BYTES = 10 * 1024 * 1024
 
 
 def _decode_identify_audio(value: str) -> bytes:
-    """Decode either raw base64 or the data URL produced by a web recorder."""
-
     encoded = value.strip()
     if encoded.startswith("data:"):
         if ";base64," not in encoded:
@@ -1159,107 +1096,12 @@ def _decode_identify_audio(value: str) -> bytes:
     return audio_bytes
 
 
-SURAHS_DATASET = [
-    {
-        "surah_number": 1,
-        "surah_name_english": "Al-Fatihah",
-        "surah_name_arabic": "الفاتحة",
-        "verse_start": 1,
-        "verse_end": 7,
-        "matched_text_arabic": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ ۝ ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ ۝ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
-        "matched_text_english": "In the name of Allah, the Entirely Merciful, the Especially Merciful. All praise is due to Allah, Lord of the worlds.",
-    },
-    {
-        "surah_number": 2,
-        "surah_name_english": "Al-Baqarah (Ayat Al-Kursi)",
-        "surah_name_arabic": "البقرة",
-        "verse_start": 255,
-        "verse_end": 255,
-        "matched_text_arabic": "ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ ۚ لَا تَأْخُذُهُۥ سِنَةٌ۠ وَلَا نَوْمٌ۠",
-        "matched_text_english": "Allah - there is no deity except Him, the Ever-Living, the Sustainer of all existence. Neither drowsiness overtakes Him nor sleep.",
-    },
-    {
-        "surah_number": 36,
-        "surah_name_english": "Ya-Sin",
-        "surah_name_arabic": "يس",
-        "verse_start": 1,
-        "verse_end": 6,
-        "matched_text_arabic": "يس ۝ وَٱلْقُرْءَانِ ٱلْحَكِيمِ ۝ إِنَّكَ لَمِنَ ٱلْمُرْسَلِينَ ۝ عَلَىٰ صِرَٰطٍ مُّسْتَقِيمٍ",
-        "matched_text_english": "Ya-Sin. By the wise Qur'an. Indeed you, [O Muhammad], are from among the messengers, On a straight path.",
-    },
-    {
-        "surah_number": 55,
-        "surah_name_english": "Ar-Rahman",
-        "surah_name_arabic": "الرحمن",
-        "verse_start": 1,
-        "verse_end": 13,
-        "matched_text_arabic": "ٱلرَّحْمَـٰنُ ۝ عَلَّمَ ٱلْقُرْءَانَ ۝ خَلَقَ ٱلْإِنسَـٰنَ ۝ عَلَّمَهُ ٱلْبَيَانَ",
-        "matched_text_english": "The Most Merciful. Taught the Qur'an, Created man, Taught him eloquence.",
-    },
-    {
-        "surah_number": 67,
-        "surah_name_english": "Al-Mulk",
-        "surah_name_arabic": "الملك",
-        "verse_start": 1,
-        "verse_end": 5,
-        "matched_text_arabic": "تَبَـٰرَكَ ٱلَّذِى بِيَدِهِ ٱلْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَىْءٍ قَدِيرٌ",
-        "matched_text_english": "Blessed is He in whose hand is dominion, and He is over all things competent.",
-    },
-    {
-        "surah_number": 112,
-        "surah_name_english": "Al-Ikhlas",
-        "surah_name_arabic": "الإخلاص",
-        "verse_start": 1,
-        "verse_end": 4,
-        "matched_text_arabic": "قُلْ هُوَ ٱللَّهُ أَحَدٌ ۝ ٱللَّهُ ٱلصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُن لَّهُۥ كُفُوًا أَحَدٌ",
-        "matched_text_english": "Say, 'He is Allah, [who is] One. Allah, the Eternal Refuge. He neither begets nor is born, Nor is there to Him any equivalent.'",
-    },
-    {
-        "surah_number": 113,
-        "surah_name_english": "Al-Falaq",
-        "surah_name_arabic": "الفلق",
-        "verse_start": 1,
-        "verse_end": 5,
-        "matched_text_arabic": "قُلْ أَعُوذُ بِرَبِّ ٱلْفَلَقِ ۝ مِن شَرِّ مَا خَلَقَ ۝ وَمِن شَرِّ غَاسِقٍ إِذَا وَقَبَ",
-        "matched_text_english": "Say, 'I seek refuge in the Lord of daybreak, From the evil of that which He created, And from the evil of darkness when it settles.'",
-    },
-    {
-        "surah_number": 114,
-        "surah_name_english": "An-Nas",
-        "surah_name_arabic": "الناس",
-        "verse_start": 1,
-        "verse_end": 6,
-        "matched_text_arabic": "قُلْ أَعُوذُ بِرَبِّ ٱلنَّاسِ ۝ مَلِكِ ٱلنَّاسِ ۝ إِلَـٰهِ ٱلنَّاسِ ۝ مِن شَرِّ ٱلْوَسْوَاسِ ٱلْخَنَّاسِ",
-        "matched_text_english": "Say, 'I seek refuge in the Lord of mankind, The Sovereign of mankind, The God of mankind, From the evil of the retreating whisperer.'",
-    },
-]
-
-RECITERS_DATASET = [
-    {"id": "ar.alafasy", "name": "Mishary Rashid Al-Afasy", "country": "Kuwait", "style": "Murattal"},
-    {"id": "ar.abdurrahmaansudais", "name": "Abdul Rahman Al-Sudais", "country": "Saudi Arabia", "style": "Chief Imam - Masjid al-Haram"},
-    {"id": "ar.mahermuaiqly", "name": "Maher Al-Muaiqly", "country": "Saudi Arabia", "style": "Imam - Masjid al-Haram"},
-    {"id": "ar.yasser_dussary", "name": "Yasser Al-Dosari", "country": "Saudi Arabia", "style": "Imam - Masjid al-Haram"},
-    {"id": "ar.saad_ghamdi", "name": "Saad Al-Ghamdi", "country": "Saudi Arabia", "style": "Murattal"},
-    {"id": "ar.ahmed_ajmi", "name": "Ahmed Al-Ajmi", "country": "Saudi Arabia", "style": "Murattal"},
-    {"id": "ar.minshawi", "name": "Mohamed Siddiq Al-Minshawi", "country": "Egypt", "style": "Mujawwad"},
-    {"id": "ar.husary", "name": "Mahmoud Khalil Al-Husary", "country": "Egypt", "style": "Murattal"},
-    {"id": "ar.abdulbasit", "name": "Abdul Basit Abdul Samad", "country": "Egypt", "style": "Mujawwad"},
-]
-
-
 @api_router.post("/quran/identify", response_model=AyahFinderResult)
 async def identify_quran_recitation(
     req: IdentifyQuranRequest,
     request: Request,
     user: Optional[dict] = Depends(get_optional_user_profile),
 ):
-    """
-    Transcribe a Quran recitation and match it against all 6,236 ayahs.
-
-    This route identifies Quran text only. Reciter voice identification needs
-    a separate speaker model and is reported as unavailable instead of guessed.
-    """
-    # Rate limiting BEFORE expensive processing (10 req/min auth, 3 req/min anon IP)
     client_ip = _get_client_ip(request)
     limit = 10 if (user and user.get("tier") == "premium") else (10 if user else 3)
     check_rate_limit(f"audio:{client_ip}", limit_per_min=limit)
@@ -1367,24 +1209,15 @@ async def identify_quran_recitation(
     }
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Smart Arabic Scanner — text/image → Quran match
-# ──────────────────────────────────────────────────────────────────────────────
-
 OCR_SPACE_API_KEY = os.environ.get("OCR_SPACE_API_KEY", "")
 OCR_SPACE_ENGINE = os.environ.get("OCR_SPACE_ENGINE", "1")
 
-# Free tier limit is 1 MB; 900 KB leaves headroom for base64/HTTP overhead.
 MAX_OCR_IMAGE_BYTES = 900_000
 
-# Tuned independently from the ASR threshold: OCR errors (character-shape
-# confusions, missing diacritics) differ from ASR errors (phonetic substitution).
 QURAN_IDENTIFY_OCR_MIN_CONFIDENCE = float(
     os.environ.get("QURAN_IDENTIFY_OCR_MIN_CONFIDENCE", "0.65")
 )
 
-# Arabic diacritics (harakat) that OCR frequently drops — strip before matching
-# so the fuzzy matcher sees the same normalisation on both sides.
 _ARABIC_DIACRITICS = "".join(chr(c) for c in range(0x064B, 0x0653))
 _DIACRITIC_TABLE = str.maketrans("", "", _ARABIC_DIACRITICS)
 
@@ -1401,9 +1234,7 @@ class IdentifyTextRequest(BaseModel):
 
 
 def _decode_ocr_image(image_b64: str) -> bytes:
-    """Decode the base64 image payload and validate its size."""
     encoded = image_b64.strip()
-    # Strip data-URL prefix if present
     if encoded.startswith("data:"):
         if ";base64," not in encoded:
             raise ValueError("The image data URL is not base64 encoded.")
@@ -1423,11 +1254,6 @@ def _decode_ocr_image(image_b64: str) -> bytes:
 
 
 def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
-    """Call OCR.space synchronously and return the extracted Arabic text.
-
-    Raises ValueError with a typed 'ocr_failed' or 'ocr_empty' message
-    that the route handler surfaces to the client.
-    """
     if not OCR_SPACE_API_KEY:
         raise ValueError("ocr_failed:OCR service is not configured on the server.")
 
@@ -1451,7 +1277,6 @@ def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
     except requests.RequestException as exc:
         raise ValueError(f"ocr_failed:Could not reach the OCR service. Please check your connection.") from exc
 
-    # HTTP 401 → invalid key (FileParseExitCode -30)
     if resp.status_code == 401:
         raise ValueError("ocr_failed:The OCR service rejected the request. Please check the server configuration.")
     if resp.status_code != 200:
@@ -1462,7 +1287,6 @@ def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
     except Exception:
         raise ValueError("ocr_failed:The OCR service returned an unreadable response.")
 
-    # OCRExitCode >= 3 or IsErroredOnProcessing means a hard failure
     exit_code = payload.get("OCRExitCode", 0)
     if payload.get("IsErroredOnProcessing") or int(exit_code) >= 3:
         err = payload.get("ErrorMessage") or payload.get("ErrorDetails") or "Unknown OCR error."
@@ -1473,7 +1297,6 @@ def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
     for r in parsed_results:
         if r.get("FileParseExitCode") == 1 and r.get("ParsedText"):
             raw_text = r.get("ParsedText", "")
-            # Safely strip any residual HTML tags OCR.space may return
             clean_text = re.sub(r"<[^>]+>", "", raw_text)
             if clean_text.strip():
                 texts.append(clean_text.strip())
@@ -1491,23 +1314,13 @@ async def identify_quran_text(
     request: Request,
     user: Optional[dict] = Depends(get_optional_user_profile),
 ):
-    """Match Arabic text (typed or from a scanned image) against the Quran corpus.
-
-    Accepts either:
-      - { arabic_text: str }           — direct fuzzy match, no OCR
-      - { image_b64: str, mime: str }  — OCR via server-side proxy, then fuzzy match
-
-    The OCR.space key is kept server-side and never exposed to the client.
-    """
-    # Apply OCR rate limiting BEFORE expensive processing (5 req/min auth, 2 req/min anon IP)
     client_ip = _get_client_ip(request)
     limit = 5 if user else 2
     check_rate_limit(f"ocr:{client_ip}", limit_per_min=limit)
 
-    # Validate: exactly one input mode must be provided
     has_text = bool(req.arabic_text and req.arabic_text.strip())
     has_image = bool(req.image_b64)
-    if has_text == has_image:  # both or neither
+    if has_text == has_image:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Provide either 'arabic_text' or 'image_b64' (not both, not neither).",
@@ -1515,10 +1328,9 @@ async def identify_quran_text(
 
     src_type = "ocr" if has_image else "text"
 
-    # --- Image path: OCR first ---
     if has_image:
         try:
-            image_bytes = _decode_ocr_image(req.image_b64)  # type: ignore[arg-type]
+            image_bytes = _decode_ocr_image(req.image_b64)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
@@ -1532,7 +1344,6 @@ async def identify_quran_text(
             arabic_text = await run_in_threadpool(_call_ocr_space, image_bytes, mime)
         except ValueError as exc:
             err_msg = str(exc)
-            # Distinguish ocr_failed vs ocr_empty by the typed prefix
             if err_msg.startswith("ocr_empty:"):
                 return {
                     "schema_version": 1,
@@ -1556,9 +1367,8 @@ async def identify_quran_text(
                 "confidence": None,
             }
     else:
-        arabic_text = req.arabic_text  # type: ignore[assignment]
+        arabic_text = req.arabic_text
 
-    # --- Fuzzy match against the Quran corpus ---
     cleaned = _strip_diacritics(arabic_text.strip())
     try:
         match = await run_in_threadpool(
@@ -1584,7 +1394,6 @@ async def identify_quran_text(
             detail="The Quran text-matching service is not ready.",
         ) from exc
 
-    # Check OCR-specific confidence threshold (separate from ASR threshold)
     if match.confidence < QURAN_IDENTIFY_OCR_MIN_CONFIDENCE:
         return {
             "schema_version": 1,
@@ -1636,10 +1445,6 @@ async def identify_quran_text(
     }
 
 
-# ---------------------------------------------------------------------------
-# Halal Scanner OCR proxy — fixes the existing client-side key exposure.
-# The OCR.space key is read from server env; the frontend sends only the image.
-# ---------------------------------------------------------------------------
 class HalalOcrRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image_b64: str
@@ -1647,7 +1452,6 @@ class HalalOcrRequest(BaseModel):
 
 
 def _call_ocr_space_eng(image_bytes: bytes, mime: str) -> str:
-    """Call OCR.space for English ingredient text. Returns extracted text."""
     if not OCR_SPACE_API_KEY:
         raise ValueError("OCR service is not configured on the server.")
     import base64 as _b64
@@ -1683,11 +1487,6 @@ def _call_ocr_space_eng(image_bytes: bytes, mime: str) -> str:
 
 @api_router.post("/halal/ocr-ingredients")
 async def halal_ocr_ingredients(req: HalalOcrRequest):
-    """Server-side OCR proxy for the Halal Scanner screen.
-
-    Replaces the previous client-side OCR.space call that exposed the API key
-    in the app bundle. The key is now kept in backend/.env only.
-    """
     try:
         image_bytes = _decode_ocr_image(req.image_b64)
     except ValueError as exc:
@@ -1709,15 +1508,10 @@ async def halal_ocr_ingredients(req: HalalOcrRequest):
         )
     return {"text": text}
 
-# ---------------------------------------------------------------------------
-# Fatawa & Scholarly Answers — Pydantic models
-# ---------------------------------------------------------------------------
-
 from fatawa_catalog import FATAWA_CATALOG, CATEGORIES, ALLOWED_SOURCE_HOSTS  # noqa: E402
 
 
 def _validate_source_url(url: str, field: str = "source_url") -> str:
-    """Reject any URL that is not HTTPS or whose host is not on the explicit allow-list."""
     from urllib.parse import urlparse
     try:
         parsed = urlparse(url)
@@ -1803,12 +1597,7 @@ class FatawaErrorResponse(BaseModel):
     detail: str
 
 
-# ---------------------------------------------------------------------------
-# Fatawa search helper
-# ---------------------------------------------------------------------------
-
 def _normalize_arabic(text: str) -> str:
-    """Strip Arabic diacritics (tashkeel) for fuzzy matching."""
     diacritics = re.compile(r"[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06dc\u06df-\u06e4\u06e7\u06e8\u06ea-\u06ed]")
     return diacritics.sub("", text)
 
@@ -1832,7 +1621,6 @@ def _fatawa_query_tokens(text: str) -> set[str]:
 
 
 def _item_matches_query(item: dict, q: str) -> bool:
-    """Match natural phrasing against a curated catalog item."""
     q_norm = _normalize_arabic(q.lower())
     haystack = " ".join(
         str(item.get(field, "") or "")
@@ -1857,18 +1645,12 @@ def _item_matches_query(item: dict, q: str) -> bool:
 
 
 def _build_fatawa_response(item: dict) -> FatawaItemResponse:
-    """Validate source URL and build Pydantic response model from raw catalog dict."""
     _validate_source_url(item["source_url"])
-    # Validate citation URLs if present
     for cit in item.get("evidence_citations", []):
         if cit.get("url"):
             _validate_source_url(cit["url"], field="evidence_citations[].url")
     return FatawaItemResponse(**item)
 
-
-# ---------------------------------------------------------------------------
-# Fatawa API routes (static routes BEFORE dynamic /{id} route)
-# ---------------------------------------------------------------------------
 
 @api_router.get(
     "/fatawa/categories",
@@ -1899,7 +1681,6 @@ async def search_fatawa(
     client_ip = _get_client_ip(request)
     check_rate_limit(f"fatawa_search:{client_ip}", limit_per_min=30)
 
-    # include_draft is restricted to authenticated users only
     if include_draft and not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1908,11 +1689,9 @@ async def search_fatawa(
 
     results = list(FATAWA_CATALOG)
 
-    # Only surface published items unless an authenticated caller explicitly requests drafts
     if not include_draft:
         results = [r for r in results if r.get("review_status") == "published"]
 
-    # Skip permission_required items (not yet licensed for display)
     results = [r for r in results if r.get("license") != "permission_required"]
 
     if category:
@@ -1926,9 +1705,6 @@ async def search_fatawa(
 
     if q and q.strip():
         q_clean = q.strip()
-        # Typeahead search is intentionally local. Live external lookup is
-        # reserved for the explicit POST /fatawa/ask action so normal typing
-        # does not consume search quota or surface unreviewed results.
         results = [r for r in results if _item_matches_query(r, q_clean)]
 
     total = len(results)
@@ -1947,7 +1723,6 @@ SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY", "").strip()
 
 
 def _is_islamqa_answer_url(value: str) -> bool:
-    """Only allow HTTPS IslamQA answer pages returned by external search."""
     try:
         parsed = urllib.parse.urlparse(value)
     except Exception:
@@ -1964,14 +1739,6 @@ def _is_islamqa_answer_url(value: str) -> bool:
 
 
 async def _search_islamqa_for_url(query: str) -> Optional[str]:
-    """Return a relevant IslamQA answer URL from SerpApi, if one exists.
-
-    SerpApi exposes Google-style organic results, so the query is restricted
-    with the standard ``site:`` operator. The URL and token-overlap checks are
-    intentional guardrails: a search result must be a real HTTPS IslamQA
-    answer page and must contain enough of the user's topic before it can be
-    fetched and displayed.
-    """
     if not SERPAPI_API_KEY:
         return None
 
@@ -1983,7 +1750,7 @@ async def _search_islamqa_for_url(query: str) -> Optional[str]:
             "api_key": SERPAPI_API_KEY,
         }
     )
-    search_url = f"https://serpapi.com/search.json?{params}"
+    search_url = "https://serpapi.com/search.json?" + params
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -2015,7 +1782,6 @@ async def _search_islamqa_for_url(query: str) -> Optional[str]:
 
 
 def _json_ld_objects(payload: object) -> list[dict]:
-    """Flatten common JSON-LD list and @graph shapes into dictionaries."""
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
     if not isinstance(payload, dict):
@@ -2028,7 +1794,6 @@ def _json_ld_objects(payload: object) -> list[dict]:
 
 
 async def _fetch_islamqa_answer(url: str) -> Optional[dict]:
-    """Extract a real answer title and text from an IslamQA QAPage."""
     if not _is_islamqa_answer_url(url):
         return None
 
@@ -2082,7 +1847,6 @@ async def _fetch_islamqa_answer(url: str) -> Optional[dict]:
 
 
 async def _synthesize_question_ruling(q: str) -> Optional[dict]:
-    """Build a ruling only from a real matched source; never guess a topic."""
     matched_url = await _search_islamqa_for_url(q)
     fetched = await _fetch_islamqa_answer(matched_url) if matched_url else None
     if not fetched:
@@ -2110,7 +1874,6 @@ async def _synthesize_question_ruling(q: str) -> Optional[dict]:
     q_hash = hashlib.sha256(q.encode("utf-8")).hexdigest()[:8]
     q_lower = q.lower()
 
-    # Category inference
     if any(k in q_lower for k in ("pray", "salah", "fast", "ramadan", "zakat", "hajj", "wudu", "cap", "shirt")):
         category = "worship"
         cat_en = "Worship (Ibadah)"
@@ -2182,13 +1945,10 @@ async def ask_fatawa_question(
     if not q:
         raise HTTPException(status_code=422, detail="Question cannot be empty.")
 
-    # 1. Search existing catalog first
     for item in FATAWA_CATALOG:
         if item.get("review_status") == "published" and _item_matches_query(item, q):
             return _build_fatawa_response(item)
 
-    # 2. Search for a real source without blocking the async server. If no
-    #    source can be confidently resolved, return an honest no-match result.
     dynamic_item = await _synthesize_question_ruling(q)
     if dynamic_item is None:
         raise HTTPException(
@@ -2216,7 +1976,6 @@ async def get_fatawa_by_id(
     client_ip = _get_client_ip(request)
     check_rate_limit(f"fatawa_detail:{client_ip}", limit_per_min=30)
 
-    # Sanitise ID: alphanumeric and hyphens only
     if not re.fullmatch(r"[a-z0-9\-]+", fatawa_id):
         raise HTTPException(status_code=422, detail="Invalid fatawa ID format.")
 
@@ -2251,8 +2010,6 @@ async def preload_quran_asr():
     try:
         await run_in_threadpool(get_quran_asr_service().ensure_loaded)
     except AsrUnavailableError as exc:
-        # Keep non-ASR routes available, while /learn/status exposes the error
-        # and /learn/score continues to fail closed.
         logger.error("Quran ASR preload failed: %s", exc)
 
 

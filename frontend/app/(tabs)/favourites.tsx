@@ -1,10 +1,9 @@
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ScrollView } from "react-native";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import { theme } from "@/src/theme";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";

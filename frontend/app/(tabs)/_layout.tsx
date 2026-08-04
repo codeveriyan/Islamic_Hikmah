@@ -9,9 +9,11 @@ import Animated, {
   interpolate,
 } from "react-native-reanimated";
 import { useEffect } from "react";
+import { BottomTabBar, BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useTheme } from "@/src/ThemeContext";
 import { useTranslation } from "@/src/localization";
 import { AnimatedPressable } from "@/src/components/AnimatedPressable";
+import { TabBarVisibilityProvider, useTabBarVisibility } from "@/src/TabBarVisibilityContext";
 
 // ─── Animated Tab Icon ────────────────────────────────────────────────────────
 function TabIcon({
@@ -40,7 +42,7 @@ function TabIcon({
   useEffect(() => {
     scale.value = withSpring(focused ? 1.18 : 1, { damping: 12, stiffness: 260 });
     dotOpacity.value = withTiming(focused ? 1 : 0, { duration: 200 });
-  }, [focused]);
+  }, [focused, scale, dotOpacity]);
 
   return (
     <View style={{ alignItems: "center", gap: 4 }}>
@@ -60,9 +62,6 @@ function TabIcon({
     </View>
   );
 }
-
-import { BottomTabBar, BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { TabBarVisibilityProvider, useTabBarVisibility } from "@/src/TabBarVisibilityContext";
 
 function AnimatedTabBar(props: BottomTabBarProps) {
   const { isTabBarVisible } = useTabBarVisibility();
