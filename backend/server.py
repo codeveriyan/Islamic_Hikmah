@@ -1166,7 +1166,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "الفاتحة",
         "verse_start": 1,
         "verse_end": 7,
-        "matched_text_arabic": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ ۝ ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ ۝ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
+        "matched_text_arabic": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ ۝ ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ ۝ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
         "matched_text_english": "In the name of Allah, the Entirely Merciful, the Especially Merciful. All praise is due to Allah, Lord of the worlds.",
     },
     {
@@ -1175,7 +1175,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "البقرة",
         "verse_start": 255,
         "verse_end": 255,
-        "matched_text_arabic": "ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ ۚ لَا تَأْخُذُهُۥ سِنَةٌ۠ وَلَا نَوْمٌ۠",
+        "matched_text_arabic": "ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ ۚ لَا تَأْخُذُهُۥ سِنَةٌ۠ وَلَا نَوْمٌ۠",
         "matched_text_english": "Allah - there is no deity except Him, the Ever-Living, the Sustainer of all existence. Neither drowsiness overtakes Him nor sleep.",
     },
     {
@@ -1184,7 +1184,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "يس",
         "verse_start": 1,
         "verse_end": 6,
-        "matched_text_arabic": "يس ۝ وَٱلْقُرْءَانِ ٱلْحَكِيمِ ۝ إِنَّكَ لَمِنَ ٱلْمُرْسَلِينَ ۝ عَلَىٰ صِرَٰطٍ مُّسْتَقِيمٍ",
+        "matched_text_arabic": "يس ۝ وَٱلْقُرْءَانِ ٱلْحَكِيمِ ۝ إِنَّكَ لَمِنَ ٱلْمُرْسَلِينَ ۝ عَلَىٰ صِرَٰطٍ مُّسْتَقِيمٍ",
         "matched_text_english": "Ya-Sin. By the wise Qur'an. Indeed you, [O Muhammad], are from among the messengers, On a straight path.",
     },
     {
@@ -1193,7 +1193,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "الرحمن",
         "verse_start": 1,
         "verse_end": 13,
-        "matched_text_arabic": "ٱلرَّحْمَـٰنُ ۝ عَلَّمَ ٱلْقُرْءَانَ ۝ خَلَقَ ٱلْإِنسَـٰنَ ۝ عَلَّمَهُ ٱلْبَيَانَ",
+        "matched_text_arabic": "ٱلرَّحْمَـٰنُ ۝ عَلَّمَ ٱلْقُرْءَانَ ۝ خَلَقَ ٱلْإِنسَـٰنَ ۝ عَلَّمَهُ ٱلْبَيَانَ",
         "matched_text_english": "The Most Merciful. Taught the Qur'an, Created man, Taught him eloquence.",
     },
     {
@@ -1202,7 +1202,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "الملك",
         "verse_start": 1,
         "verse_end": 5,
-        "matched_text_arabic": "تَبَـٰرَكَ ٱلَّذِى بِيَدِهِ ٱلْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَىْءٍ قَدِيرٌ",
+        "matched_text_arabic": "تَبَـٰرَكَ ٱلَّذِى بِيَدِهِ ٱلْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَىْءٍ قَدِيرٌ",
         "matched_text_english": "Blessed is He in whose hand is dominion, and He is over all things competent.",
     },
     {
@@ -1211,7 +1211,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "الإخلاص",
         "verse_start": 1,
         "verse_end": 4,
-        "matched_text_arabic": "قُلْ هُوَ ٱللَّهُ أَحَدٌ ۝ ٱللَّهُ ٱلصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُن لَّهُۥ كُفُوًا أَحَدٌ",
+        "matched_text_arabic": "قُلْ هُوَ ٱللَّهُ أَحَدٌ ۝ ٱللَّهُ ٱلصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُن لَّهُۥ كُفُوًا أَحَدٌ",
         "matched_text_english": "Say, 'He is Allah, [who is] One. Allah, the Eternal Refuge. He neither begets nor is born, Nor is there to Him any equivalent.'",
     },
     {
@@ -1220,7 +1220,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "الفلق",
         "verse_start": 1,
         "verse_end": 5,
-        "matched_text_arabic": "قُلْ أَعُوذُ بِرَبِّ ٱلْفَلَقِ ۝ مِن شَرِّ مَا خَلَقَ ۝ وَمِن شَرِّ غَاسِقٍ إِذَا وَقَبَ",
+        "matched_text_arabic": "قُلْ أَعُوذُ بِرَبِّ ٱلْفَلَقِ ۝ مِن شَرِّ مَا خَلَقَ ۝ وَمِن شَرِّ غَاسِقٍ إِذَا وَقَبَ",
         "matched_text_english": "Say, 'I seek refuge in the Lord of daybreak, From the evil of that which He created, And from the evil of darkness when it settles.'",
     },
     {
@@ -1229,7 +1229,7 @@ SURAHS_DATASET = [
         "surah_name_arabic": "الناس",
         "verse_start": 1,
         "verse_end": 6,
-        "matched_text_arabic": "قُلْ أَعُوذُ بِرَبِّ ٱلنَّاسِ ۝ مَلِكِ ٱلنَّاسِ ۝ إِلَـٰهِ ٱلنَّاسِ ۝ مِن شَرِّ ٱلْوَسْوَاسِ ٱلْخَنَّاسِ",
+        "matched_text_arabic": "قُلْ أَعُوذُ بِرَبِّ ٱلنَّاسِ ۝ مَلِكِ ٱلنَّاسِ ۝ إِلَـٰهِ ٱلنَّاسِ ۝ مِن شَرِّ ٱلْوَسْوَاسِ ٱلْخَنَّاسِ",
         "matched_text_english": "Say, 'I seek refuge in the Lord of mankind, The Sovereign of mankind, The God of mankind, From the evil of the retreating whisperer.'",
     },
 ]
@@ -2240,25 +2240,4 @@ app.add_middleware(
     allow_credentials=False,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
-
-
-@app.on_event("startup")
-async def preload_quran_asr():
-    if os.environ.get("LEARN_QURAN_ASR_PRELOAD", "false").lower() != "true":
-        return
-    try:
-        await run_in_threadpool(get_quran_asr_service().ensure_loaded)
-    except AsrUnavailableError as exc:
-        # Keep non-ASR routes available, while /learn/status exposes the error
-        # and /learn/score continues to fail closed.
-        logger.error("Quran ASR preload failed: %s", exc)
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    try:
-        client.close()
-    except Exception:
-        pass
+    allow_headers
