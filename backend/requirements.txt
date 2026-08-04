@@ -12,5 +12,6 @@ imageio-ffmpeg==0.6.0
 # Real Quran ASR. imageio-ffmpeg supplies the decoder when system FFmpeg is absent.
 # This PyPI pin is the portable CPU fallback. On an NVIDIA deployment, install
 # requirements-asr-gpu.txt after this file so Whisper can use CUDA.
-torch==2.12.0
-transformers==4.57.6
+torch==2.2.0
+transformers==4.38.0
+httpx>=0.27.0

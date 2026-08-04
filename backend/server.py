@@ -8,6 +8,7 @@ import binascii
 import os
 import logging
 import json
+import hmac
 from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 from collections import defaultdict
@@ -16,6 +17,13 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import re
 import requests
+import hashlib
+import html
+import math
+import urllib.parse
+import urllib.request
+import asyncio
+import httpx
 from cryptography import x509
 from pymongo.errors import DuplicateKeyError
 from learn_quran.router import create_learn_quran_router
@@ -43,6 +51,7 @@ ALLOW_IN_MEMORY_DB = os.environ.get("ALLOW_IN_MEMORY_DB", "false").lower() == "t
 IN_MEMORY_DB = {
     "users": {},
     "payments": {},
+    "billing_events": {},
 }
 
 # Logger setup
@@ -57,6 +66,17 @@ APP_ENV = os.environ.get("APP_ENV", "production").lower()
 DEV_PREMIUM_EMAILS = {
     email.strip().lower()
     for email in os.environ.get("DEV_PREMIUM_EMAILS", "").split(",")
+    if email.strip()
+}
+REVENUECAT_SECRET_KEY = os.environ.get("REVENUECAT_SECRET_KEY", "").strip()
+REVENUECAT_API_BASE_URL = os.environ.get(
+    "REVENUECAT_API_BASE_URL", "https://api.revenuecat.com/v1"
+).rstrip("/")
+REVENUECAT_ENTITLEMENT_ID = os.environ.get("REVENUECAT_ENTITLEMENT_ID", "pro").strip()
+REVENUECAT_WEBHOOK_AUTH_TOKEN = os.environ.get("REVENUECAT_WEBHOOK_AUTH_TOKEN", "").strip()
+PAYMENT_ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in os.environ.get("PAYMENT_ADMIN_EMAILS", "").split(",")
     if email.strip()
 }
 DEFAULT_CORS_ORIGINS = "http://localhost:8080,http://localhost:8081,http://localhost:19006"
@@ -80,6 +100,14 @@ def apply_development_entitlements(user: dict) -> dict:
 # Rate Limiting Configuration
 RATE_LIMIT_BACKEND = os.environ.get("RATE_LIMIT_BACKEND", "memory").lower()
 RATE_LIMIT_STORE: Dict[str, list[float]] = defaultdict(list)
+TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() == "true"
+
+def _get_client_ip(request: Request) -> str:
+    if TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request and request.client else "127.0.0.1"
 
 
 def check_rate_limit(key: str, limit_per_min: int):
@@ -146,6 +174,8 @@ class UserProfileResponse(BaseModel):
     last_login: datetime
     status: str
     tier: str = "free"
+    premium_until: Optional[datetime] = None
+    premium_source: Optional[str] = None
     trial_started_at: Optional[datetime] = None
     trial_active: bool = False
     trial_ends_at: Optional[datetime] = None
@@ -208,6 +238,38 @@ async def db_update_user(email: str, update_dict: dict):
             user.update(update_dict)
 
 
+async def db_find_user_by_id(user_id: str):
+    if _use_development_memory_store():
+        return next(
+            (user for user in IN_MEMORY_DB["users"].values() if user.get("id") == user_id),
+            None,
+        )
+    try:
+        return await db.users.find_one({"id": user_id})
+    except Exception as e:
+        _database_unavailable("user id lookup", e)
+        return next(
+            (user for user in IN_MEMORY_DB["users"].values() if user.get("id") == user_id),
+            None,
+        )
+
+
+async def db_update_user_by_id(user_id: str, update_dict: dict):
+    if _use_development_memory_store():
+        user = await db_find_user_by_id(user_id)
+        if user:
+            user.update(update_dict)
+        return
+    try:
+        await db.users.update_one({"id": user_id}, {"$set": update_dict})
+    except Exception as e:
+        _database_unavailable("user id update", e)
+        user = await db_find_user_by_id(user_id)
+        if user:
+            user.update(update_dict)
+        return
+
+
 async def db_find_payment_by_utr(utr: str):
     if _use_development_memory_store():
         return IN_MEMORY_DB["payments"].get(utr)
@@ -244,6 +306,48 @@ async def db_insert_payment(payment_dict: dict):
                 detail="This UTR has already been submitted.",
             )
         IN_MEMORY_DB["payments"][utr] = payment_dict
+
+
+async def db_transition_payment(utr: str, expected_status: str, update_dict: dict) -> bool:
+    """Atomically apply a payment review only if it is still pending."""
+    if _use_development_memory_store():
+        payment = IN_MEMORY_DB["payments"].get(utr)
+        if not payment or payment.get("status") != expected_status:
+            return False
+        payment.update(update_dict)
+        return True
+    try:
+        result = await db.payments.update_one(
+            {"_id": utr, "status": expected_status},
+            {"$set": update_dict},
+        )
+        return result.modified_count == 1
+    except Exception as e:
+        _database_unavailable("payment transition", e)
+        payment = IN_MEMORY_DB["payments"].get(utr)
+        if not payment or payment.get("status") != expected_status:
+            return False
+        payment.update(update_dict)
+        return True
+
+
+async def db_insert_billing_event(event_id: str, event_record: dict) -> bool:
+    if _use_development_memory_store():
+        if event_id in IN_MEMORY_DB["billing_events"]:
+            return False
+        IN_MEMORY_DB["billing_events"][event_id] = event_record
+        return True
+    try:
+        await db.billing_events.insert_one({"_id": event_id, **event_record})
+        return True
+    except DuplicateKeyError:
+        return False
+    except Exception as e:
+        _database_unavailable("billing event insert", e)
+        if event_id in IN_MEMORY_DB["billing_events"]:
+            return False
+        IN_MEMORY_DB["billing_events"][event_id] = event_record
+        return True
 
 # Cache of Google public certificates for Firebase ID Token verification.
 # Persisting these public certificates lets a restarted local backend verify
@@ -419,7 +523,7 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
 
         user = await db_find_user_by_email(email)
         if not user:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             user = {
                 "id": uid,
                 "name": decoded.get("name", email.split("@")[0]),
@@ -451,13 +555,15 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
                 "provider": "firebase",
                 "provider_id": uid,
                 "email_verified": decoded.get("email_verified", False),
-                "last_login": datetime.utcnow(),
+                "last_login": datetime.now(timezone.utc),
             }
             await db_update_user(email, identity_update)
             user.update(identity_update)
 
         if user.get("status") == "Blocked":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been blocked.")
+        user = check_and_update_trial_status(user)
+        user = check_and_update_premium_status(user)
         return apply_development_entitlements(user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
@@ -602,17 +708,155 @@ def check_and_update_trial_status(user_dict: dict) -> dict:
     trial_ends_at = user_dict.get("trial_ends_at")
     trial_active = user_dict.get("trial_active", False)
     if trial_active and trial_ends_at:
-        if isinstance(trial_ends_at, str):
-            try:
-                trial_ends_at = datetime.fromisoformat(trial_ends_at.replace("Z", "+00:00").split("+")[0])
-            except Exception:
-                pass
-        if isinstance(trial_ends_at, datetime):
-            if datetime.utcnow() > trial_ends_at:
+        parsed_trial_ends_at = _parse_provider_datetime(trial_ends_at)
+        if parsed_trial_ends_at:
+            if datetime.now(timezone.utc) > parsed_trial_ends_at:
                 user_dict["trial_active"] = False
-                import asyncio
-                asyncio.create_task(db_update_user(user_dict["email"], {"trial_active": False}))
+                _safe_bg_task(db_update_user(user_dict["email"], {"trial_active": False}))
     return user_dict
+
+
+def check_and_update_premium_status(user_dict: dict) -> dict:
+    premium_until = _parse_provider_datetime(user_dict.get("premium_until"))
+    if (
+        user_dict.get("tier") == "premium"
+        and premium_until is not None
+        and premium_until <= datetime.now(timezone.utc)
+    ):
+        user_dict["tier"] = "free"
+        user_dict["premium_until"] = None
+        _safe_bg_task(
+            db_update_user(
+                user_dict["email"],
+                {"tier": "free", "premium_until": None, "updated_at": datetime.now(timezone.utc)},
+            )
+        )
+    return user_dict
+
+
+def _parse_provider_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        # RevenueCat webhook timestamps are milliseconds since Unix epoch.
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _provider_entitlement_is_active(entitlement: Any) -> bool:
+    if not isinstance(entitlement, dict):
+        return False
+    if entitlement.get("gives_access") is False:
+        return False
+    expires_at = _parse_provider_datetime(entitlement.get("expires_date"))
+    return expires_at is None or expires_at > datetime.now(timezone.utc)
+
+
+async def fetch_revenuecat_entitlement(app_user_id: str) -> dict[str, Any]:
+    """Fetch the authoritative entitlement state from RevenueCat.
+
+    The app may identify the customer, but it cannot supply entitlement data.
+    The secret RevenueCat API key is server-only.
+    """
+    if not REVENUECAT_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Payment verification is not configured on the server.",
+        )
+    if not app_user_id or len(app_user_id) > 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid payment customer identifier.",
+        )
+
+    subscriber_url = f"{REVENUECAT_API_BASE_URL}/subscribers/{urllib.parse.quote(app_user_id, safe='')}"
+    try:
+        response = await run_in_threadpool(
+            requests.get,
+            subscriber_url,
+            headers={"Authorization": f"Bearer {REVENUECAT_SECRET_KEY}"},
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        logger.warning("RevenueCat subscriber lookup failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to verify the payment with the billing provider.",
+        ) from exc
+
+    if response.status_code == 404:
+        return {
+            "active": False,
+            "entitlement": None,
+            "original_app_user_id": app_user_id,
+        }
+    if response.status_code in {401, 403}:
+        logger.error("RevenueCat rejected the server API key with status %s", response.status_code)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Payment verification is temporarily unavailable.",
+        )
+    if response.status_code >= 400:
+        logger.warning("RevenueCat subscriber lookup returned %s", response.status_code)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The billing provider could not verify this purchase.",
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The billing provider returned an invalid response.",
+        ) from exc
+
+    subscriber = payload.get("subscriber") if isinstance(payload, dict) else None
+    entitlements = subscriber.get("entitlements") if isinstance(subscriber, dict) else None
+    entitlement = entitlements.get(REVENUECAT_ENTITLEMENT_ID) if isinstance(entitlements, dict) else None
+    return {
+        "active": _provider_entitlement_is_active(entitlement),
+        "entitlement": entitlement,
+        "original_app_user_id": (
+            subscriber.get("original_app_user_id")
+            if isinstance(subscriber, dict)
+            else app_user_id
+        ) or app_user_id,
+    }
+
+
+async def persist_revenuecat_entitlement(user: dict, provider_state: dict[str, Any]) -> dict:
+    entitlement = provider_state.get("entitlement") or {}
+    expires_at = _parse_provider_datetime(entitlement.get("expires_date"))
+    update_data = {
+        "updated_at": datetime.now(timezone.utc),
+        "iap_verified_at": datetime.now(timezone.utc),
+        "iap_original_app_user_id": provider_state.get("original_app_user_id"),
+    }
+    if provider_state.get("active"):
+        update_data.update(
+            {
+                "tier": "premium",
+                "premium_source": "revenuecat",
+                "premium_until": expires_at,
+                "premium_product_id": entitlement.get("product_identifier"),
+            }
+        )
+    elif user.get("premium_source") == "revenuecat":
+        # Do not remove an independently granted UPI/manual entitlement.
+        update_data.update({"tier": "free", "premium_until": None})
+
+    await db_update_user(user["email"], update_data)
+    user.update(update_data)
+    return user
 
 # GET /profile
 @api_router.get("/profile", response_model=UserProfileResponse)
@@ -629,7 +873,7 @@ async def update_profile(profile_in: ProfileUpdate, current_user: dict = Depends
         update_data["profile_image"] = profile_in.profile_image
 
     if update_data:
-        update_data["updated_at"] = datetime.utcnow()
+        update_data["updated_at"] = datetime.now(timezone.utc)
         await db_update_user(current_user["email"], update_data)
         current_user.update(update_data)
 
@@ -676,7 +920,7 @@ async def submit_payment(
             detail="This UTR has already been submitted.",
         )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     plan = PLAN_CATALOG[submission.plan]
     payment_record = {
         "_id": clean_utr,
@@ -702,11 +946,9 @@ async def submit_payment(
     }
 
 class VerifyIapInput(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    uid: Optional[str] = None
-    entitlements: Optional[Dict[str, Any]] = None
-    originalAppUserId: Optional[str] = None
+    app_user_id: Optional[str] = Field(default=None, alias="appUserId")
 
 
 @api_router.post("/v1/auth/entitlements/verify-iap")
@@ -714,32 +956,138 @@ async def verify_iap_entitlements(
     submission: VerifyIapInput,
     current_user: dict = Depends(get_current_user_profile),
 ):
-    """Verify RevenueCat / Native In-App Purchase entitlement and activate premium tier."""
-    entitlements = submission.entitlements or {}
-    has_pro = "pro" in entitlements or "premium" in entitlements or len(entitlements) > 0
+    """Refresh the signed-in user's entitlement from RevenueCat.
 
-    if not has_pro:
+    The request body is deliberately not allowed to contain entitlement state.
+    The authenticated Firebase UID is the only customer identifier trusted by
+    this endpoint; RevenueCat is queried with the server-only API key.
+    """
+    expected_app_user_id = current_user["id"]
+    if submission.app_user_id and submission.app_user_id != expected_app_user_id:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active pro entitlement found in purchase receipt.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The payment customer does not match the signed-in account.",
         )
 
-    now = datetime.utcnow()
-    update_data = {
-        "tier": "premium",
-        "updated_at": now,
-        "iap_verified_at": now,
-        "iap_original_app_user_id": submission.originalAppUserId,
-    }
+    provider_state = await fetch_revenuecat_entitlement(expected_app_user_id)
+    await persist_revenuecat_entitlement(current_user, provider_state)
 
-    await db_update_user(current_user["email"], update_data)
-    current_user.update(update_data)
+    if not provider_state.get("active"):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="No active premium purchase was found for this account.",
+        )
 
     return {
         "status": "success",
         "tier": "premium",
         "message": "In-app purchase entitlement verified successfully.",
     }
+
+
+@api_router.post("/webhooks/revenuecat", include_in_schema=False)
+async def revenuecat_webhook(request: Request):
+    """Process RevenueCat lifecycle events with an idempotent server update."""
+    authorization = request.headers.get("authorization", "")
+    if (
+        not REVENUECAT_WEBHOOK_AUTH_TOKEN
+        or not hmac.compare_digest(authorization, REVENUECAT_WEBHOOK_AUTH_TOKEN)
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook authorization.")
+
+    try:
+        payload = json.loads(await request.body())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid webhook JSON.") from exc
+
+    event = payload.get("event") if isinstance(payload, dict) else None
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhook event is missing.")
+
+    event_id = str(event.get("id") or "").strip()
+    app_user_id = str(event.get("app_user_id") or "").strip()
+    if not event_id or not app_user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhook identity is missing.")
+
+    user = await db_find_user_by_id(app_user_id)
+    if not user:
+        # A deleted/unlinked RevenueCat customer is not a processing failure.
+        return {"status": "ignored", "reason": "account_not_found"}
+
+    provider_state = await fetch_revenuecat_entitlement(app_user_id)
+    inserted = await db_insert_billing_event(
+        event_id,
+        {
+            "event_type": event.get("type"),
+            "app_user_id": app_user_id,
+            "received_at": datetime.now(timezone.utc),
+        },
+    )
+    if not inserted:
+        return {"status": "duplicate", "event_id": event_id}
+
+    await persist_revenuecat_entitlement(user, provider_state)
+    return {
+        "status": "processed",
+        "event_id": event_id,
+        "active": bool(provider_state.get("active")),
+    }
+
+
+class PaymentReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+@api_router.post("/payment-submissions/{utr}/review")
+async def review_payment_submission(
+    utr: str,
+    review: PaymentReviewInput,
+    current_user: dict = Depends(get_current_user_profile),
+):
+    """Allow explicitly configured verified staff to reconcile a UPI payment."""
+    if (
+        not current_user.get("email_verified", False)
+        or current_user.get("email", "").lower() not in PAYMENT_ADMIN_EMAILS
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Payment review access is restricted.")
+
+    clean_utr = utr.strip()
+    if not clean_utr.isdigit() or len(clean_utr) != 12:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid UTR.")
+
+    payment = await db_find_payment_by_utr(clean_utr)
+    if not payment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment submission not found.")
+    if payment.get("status") != "pending_manual_review":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment is no longer awaiting review.")
+
+    now = datetime.now(timezone.utc)
+    payment_update = {
+        "status": "approved" if review.decision == "approve" else "rejected",
+        "reviewed_at": now,
+        "reviewed_by": current_user["email"],
+        "review_note": review.note,
+    }
+    transitioned = await db_transition_payment(clean_utr, "pending_manual_review", payment_update)
+    if not transitioned:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment is no longer awaiting review.")
+
+    if review.decision == "approve":
+        duration_days = {"monthly": 31, "yearly": 366}.get(payment.get("plan"))
+        entitlement_update = {
+            "tier": "premium",
+            "premium_source": "upi_manual",
+            "premium_granted_at": now,
+            "premium_plan": payment.get("plan"),
+            "premium_until": now + timedelta(days=duration_days) if duration_days else None,
+            "updated_at": now,
+        }
+        await db_update_user_by_id(payment["user_id"], entitlement_update)
+
+    return {"status": payment_update["status"], "utr": clean_utr}
 
 
 # POST /start-trial
@@ -756,7 +1104,7 @@ async def start_trial_backend(current_user: dict = Depends(get_current_user_prof
             detail="Trial has already been started or completed for this account."
         )
         
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     ends_at = now + timedelta(days=7)
     
     update_data = {
@@ -900,7 +1248,11 @@ RECITERS_DATASET = [
 
 
 @api_router.post("/quran/identify", response_model=AyahFinderResult)
-async def identify_quran_recitation(req: IdentifyQuranRequest, request: Request):
+async def identify_quran_recitation(
+    req: IdentifyQuranRequest,
+    request: Request,
+    user: Optional[dict] = Depends(get_optional_user_profile),
+):
     """
     Transcribe a Quran recitation and match it against all 6,236 ayahs.
 
@@ -908,9 +1260,8 @@ async def identify_quran_recitation(req: IdentifyQuranRequest, request: Request)
     a separate speaker model and is reported as unavailable instead of guessed.
     """
     # Rate limiting BEFORE expensive processing (10 req/min auth, 3 req/min anon IP)
-    client_ip = request.client.host if request and request.client else "127.0.0.1"
-    is_authenticated = bool(request.headers.get("authorization"))
-    limit = 10 if is_authenticated else 3
+    client_ip = _get_client_ip(request)
+    limit = 10 if (user and user.get("tier") == "premium") else (10 if user else 3)
     check_rate_limit(f"audio:{client_ip}", limit_per_min=limit)
 
     if not req.audio_b64:
@@ -1135,7 +1486,11 @@ def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
 
 
 @api_router.post("/quran/identify-text", response_model=AyahFinderResult)
-async def identify_quran_text(req: IdentifyTextRequest, request: Request):
+async def identify_quran_text(
+    req: IdentifyTextRequest, 
+    request: Request,
+    user: Optional[dict] = Depends(get_optional_user_profile),
+):
     """Match Arabic text (typed or from a scanned image) against the Quran corpus.
 
     Accepts either:
@@ -1145,9 +1500,8 @@ async def identify_quran_text(req: IdentifyTextRequest, request: Request):
     The OCR.space key is kept server-side and never exposed to the client.
     """
     # Apply OCR rate limiting BEFORE expensive processing (5 req/min auth, 2 req/min anon IP)
-    client_ip = request.client.host if request and request.client else "127.0.0.1"
-    is_authenticated = bool(request.headers.get("authorization"))
-    limit = 5 if is_authenticated else 2
+    client_ip = _get_client_ip(request)
+    limit = 5 if user else 2
     check_rate_limit(f"ocr:{client_ip}", limit_per_min=limit)
 
     # Validate: exactly one input mode must be provided
@@ -1459,14 +1813,47 @@ def _normalize_arabic(text: str) -> str:
     return diacritics.sub("", text)
 
 
+_FATAWA_SEARCH_STOPWORDS = frozenset(
+    {
+        "a", "an", "the", "is", "it", "to", "of", "in", "on", "for", "and", "or",
+        "do", "does", "can", "could", "should", "would", "i", "my", "me", "what",
+        "how", "are", "if", "with", "was", "be", "this", "that", "there",
+    }
+)
+
+
+def _fatawa_query_tokens(text: str) -> set[str]:
+    words = re.findall(r"[\w']+", _normalize_arabic(text.lower()))
+    return {
+        word
+        for word in words
+        if word not in _FATAWA_SEARCH_STOPWORDS and len(word) > 1
+    }
+
+
 def _item_matches_query(item: dict, q: str) -> bool:
-    """Return True if query matches any searchable field (title, summary, question)."""
+    """Match natural phrasing against a curated catalog item."""
     q_norm = _normalize_arabic(q.lower())
-    for field in ("title", "question_summary", "excerpt_or_summary", "scholar_or_author"):
-        val = item.get(field, "") or ""
-        if q_norm in _normalize_arabic(val.lower()):
-            return True
-    return False
+    haystack = " ".join(
+        str(item.get(field, "") or "")
+        for field in ("title", "question_summary", "excerpt_or_summary", "scholar_or_author")
+    )
+    haystack_norm = _normalize_arabic(haystack.lower())
+
+    if q_norm and q_norm in haystack_norm:
+        return True
+
+    query_tokens = _fatawa_query_tokens(q)
+    if not query_tokens:
+        return False
+
+    overlap = query_tokens & _fatawa_query_tokens(haystack)
+    required = (
+        len(query_tokens)
+        if len(query_tokens) <= 2
+        else max(2, math.ceil(len(query_tokens) * 0.6))
+    )
+    return len(overlap) >= required
 
 
 def _build_fatawa_response(item: dict) -> FatawaItemResponse:
@@ -1509,7 +1896,7 @@ async def search_fatawa(
     request: Request = None,
     current_user: Optional[dict] = Depends(get_optional_user_profile),
 ):
-    client_ip = (request.client.host if request and request.client else None) or "anonymous"
+    client_ip = _get_client_ip(request)
     check_rate_limit(f"fatawa_search:{client_ip}", limit_per_min=30)
 
     # include_draft is restricted to authenticated users only
@@ -1539,13 +1926,10 @@ async def search_fatawa(
 
     if q and q.strip():
         q_clean = q.strip()
-        matched = [r for r in results if _item_matches_query(r, q_clean)]
-        if matched:
-            results = matched
-        elif len(q_clean) >= 3:
-            results = [_synthesize_question_ruling(q_clean)]
-        else:
-            results = []
+        # Typeahead search is intentionally local. Live external lookup is
+        # reserved for the explicit POST /fatawa/ask action so normal typing
+        # does not consume search quota or surface unreviewed results.
+        results = [r for r in results if _item_matches_query(r, q_clean)]
 
     total = len(results)
     offset = (page - 1) * limit
@@ -1559,91 +1943,172 @@ async def search_fatawa(
     )
 
 
-ISLAMQA_TOPIC_MAP = [
-    ({"cap", "hat", "kufi", "turban", "topi", "head cover", "cover head", "headcloth"}, "2436"),
-    ({"shirt", "bare", "naked", "chest", "uncovered"}, "132332"),
-    ({"seafood", "sea food", "fish", "ocean", "crab", "shrimp", "lobster"}, "1919"),
-    ({"short", "shorts", "thigh", "knee"}, "13713"),
-    ({"sleep", "sleeping", "doze", "drowsy"}, "14259"),
-    ({"interest", "riba", "loan", "mortgage", "bank"}, "9026"),
-    ({"stock", "trade", "crypto", "bitcoin", "invest", "share"}, "106094"),
-    ({"wudu", "clean", "wash", "purity", "ghusl", "tayamum"}, "2146"),
-    ({"music", "song", "instrument", "singing"}, "5000"),
-    ({"marry", "marriage", "nikah", "divorce", "spouse"}, "2127"),
-    ({"meat", "food", "eat", "gelatin", "pork", "halal"}, "21801"),
-]
+SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY", "").strip()
 
 
-def _synthesize_question_ruling(q: str) -> dict:
-    """Fetch live authentic Fatwa answer directly from IslamQA.info schema.org QAPage JSON-LD."""
-    import urllib.request
-    import json
-    import hashlib
+def _is_islamqa_answer_url(value: str) -> bool:
+    """Only allow HTTPS IslamQA answer pages returned by external search."""
+    try:
+        parsed = urllib.parse.urlparse(value)
+    except Exception:
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    return (
+        parsed.scheme.lower() == "https"
+        and host == "islamqa.info"
+        and re.search(r"/(?:[a-z]{2}/)?answers/\d+(?:/|$)", parsed.path, re.IGNORECASE)
+        is not None
+    )
 
-    q_lower = q.lower()
-    answer_id = None
-    for keywords, id_val in ISLAMQA_TOPIC_MAP:
-        if any(k in q_lower for k in keywords):
-            answer_id = id_val
-            break
 
-    if not answer_id:
-        answer_id = "2436"
+async def _search_islamqa_for_url(query: str) -> Optional[str]:
+    """Return a relevant IslamQA answer URL from SerpApi, if one exists.
 
-    url = f"https://islamqa.info/en/answers/{answer_id}"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-    
-    title = f"Scholarly Answer: {q[:70]}"
-    summary = f"Regarding '{q}': In Islamic jurisprudence, rulings are derived from the Quran and Sunnah. Please review the full ruling below."
+    SerpApi exposes Google-style organic results, so the query is restricted
+    with the standard ``site:`` operator. The URL and token-overlap checks are
+    intentional guardrails: a search result must be a real HTTPS IslamQA
+    answer page and must contain enough of the user's topic before it can be
+    fetched and displayed.
+    """
+    if not SERPAPI_API_KEY:
+        return None
+
+    params = urllib.parse.urlencode(
+        {
+            "engine": "google",
+            "q": f"site:islamqa.info {query}",
+            "num": 5,
+            "api_key": SERPAPI_API_KEY,
+        }
+    )
+    search_url = f"https://serpapi.com/search.json?{params}"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                search_url,
+                headers={"User-Agent": "IslamicHikmahApp/1.0"},
+                timeout=6.0,
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        logger.warning("IslamQA site search failed for query %r: %s", query, exc)
+        return None
+
+    query_tokens = _fatawa_query_tokens(query)
+    for result in payload.get("organic_results") or []:
+        link = result.get("link")
+        result_text = f"{result.get('title', '')} {result.get('snippet', '')}"
+        result_tokens = _fatawa_query_tokens(result_text)
+        overlap = query_tokens & result_tokens
+        required = 1 if len(query_tokens) <= 3 else max(2, math.ceil(len(query_tokens) * 0.35))
+        if (
+            isinstance(link, str)
+            and _is_islamqa_answer_url(link)
+            and bool(query_tokens)
+            and len(overlap) >= required
+        ):
+            return link
+    return None
+
+
+def _json_ld_objects(payload: object) -> list[dict]:
+    """Flatten common JSON-LD list and @graph shapes into dictionaries."""
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    objects = [payload]
+    graph = payload.get("@graph")
+    if isinstance(graph, list):
+        objects.extend(item for item in graph if isinstance(item, dict))
+    return objects
+
+
+async def _fetch_islamqa_answer(url: str) -> Optional[dict]:
+    """Extract a real answer title and text from an IslamQA QAPage."""
+    if not _is_islamqa_answer_url(url):
+        return None
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    )
+                },
+                timeout=6.0,
+            )
+            response.raise_for_status()
+            page_html = response.text
+    except Exception as exc:
+        logger.warning("Live fetch from IslamQA failed for %s: %s", url, exc)
+        return None
+
+    blocks = re.findall(
+        r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
+        page_html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    for block in blocks:
+        try:
+            payload = json.loads(block)
+        except (TypeError, ValueError):
+            continue
+        for data in _json_ld_objects(payload):
+            if data.get("@type") != "QAPage" and "mainEntity" not in data:
+                continue
+            entity = data.get("mainEntity") or {}
+            if not isinstance(entity, dict):
+                continue
+            answer_data = entity.get("acceptedAnswer")
+            if not isinstance(answer_data, dict):
+                suggested = entity.get("suggestedAnswer") or []
+                answer_data = suggested[0] if isinstance(suggested, list) and suggested else {}
+            if not isinstance(answer_data, dict):
+                continue
+            answer_text = answer_data.get("text") or ""
+            clean_answer = html.unescape(re.sub(r"<[^>]+>", "", str(answer_text)))
+            clean_answer = re.sub(r"\s+", " ", clean_answer).strip()
+            title = html.unescape(str(entity.get("name") or "")).strip()
+            if title or clean_answer:
+                return {"title": title, "answer_text": clean_answer}
+    return None
+
+
+async def _synthesize_question_ruling(q: str) -> Optional[dict]:
+    """Build a ruling only from a real matched source; never guess a topic."""
+    matched_url = await _search_islamqa_for_url(q)
+    fetched = await _fetch_islamqa_answer(matched_url) if matched_url else None
+    if not fetched:
+        return None
+
+    title = fetched["title"] or f"Scholarly Answer: {q[:70]}"
+    clean_answer = fetched["answer_text"]
+    if not clean_answer:
+        return None
+    summary = clean_answer[:400] + "..." if len(clean_answer) > 400 else clean_answer
+    answer_id_match = re.search(r"/answers/(\d+)", matched_url)
+    source_reference = (
+        f"IslamQA.info Answer #{answer_id_match.group(1)}"
+        if answer_id_match
+        else "IslamQA.info scholarly answer"
+    )
     citations = [
         {
-            "type": "quran",
-            "reference": "Surah Al-Nahl 16:43 — Ask the people of knowledge if you do not know",
-            "url": "https://quran.com/16/43",
-            "verified": True,
+            "type": "fatwa",
+            "reference": source_reference,
+            "url": matched_url,
+            "verified": False,
         }
     ]
-    
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            html = resp.read().decode("utf-8")
-            json_ld_matches = re.findall(r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>', html, re.DOTALL)
-            for j_str in json_ld_matches:
-                try:
-                    data = json.loads(j_str)
-                    if data.get("@type") == "QAPage" or "mainEntity" in data:
-                        entity = data.get("mainEntity", {})
-                        fetched_title = entity.get("name", "")
-                        answer_data = entity.get("acceptedAnswer", {}) or entity.get("suggestedAnswer", [{}])[0]
-                        answer_text_html = answer_data.get("text", "")
-                        
-                        clean_ans = re.sub(r'<[^>]+>', '', answer_text_html).strip()
-                        clean_ans = re.sub(r'\s+', ' ', clean_ans)
-                        
-                        if fetched_title:
-                            title = fetched_title
-                        if clean_ans:
-                            summary = clean_ans[:400] + "..." if len(clean_ans) > 400 else clean_ans
-                            
-                        # Extract Quran / Hadith references from answer text
-                        refs = re.findall(r'\[([^\]]+)\]', clean_ans)
-                        if refs:
-                            citations = [
-                                {
-                                    "type": "quran" if "quran" in refs[0].lower() or "surah" in refs[0].lower() else "hadith",
-                                    "reference": f"Evidence Citation: {refs[0]}",
-                                    "url": "https://quran.com" if "surah" in refs[0].lower() else "https://sunnah.com",
-                                    "verified": True,
-                                }
-                            ]
-                        break
-                except Exception:
-                    pass
-    except Exception as e:
-        logger.warning(f"Live fetch from IslamQA failed for query '{q}': {e}")
-
-    q_hash = hashlib.md5(q.encode("utf-8")).hexdigest()[:8]
+    q_hash = hashlib.sha256(q.encode("utf-8")).hexdigest()[:8]
+    q_lower = q.lower()
 
     # Category inference
     if any(k in q_lower for k in ("pray", "salah", "fast", "ramadan", "zakat", "hajj", "wudu", "cap", "shirt")):
@@ -1673,23 +2138,23 @@ def _synthesize_question_ruling(q: str) -> dict:
         "title": title,
         "question_summary": q,
         "excerpt_or_summary": summary,
-        "summary_author": "IslamQA.info Live Scholarly Engine",
+        "summary_author": "IslamQA.info source excerpt",
         "category": category,
         "category_name_english": cat_en,
         "category_name_arabic": cat_ar,
         "evidence_citations": citations,
         "source_provider": "IslamQA.info",
-        "source_url": url,
-        "source_reference": f"IslamQA.info Answer #{answer_id}",
-        "scholar_or_author": "Sheikh Muhammad Salih Al-Munajjid & IslamQA Scholars",
-        "reviewer_name_or_org": "Islamic Hikmah Editorial Team",
-        "review_status": "published",
-        "reviewed_at": "2024-01-01",
+        "source_url": matched_url,
+        "source_reference": source_reference,
+        "scholar_or_author": "IslamQA.info Scholarly Team",
+        "reviewer_name_or_org": None,
+        "review_status": "draft",
+        "reviewed_at": None,
         "language": "en",
         "madhhab_or_scope": "General Islamic Jurisprudence",
         "license": "original_islamic_hikmah_summary",
         "rights_basis": "Live fetched summary excerpt from canonical IslamQA.info source",
-        "published_at": "2024-01-01",
+        "published_at": None,
         "catalog_version": 1,
         "content_version": 1,
     }
@@ -1704,12 +2169,13 @@ class FatawaAskRequest(BaseModel):
     response_model=FatawaItemResponse,
     tags=["fatawa"],
     summary="Ask any custom Islamic question and receive a grounded ruling summary",
+    responses={404: {"model": FatawaErrorResponse}},
 )
 async def ask_fatawa_question(
     body: FatawaAskRequest,
     request: Request = None,
 ):
-    client_ip = (request.client.host if request and request.client else None) or "anonymous"
+    client_ip = _get_client_ip(request)
     check_rate_limit(f"fatawa_ask:{client_ip}", limit_per_min=20)
 
     q = body.question.strip()
@@ -1721,8 +2187,17 @@ async def ask_fatawa_question(
         if item.get("review_status") == "published" and _item_matches_query(item, q):
             return _build_fatawa_response(item)
 
-    # 2. Dynamic Q&A synthesis for user question
-    dynamic_item = _synthesize_question_ruling(q)
+    # 2. Search for a real source without blocking the async server. If no
+    #    source can be confidently resolved, return an honest no-match result.
+    dynamic_item = await _synthesize_question_ruling(q)
+    if dynamic_item is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "We couldn't find a specific ruling for that question yet. "
+                "Try rephrasing it, or browse a category below."
+            ),
+        )
     return _build_fatawa_response(dynamic_item)
 
 
@@ -1738,7 +2213,7 @@ async def get_fatawa_by_id(
     fatawa_id: str,
     request: Request = None,
 ):
-    client_ip = (request.client.host if request and request.client else None) or "anonymous"
+    client_ip = _get_client_ip(request)
     check_rate_limit(f"fatawa_detail:{client_ip}", limit_per_min=30)
 
     # Sanitise ID: alphanumeric and hyphens only

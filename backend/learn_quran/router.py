@@ -215,6 +215,11 @@ def create_learn_quran_router(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="A signed-in account is required for recitation scoring.",
             )
+        if current_user.get("tier") != "premium" and not current_user.get("trial_active"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Premium access is required for recitation scoring.",
+            )
 
         asr_service = get_quran_asr_service()
         if not asr_service.enabled and not ALLOW_MOCK_SCORING:

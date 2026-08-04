@@ -9,6 +9,7 @@ Run with:
 
 from __future__ import annotations
 
+import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -171,6 +172,20 @@ class TestSearch:
     def test_search_limit_max_50(self):
         resp = client.get("/api/fatawa/search", params={"limit": 100})
         assert resp.status_code == 422  # FastAPI query validation
+
+    def test_search_matches_natural_language_phrasing_not_just_exact_substring(self):
+        data = _search(q="can I pray in shoes").json()
+        ids = [item["id"] for item in data["results"]]
+        assert "islamqa-219" in ids
+
+    def test_search_never_triggers_a_live_islamqa_lookup(self, monkeypatch):
+        def _fail_if_called(*args, **kwargs):
+            raise AssertionError("Typeahead search must not call the live lookup")
+
+        monkeypatch.setattr("server._synthesize_question_ruling", _fail_if_called)
+        response = _search(q="something with absolutely no catalog match xyz123")
+        assert response.status_code == 200
+        assert response.json()["results"] == []
 
     def test_no_full_copyrighted_text(self):
         """
@@ -440,17 +455,137 @@ class TestCatalogIntegrity:
 class TestAskQuestion:
     """Tests for POST /api/fatawa/ask dynamic question resolver."""
 
-    def test_ask_question_returns_200_with_valid_response_schema(self):
-        from fastapi.testclient import TestClient
-        from server import app
-        client = TestClient(app)
-        res = client.post("/api/fatawa/ask", json={"question": "What is the ruling on fasting while traveling on a plane?"})
+    def test_search_islamqa_parses_serpapi_organic_results(self, monkeypatch):
+        import server as server_module
+
+        monkeypatch.setattr(server_module, "SERPAPI_API_KEY", "test-key")
+        captured_urls = []
+
+        class FakeResponse:
+            def json(self):
+                return {
+                    "organic_results": [
+                        {
+                            "link": "https://islamqa.info/en/answers/54321/dhikr-on-hand",
+                            "title": "Can a person do dhikr on their hand?",
+                            "snippet": "A ruling about doing dhikr on the hand.",
+                        }
+                    ]
+                }
+            def raise_for_status(self):
+                pass
+
+        async def fake_get(self, url, *args, **kwargs):
+            captured_urls.append(url)
+            return FakeResponse()
+
+        monkeypatch.setattr(server_module.httpx.AsyncClient, "get", fake_get)
+
+        import asyncio
+        result = asyncio.run(server_module._search_islamqa_for_url("can person do dhikr on hand"))
+    
+        assert result == "https://islamqa.info/en/answers/54321/dhikr-on-hand"
+        assert "site%3Aislamqa.info" in captured_urls[0]
+        assert "engine=google" in captured_urls[0]
+
+    def test_search_islamqa_returns_none_without_serpapi_key(self, monkeypatch):
+        import server as server_module
+
+        monkeypatch.setattr(server_module, "SERPAPI_API_KEY", "")
+        import asyncio
+        assert asyncio.run(server_module._search_islamqa_for_url("any question")) is None
+
+    def test_search_islamqa_rejects_unsafe_result_url(self, monkeypatch):
+        import server as server_module
+
+        monkeypatch.setattr(server_module, "SERPAPI_API_KEY", "test-key")
+
+        class FakeResponse:
+            def json(self):
+                return {
+                    "organic_results": [
+                        {
+                            "link": "https://islamqa.info.example.com/en/answers/54321/not-islamqa",
+                            "title": "Can a person do dhikr on their hand?",
+                            "snippet": "A ruling about doing dhikr on the hand.",
+                        }
+                    ]
+                }
+            def raise_for_status(self):
+                pass
+
+        async def fake_get(self, url, *args, **kwargs):
+            return FakeResponse()
+
+        monkeypatch.setattr(server_module.httpx.AsyncClient, "get", fake_get)
+
+        import asyncio
+        assert asyncio.run(server_module._search_islamqa_for_url("some question")) is None
+
+    def test_ask_question_without_search_config_returns_404(self, monkeypatch):
+        import server as server_module
+
+        monkeypatch.setattr(server_module, "SERPAPI_API_KEY", "")
+        res = client.post(
+            "/api/fatawa/ask",
+            json={"question": "can a person do dhikr while resting their hand on something"},
+        )
+        assert res.status_code == 404
+
+    def test_ask_question_returns_real_matched_source(self, monkeypatch):
+        import server as server_module
+
+        matched_url = "https://islamqa.info/en/answers/12345/example-answer"
+        async def _mock_search(q):
+            return matched_url
+
+        async def _mock_fetch(url):
+            return {
+                "title": "Ruling on an example question",
+                "answer_text": "This is the real answer text fetched from the matched source page.",
+            }
+
+        monkeypatch.setattr(server_module, "_search_islamqa_for_url", _mock_search)
+        monkeypatch.setattr(server_module, "_fetch_islamqa_answer", _mock_fetch)
+        res = client.post(
+            "/api/fatawa/ask",
+            json={"question": "some question with no catalog match"},
+        )
         assert res.status_code == 200
         data = res.json()
         assert "id" in data
-        assert "excerpt_or_summary" in data
+        assert data["source_url"] == matched_url
+        assert "real answer text" in data["excerpt_or_summary"]
         assert len(data["evidence_citations"]) >= 1
-        assert "source_url" in data
+        assert data["review_status"] == "draft"
+
+    def test_ask_question_returns_404_when_source_fetch_fails(self, monkeypatch):
+        import server as server_module
+
+        async def _mock_search_fail(q):
+            return "https://islamqa.info/en/answers/99999/unparseable-page"
+            
+        async def _mock_fetch_fail(url):
+            return None
+
+        monkeypatch.setattr(server_module, "_search_islamqa_for_url", _mock_search_fail)
+        monkeypatch.setattr(server_module, "_fetch_islamqa_answer", _mock_fetch_fail)
+        res = client.post(
+            "/api/fatawa/ask",
+            json={"question": "another unmatched question"},
+        )
+        assert res.status_code == 404
+
+    def test_ask_question_prefers_reviewed_catalog(self, monkeypatch):
+        import server as server_module
+
+        async def _fail_if_called(*args, **kwargs):
+            raise AssertionError("A catalog hit must not trigger live search")
+
+        monkeypatch.setattr(server_module, "_search_islamqa_for_url", _fail_if_called)
+        res = client.post("/api/fatawa/ask", json={"question": "pray with shoes on"})
+        assert res.status_code == 200
+        assert res.json()["id"] == "islamqa-219"
 
     def test_ask_question_empty_string_returns_422(self):
         from fastapi.testclient import TestClient
@@ -458,4 +593,3 @@ class TestAskQuestion:
         client = TestClient(app)
         res = client.post("/api/fatawa/ask", json={"question": "  "})
         assert res.status_code == 422
-

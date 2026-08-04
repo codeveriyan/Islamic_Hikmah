@@ -1,8 +1,10 @@
 # Security rollout
 
-The application now treats Firebase Authentication plus the FastAPI/MongoDB
-profile as the authority for trials and paid entitlements. UTR submissions are
-stored as `pending_manual_review`; they never unlock premium automatically.
+The application treats Firebase Authentication plus the FastAPI/MongoDB profile
+as the authority for trials and paid entitlements. Google Play purchases are
+queried through RevenueCat by the backend, and RevenueCat lifecycle webhooks
+are deduplicated before updating an entitlement. The Google Play Android client
+does not offer UPI or manual payment submission.
 
 ## Required deployment order
 
@@ -29,22 +31,17 @@ stored as `pending_manual_review`; they never unlock premium automatically.
 
 ## Payment state
 
-The static UPI screen is a safe temporary manual-review flow, not automatic
-payment verification. Staff must reconcile each pending UTR with the merchant
-bank statement before manually granting premium in the authoritative user
-record.
+Configure the RevenueCat Android public SDK key in the frontend build and the
+secret `REVENUECAT_API_KEY`, `REVENUECAT_ENTITLEMENT_ID`, and
+`REVENUECAT_WEBHOOK_AUTH_TOKEN` in the backend deployment. Configure the
+RevenueCat webhook URL as `/api/webhooks/revenuecat` and use the exact same
+authorization header value as `REVENUECAT_WEBHOOK_AUTH_TOKEN`.
 
-For automatic fulfilment, integrate a payment gateway that:
-
-- creates the order on the backend from the server-owned plan catalog;
-- returns only the provider checkout/session identifier to the client;
-- verifies the provider's signed webhook over the raw request body;
-- checks order ID, user ID, amount, currency, and successful/captured status;
-- stores provider event/payment IDs idempotently; and
-- updates the MongoDB entitlement only after all checks pass.
-
-Do not re-enable automatic entitlement changes from a UTR supplied by the
-client.
+The backend UTR review endpoint is retained only for reconciling legacy or
+external records; it is not reachable from the Google Play client. If it is
+used operationally, set `PAYMENT_ADMIN_EMAILS` to a comma-separated list of
+verified staff emails and require a bank-statement reconciliation before any
+approval. Never grant premium from an unreviewed client-supplied UTR.
 
 ## Verification
 

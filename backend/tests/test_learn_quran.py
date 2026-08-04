@@ -122,6 +122,26 @@ def test_authenticated_audio_upload_fails_closed_without_real_scorer():
     assert "disabled" in payload["detail"]
 
 
+def test_authenticated_free_account_cannot_use_premium_scorer():
+    client = TestClient(server.app)
+    server.app.dependency_overrides[server.get_current_user_profile] = lambda: {
+        "id": "firebase-uid-1",
+        "tier": "free",
+        "trial_active": False,
+    }
+    try:
+        response = client.post(
+            "/api/learn/score",
+            data={"surah_id": "1", "ayah_id": "1"},
+            files={"audio": ("recitation.m4a", b"prototype-audio", "audio/m4a")},
+        )
+    finally:
+        server.app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert "Premium access" in response.json()["detail"]
+
+
 def test_mock_upload_requires_explicit_development_switch(monkeypatch):
     client = TestClient(server.app)
     server.app.dependency_overrides[server.get_current_user_profile] = lambda: {
