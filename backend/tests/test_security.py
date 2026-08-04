@@ -78,10 +78,11 @@ def test_valid_firebase_rs256_token_creates_a_bound_free_account(monkeypatch):
         encoding=serialization.Encoding.PEM,
     )
     now = int(time.time())
+    expected_issuer = "https://securetoken.google.com/" + server.FIREBASE_PROJECT_ID
     token = jwt.encode(
         {
             "aud": server.FIREBASE_PROJECT_ID,
-            "iss": f"https://securetoken.google.com/{server.FIREBASE_PROJECT_ID}",
+            "iss": expected_issuer,
             "sub": "firebase-uid-1",
             "user_id": "firebase-uid-1",
             "email": "test@example.com",
