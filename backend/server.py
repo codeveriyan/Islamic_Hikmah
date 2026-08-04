@@ -485,12 +485,13 @@ async def get_current_user_profile(authorization: Optional[str] = Header(None)) 
         if not public_key_pem:
             raise jwt.InvalidTokenError("Matching Firebase public key not found")
 
+        expected_issuer = "https://securetoken.google.com/" + FIREBASE_PROJECT_ID
         decoded = jwt.decode(
             token,
             prepare_firebase_verification_key(public_key_pem),
             algorithms=["RS256"],
             audience=FIREBASE_PROJECT_ID,
-            issuer=f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}",
+            issuer=expected_issuer,
             options={"require": ["exp", "iat", "auth_time", "sub"]},
         )
         email = decoded.get("email")
@@ -1749,7 +1750,7 @@ async def _search_islamqa_for_url(query: str) -> Optional[str]:
             "api_key": SERPAPI_API_KEY,
         }
     )
-    search_url = f"https://serpapi.com/search.json?{params}"
+    search_url = "https://serpapi.com/search.json?" + params
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
