@@ -41,7 +41,7 @@ export const styles = StyleSheet.create({
   // Prayer countdown card
   prayerCard: {
     marginHorizontal: theme.spacing.lg,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     padding: theme.spacing.lg,
     flexDirection: "row",
     alignItems: "center",
@@ -73,24 +73,9 @@ export const styles = StyleSheet.create({
   nextLabel: { fontSize: 9, fontWeight: "600" },
   countdown: { fontSize: 11, fontWeight: "800", marginTop: 2 },
 
-  // Quick actions
-  quickPager: { marginBottom: 2 },
-  quickPagerContent: { alignItems: "flex-start" },
-  quickPage: { width, flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, justifyContent: "flex-start" },
+  // Quick actions — single grid, no swipeable pages (restraint pass)
+  quickGrid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, justifyContent: "flex-start", marginBottom: theme.spacing.sm },
   quickBtn: { alignItems: "center", justifyContent: "flex-start", width: (width - theme.spacing.lg * 2) / 3, marginBottom: 16 },
-  quickDots: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: -2,
-    marginBottom: theme.spacing.md,
-  },
-  quickDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
   quickReorderHint: { fontSize: 11, textAlign: "center", marginBottom: theme.spacing.md },
   quickIconOnly: {
     width: 64,
@@ -130,7 +115,7 @@ export const styles = StyleSheet.create({
   // Goals card
   goalsCard: {
     marginHorizontal: theme.spacing.lg,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     padding: theme.spacing.lg,
     marginBottom: theme.spacing.lg,
     overflow: "hidden",
@@ -148,7 +133,7 @@ export const styles = StyleSheet.create({
   progressFill: { height: 6, borderRadius: 3 },
   catPills: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: theme.spacing.md },
   pill: { flexDirection: "row", alignItems: "center", gap: 4 },
-  pillDot: { width: 8, height: 8, borderRadius: 4 },
+  pillDot: { width: 8, height: 8, borderRadius: theme.radius.xs },
   pillTxt: { fontSize: 11 },
   goalRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12, borderBottomWidth: 1 },
   goalCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: "center", justifyContent: "center" },
@@ -262,7 +247,7 @@ export const styles = StyleSheet.create({
   bottomOutlineBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -335,7 +320,7 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     marginTop: 8,
     width: "100%",
   },
@@ -354,7 +339,7 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     width: "100%",
   },
   actionSheetOverlay: {
@@ -388,7 +373,7 @@ export const styles = StyleSheet.create({
   },
   congratsContent: {
     width: width * 0.85,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     padding: 24,
     alignItems: "center",
     borderWidth: 1,
@@ -412,7 +397,7 @@ export const styles = StyleSheet.create({
   congratsBtn: {
     width: "100%",
     paddingVertical: 12,
-    borderRadius: 24,
+    borderRadius: theme.radius.xl,
     alignItems: "center",
     justifyContent: "center",
   },
