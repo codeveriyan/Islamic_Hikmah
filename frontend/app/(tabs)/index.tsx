@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Modal, Alert, RefreshControl, FlatList,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Modal, Alert, RefreshControl, FlatList, InteractionManager,
 } from "react-native";
+import { ScrollView as AnimatedScrollView } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -22,7 +23,7 @@ import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
 import { SURAH_LIST } from "@/src/data/surahList";
 import { SELECTABLE_ADHKAAR, DHIKRS } from "@/src/data/dhikrs";
-// Note: duas.ts is lazily required inside allDhikrAndDuaOptions useMemo to keep it off the startup import graph
+// Note: duas.ts (608 KB) is lazily required inside a deferred effect to keep it off the startup import graph and first paint
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
   getActiveGoalIds, getPrayerSettings, schedulePrayerNotifications, updateStickyPrayerNotification,
@@ -353,18 +354,85 @@ function getPrayerPeriods(times: Record<string, string>) {
   return { current, next };
 }
 
+// ── Isolated prayer countdown ring ──────────────────────────────────────────
+// The 1-second tick lives in this small memoized component so each interval
+// update re-renders ONLY the ring — not the entire ~3,000-line Home screen.
+// The sticky prayer notification update (throttled to once/minute) lives here too.
+const PrayerCountdownRing = memo(function PrayerCountdownRing({ times }: { times: Record<string, string> | null }) {
+  const { language } = useTheme();
+  const { t } = useTranslation(language);
+  const [countdown, setCountdown] = useState("--:--:--");
+  const [progress, setProgress] = useState(0);
+  const lastNotifMin = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!times) return;
+    const tick = () => {
+      const now = new Date();
+      const periods = getPrayerPeriods(times);
+      if (!periods) return;
+      const next = periods.next;
+      const diff = next.date.getTime() - now.getTime();
+      if (diff <= 0) { setCountdown("00:00:00"); setProgress(1); return; }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setCountdown(`-${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+      // Calculate progress of the current period
+      const current = periods.current;
+      const total = next.date.getTime() - current.date.getTime();
+      const elapsed = now.getTime() - current.date.getTime();
+      setProgress(Math.min(Math.max(elapsed / total, 0), 1));
+
+      // Throttle sticky notifications to once per minute (on minute changes)
+      const currentMinute = now.getMinutes();
+      if (lastNotifMin.current !== currentMinute) {
+        lastNotifMin.current = currentMinute;
+        updateStickyPrayerNotification(times).catch((e) => console.error(e));
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [times]);
+
+  const periods = times ? getPrayerPeriods(times) : null;
+  if (!periods) return null;
+  const strokeDash = (1 - progress) * CIRC;
+
+  return (
+    <View style={styles.ringWrap}>
+      <Svg width={RING} height={RING}>
+        <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke="#70FF00" strokeWidth={STROKE} fill="transparent" opacity={0.85} />
+        <Circle
+          cx={RING/2} cy={RING/2} r={RADIUS}
+          stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
+          strokeDasharray={CIRC} strokeDashoffset={strokeDash}
+          strokeLinecap="round" rotation="-90" origin={`${RING/2},${RING/2}`}
+        />
+      </Svg>
+      <View style={styles.ringCenter}>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.75)" }}>
+          {t(periods.next.name.toLowerCase())}
+        </Text>
+        <Text style={{ fontSize: 14, fontWeight: "900", color: "#FFFFFF", marginTop: 2 }}>
+          {countdown}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
 export default function HomeScreen() {
   const router = useRouter();
   const { profile, user, isGuest } = useAuth();
   const { showPremiumModal } = usePremiumModal();
   const { colors, language } = useTheme();
   const { t } = useTranslation(language);
-  const { onScroll, onScrollEndDrag, onMomentumScrollEnd } = useTabBarVisibility();
+  const { scrollHandler } = useTabBarVisibility();
   // Prayer times & countdown
   const [times, setTimes] = useState<Record<string, string> | null>(null);
   const [city, setCity] = useState("");
-  const [countdown, setCountdown] = useState("--:--:--");
-  const [progress, setProgress] = useState(0);
 
   const prayerPeriods = useMemo(() => times ? getPrayerPeriods(times) : null, [times]);
   const greeting = useMemo(() => getGreeting(prayerPeriods?.current?.name), [prayerPeriods?.current?.name]);
@@ -372,10 +440,14 @@ export default function HomeScreen() {
   const nextIslamicEvent = useMemo(() => getNextIslamicEvent([]), []);
   const [dynamicIslamicEvent, setDynamicIslamicEvent] = useState(nextIslamicEvent);
   useEffect(() => {
-    fetchIslamicEvents().then(events => {
-      const next = getNextIslamicEvent(events);
-      if (next) setDynamicIslamicEvent(next);
-    }).catch(() => {});
+    // Deferred: cache/network event lookup runs after the open transition
+    const task = InteractionManager.runAfterInteractions(() => {
+      fetchIslamicEvents().then(events => {
+        const next = getNextIslamicEvent(events);
+        if (next) setDynamicIslamicEvent(next);
+      }).catch(() => {});
+    });
+    return () => task.cancel();
   }, []);
 
   // Time-aware greeting gradient + Arabic phrase
@@ -395,8 +467,6 @@ export default function HomeScreen() {
     if (h < 20) return { arabic: "مَسَاءُ الْخَيْرِ", english: greeting.sub };
     return { arabic: "اللَّهُمَّ بِكَ أَمْسَيْنَا", english: "Blessed evening" };
   }, [greeting]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastNotifMin = useRef<number | null>(null);
 
   // Goals
   const [completed, setCompleted] = useState<string[]>([]);
@@ -418,6 +488,8 @@ export default function HomeScreen() {
   const [dailyDuaDismissed, setDailyDuaDismissed] = useState(false);
 
   useEffect(() => {
+    // Deferred: storage + network work runs after the open transition completes
+    const dailyDuaTask = InteractionManager.runAfterInteractions(() => {
     (async () => {
       try {
         const dismissedDate = await AsyncStorage.getItem("hikmah:daily-dua-dismissed-date");
@@ -441,6 +513,8 @@ export default function HomeScreen() {
         }
       })
       .catch((err) => console.warn("UmmahAPI daily dua fetch error:", err));
+    });
+    return () => dailyDuaTask.cancel();
   }, []);
 
   // Menstrual mode
@@ -544,7 +618,9 @@ export default function HomeScreen() {
   }))).current;
 
   // Load prayer times — network first, cache fallback for offline/travel
+  // Deferred until after the open transition so first paint is never blocked.
   useEffect(() => {
+    const prayerLoadTask = InteractionManager.runAfterInteractions(() => {
     (async () => {
       try {
         const loc = await resolveUserLocation();
@@ -558,7 +634,7 @@ export default function HomeScreen() {
         // Reconcile once on launch: cancel orphaned legacy schedules, then
         // retain exactly one daily Adhan alert for each enabled prayer.
         if (fetchedTimings) {
-          await schedulePrayerNotifications(fetchedTimings, settings.adhanEnabled);
+          schedulePrayerNotifications(fetchedTimings, settings.adhanEnabled).catch((e) => console.error(e));
         }
       } catch (e) {
         if (__DEV__) console.warn('[Home] Aladhan fetch failed — loading from cache:', e);
@@ -570,39 +646,9 @@ export default function HomeScreen() {
         }
       }
     })();
+    });
+    return () => prayerLoadTask.cancel();
   }, []);
-
-  // Countdown timer
-  useEffect(() => {
-    if (!times) return;
-    const tick = () => {
-      const now = new Date();
-      const periods = getPrayerPeriods(times);
-      if (!periods) return;
-      const next = periods.next;
-      const diff = next.date.getTime() - now.getTime();
-      if (diff <= 0) { setCountdown("00:00:00"); setProgress(1); return; }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      setCountdown(`-${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
-      // Calculate progress of the current period
-      const current = periods.current;
-      const total = next.date.getTime() - current.date.getTime();
-      const elapsed = now.getTime() - current.date.getTime();
-      setProgress(Math.min(Math.max(elapsed / total, 0), 1));
-
-      // Throttle sticky notifications to once per minute (on minute changes)
-      const currentMinute = now.getMinutes();
-      if (lastNotifMin.current !== currentMinute) {
-        lastNotifMin.current = currentMinute;
-        updateStickyPrayerNotification(times).catch((e) => console.error(e));
-      }
-    };
-    tick();
-    timerRef.current = setInterval(tick, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [times]);
 
   // Load goals and new settings on focus
   useFocusEffect(
@@ -658,58 +704,63 @@ export default function HomeScreen() {
     return [...DEFAULT_GOALS, ...customGoals];
   }, [customGoals]);
 
-  const allDhikrAndDuaOptions = useMemo(() => {
-    // Lazy-require duas.ts (608 KB) — only parsed when this memo first runs, not at module init
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { CATEGORIES: DUA_CATEGORIES } = require('@/src/data/duas');
-    const list: { id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[] = [];
-    const seenIds = new Set<string>();
+  // duas.ts is 608 KB — parse + build the combined list only AFTER the open
+  // transition completes, so the first paint of Home is never blocked by it.
+  const [allDhikrAndDuaOptions, setAllDhikrAndDuaOptions] = useState<{ id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[]>([]);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { CATEGORIES: DUA_CATEGORIES } = require('@/src/data/duas');
+      const list: { id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[] = [];
+      const seenIds = new Set<string>();
 
-    SELECTABLE_ADHKAAR.forEach(item => {
-      if (!seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        list.push({
-          id: item.id,
-          title: item.title,
-          arabic: item.arabic,
-          transliteration: item.transliteration,
-          translation: item.translation,
-          categoryTag: "Daily Adhkar"
+      SELECTABLE_ADHKAAR.forEach(item => {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          list.push({
+            id: item.id,
+            title: item.title,
+            arabic: item.arabic,
+            transliteration: item.transliteration,
+            translation: item.translation,
+            categoryTag: "Daily Adhkar"
+          });
+        }
+      });
+
+      DUA_CATEGORIES.forEach((cat: any) => {
+        cat.duas.forEach((d: any) => {
+          if (!seenIds.has(d.id)) {
+            seenIds.add(d.id);
+            list.push({
+              id: d.id,
+              title: d.title,
+              arabic: d.arabic,
+              transliteration: d.transliteration,
+              translation: d.translation,
+              categoryTag: cat.title
+            });
+          }
         });
-      }
-    });
+      });
 
-    DUA_CATEGORIES.forEach((cat: any) => {
-      cat.duas.forEach((d: any) => {
+      DHIKRS.forEach(d => {
         if (!seenIds.has(d.id)) {
           seenIds.add(d.id);
           list.push({
             id: d.id,
-            title: d.title,
+            title: d.transliteration,
             arabic: d.arabic,
             transliteration: d.transliteration,
             translation: d.translation,
-            categoryTag: cat.title
+            categoryTag: "Dhikr"
           });
         }
       });
-    });
 
-    DHIKRS.forEach(d => {
-      if (!seenIds.has(d.id)) {
-        seenIds.add(d.id);
-        list.push({
-          id: d.id,
-          title: d.transliteration,
-          arabic: d.arabic,
-          transliteration: d.transliteration,
-          translation: d.translation,
-          categoryTag: "Dhikr"
-        });
-      }
+      setAllDhikrAndDuaOptions(list);
     });
-
-    return list;
+    return () => task.cancel();
   }, []);
 
   const activeGoals = useMemo(() => {
@@ -786,8 +837,6 @@ export default function HomeScreen() {
 
   const overallProgress = totalGoals > 0 ? totalDone / totalGoals : 0;
 
-  const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-  const strokeDash = (1 - progress) * CIRC;
 
   const handleGoalTap = useCallback(async (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -1454,13 +1503,11 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <AnimatedScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         removeClippedSubviews
-        onScroll={onScroll}
-        onScrollEndDrag={onScrollEndDrag}
-        onMomentumScrollEnd={onMomentumScrollEnd}
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
@@ -1523,26 +1570,9 @@ export default function HomeScreen() {
                   </Text>
                 </View>
 
-                {/* Countdown Ring on the RIGHT SIDE */}
-                <View style={styles.ringWrap}>
-                  <Svg width={RING} height={RING}>
-                    <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke="#70FF00" strokeWidth={STROKE} fill="transparent" opacity={0.85} />
-                    <Circle
-                      cx={RING/2} cy={RING/2} r={RADIUS}
-                      stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
-                      strokeDasharray={CIRC} strokeDashoffset={strokeDash}
-                      strokeLinecap="round" rotation="-90" origin={`${RING/2},${RING/2}`}
-                    />
-                  </Svg>
-                  <View style={styles.ringCenter}>
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.75)" }}>
-                      {t(prayerPeriods.next.name.toLowerCase())}
-                    </Text>
-                    <Text style={{ fontSize: 14, fontWeight: "900", color: "#FFFFFF", marginTop: 2 }}>
-                      {countdown}
-                    </Text>
-                  </View>
-                </View>
+                {/* Countdown Ring on the RIGHT SIDE — isolated memoized component so
+                    its 1-second timer re-renders only the ring, not the whole screen */}
+                <PrayerCountdownRing times={times} />
               </View>
             ) : null}
           </View>
@@ -1825,7 +1855,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-      </ScrollView>
+      </AnimatedScrollView>
 
       {/* All Prayers Modal */}
       <Modal
@@ -1894,887 +1924,4 @@ export default function HomeScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
             <View style={styles.modalHeader}>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Select Daily Adhkar</Text>
-                <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 2 }}>Select your favourite Dhikr to perform everyday</Text>
-              </View>
-              <AppIconButton
-                accessibilityLabel="Close daily adhkar selection"
-                icon="close"
-                onPress={() => setDhikrModalVisible(false)}
-              />
-            </View>
-
-            {/* Create Custom Goal Button */}
-            <Pressable
-              onPress={() => {
-                setDhikrModalVisible(false);
-                setShowAddCustomModal(true);
-              }}
-              style={[styles.addCustomBtn, { backgroundColor: colors.brand, marginVertical: 10, borderRadius: 12, paddingVertical: 10 }]}
-            >
-              <MaterialCommunityIcons name="plus-circle-outline" size={20} color={colors.onBrandPrimary} style={{ marginRight: 6 }} />
-              <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 14 }}>Create Custom Goal</Text>
-            </Pressable>
-
-            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
-              {SELECTABLE_ADHKAAR.map((item) => {
-                const isAdded = activeIds.includes(item.id);
-                return (
-                  <View 
-                    key={item.id} 
-                    style={{
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                      borderWidth: 1,
-                      borderRadius: 14,
-                      padding: 14,
-                      gap: 8
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.onSurface, flex: 1, paddingRight: 8 }}>{item.title}</Text>
-                      <AppSwitch
-                        accessibilityLabel={`Include ${item.title} in daily adhkar`}
-                        value={isAdded}
-                        onValueChange={async () => {
-                          Haptics.selectionAsync().catch(() => {});
-                          if (isAdded) {
-                            const updated = activeIds.filter(id => id !== item.id);
-                            setActiveIds(updated);
-                            await saveActiveGoalIds(updated);
-                          } else {
-                            const updated = [...activeIds, item.id];
-                            setActiveIds(updated);
-                            await saveActiveGoalIds(updated);
-                          }
-                        }}
-                      />
-                    </View>
-
-                    <Text style={{ fontSize: 16, color: colors.brand, fontFamily: "Amiri", textAlign: "right", lineHeight: 28 }}>
-                      {item.arabic}
-                    </Text>
-
-                    <View style={{ marginTop: 2 }}>
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurfaceMuted }}>Transliteration:</Text>
-                      <Text style={{ fontSize: 13, color: colors.onSurface, lineHeight: 18, marginTop: 2 }}>
-                        {item.transliteration}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add Custom Goal Modal */}
-      <Modal
-        visible={showAddCustomModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAddCustomModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Create Custom Goal</Text>
-              <AppIconButton
-                accessibilityLabel="Close custom goal"
-                icon="close"
-                onPress={() => setShowAddCustomModal(false)}
-              />
-            </View>
-            
-            <View style={{ gap: 14, marginTop: 8, width: "100%", flex: 1 }}>
-              <View>
-                <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Category</Text>
-                <View style={{ flexDirection: "row", gap: 6 }}>
-                  {(["prayer", "quran", "dhikr", "other"] as const).map((cat) => {
-                    const isSel = newGoalCategory === cat;
-                    const labelMap: Record<string, string> = { prayer: "Prayer", quran: "Qur'an", dhikr: "Dhikr", other: "Other" };
-                    return (
-                      <Pressable
-                        key={cat}
-                        onPress={() => {
-                          Haptics.selectionAsync().catch(() => {});
-                          setNewGoalCategory(cat);
-                        }}
-                        style={[
-                          styles.catSelectBtn, 
-                          { flex: 1, borderColor: colors.border, backgroundColor: isSel ? colors.brand : colors.surface, paddingVertical: 10, alignItems: "center", borderRadius: 10 }
-                        ]}
-                      >
-                        <Text style={{ fontSize: 12, color: isSel ? colors.onBrandPrimary : colors.onSurface, fontWeight: isSel ? "700" : "500" }}>
-                          {labelMap[cat]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {newGoalCategory === "quran" ? (
-                <View style={{ flex: 1, gap: 8 }}>
-                  <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Surah to Recite Everyday</Text>
-                  <AppTextInput
-                    value={surahSearch}
-                    onChangeText={setSurahSearch}
-                    placeholder="Search Surah (e.g. Yaseen, Kahf, Mulk...)"
-                    leadingIcon="magnify"
-                    style={styles.input}
-                  />
-
-                  <FlatList
-                    data={SURAH_LIST.filter(s =>
-                      s.englishName.toLowerCase().includes(surahSearch.toLowerCase()) ||
-                      s.englishNameTranslation.toLowerCase().includes(surahSearch.toLowerCase()) ||
-                      s.number.toString() === surahSearch.trim()
-                    )}
-                    keyExtractor={(surah: any) => surah.number.toString()}
-                    style={{ flex: 1 }}
-                    contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
-                    showsVerticalScrollIndicator={false}
-                    initialNumToRender={10}
-                    maxToRenderPerBatch={10}
-                    windowSize={5}
-                    removeClippedSubviews
-                    renderItem={({ item: surah }: { item: any }) => (
-                      <Pressable
-                        onPress={async () => {
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                          const newGoal = {
-                            id: `custom-surah--`,
-                            title: `Recite Surah `,
-                            arabic: surah.name,
-                            category: "quran" as const,
-                            repeat: "daily" as const
-                          };
-                          const updatedCustom = [...customGoals, newGoal];
-                          setCustomGoals(updatedCustom);
-                          await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
-                          const updatedActive = [...activeIds, newGoal.id];
-                          setActiveIds(updatedActive);
-                          await saveActiveGoalIds(updatedActive);
-                          setShowAddCustomModal(false);
-                          setSurahSearch("");
-                          Alert.alert("Goal Created \ud83c\udf89", `Added "Recite Surah " to your daily goals!`);
-                        }}
-                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12 }]}
-                      >
-                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brand + "18", alignItems: "center", justifyContent: "center" }}>
-                          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.brand }}>{surah.number}</Text>
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                          <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{surah.englishName}</Text>
-                          <Text style={{ fontSize: 11, color: colors.onSurfaceMuted }}>{surah.englishNameTranslation} � {surah.numberOfAyahs} Verses</Text>
-                        </View>
-                        <Text style={{ fontSize: 16, color: colors.brand, fontFamily: "Amiri" }}>{surah.name}</Text>
-                      </Pressable>
-                    )}
-                  />
-                </View>
-              ) : newGoalCategory === "dhikr" ? (
-                <View style={{ flex: 1, gap: 8 }}>
-                  <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Dhikr or Du'a from Du'a Hub to Recite Everyday</Text>
-                  <AppTextInput
-                    value={dhikrSearch}
-                    onChangeText={setDhikrSearch}
-                    placeholder="Search Dhikr or Du'a (e.g. Protection, Forgiveness, Ummah, Healing...)"
-                    leadingIcon="magnify"
-                    style={styles.input}
-                  />
-
-                  <FlatList
-                    data={allDhikrAndDuaOptions.filter(item =>
-                      item.title.toLowerCase().includes(dhikrSearch.toLowerCase()) ||
-                      (item.transliteration && item.transliteration.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
-                      (item.translation && item.translation.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
-                      (item.categoryTag && item.categoryTag.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
-                      item.arabic.includes(dhikrSearch.trim())
-                    )}
-                    keyExtractor={(item: any) => item.id}
-                    style={{ flex: 1 }}
-                    contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
-                    showsVerticalScrollIndicator={false}
-                    initialNumToRender={8}
-                    maxToRenderPerBatch={8}
-                    windowSize={5}
-                    removeClippedSubviews
-                    renderItem={({ item: dhikrItem }: { item: any }) => (
-                      <Pressable
-                        onPress={async () => {
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                          const newGoal = {
-                            id: `custom-dhikr--`,
-                            title: dhikrItem.title,
-                            arabic: dhikrItem.arabic,
-                            subtitle: dhikrItem.transliteration || dhikrItem.translation,
-                            category: "dhikr" as const,
-                            repeat: "daily" as const
-                          };
-                          const updatedCustom = [...customGoals, newGoal];
-                          setCustomGoals(updatedCustom);
-                          await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
-                          const updatedActive = [...activeIds, newGoal.id];
-                          setActiveIds(updatedActive);
-                          await saveActiveGoalIds(updatedActive);
-                          setShowAddCustomModal(false);
-                          setDhikrSearch("");
-                          Alert.alert("Goal Created \ud83c\udf89", `Added "" to your daily goals!`);
-                        }}
-                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12, alignItems: "flex-start" }]}
-                      >
-                        <View style={{ flex: 1, paddingRight: 8 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
-                            <Text style={[styles.modalPrayerLabel, { color: colors.onSurface, fontSize: 14 }]}>{dhikrItem.title}</Text>
-                            <View style={{ backgroundColor: colors.brand + "18", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                              <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>{dhikrItem.categoryTag}</Text>
-                            </View>
-                          </View>
-                          {dhikrItem.transliteration ? (
-                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }} numberOfLines={2}>{dhikrItem.transliteration}</Text>
-                          ) : dhikrItem.translation ? (
-                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }} numberOfLines={2}>{dhikrItem.translation}</Text>
-                          ) : null}
-                        </View>
-                        <Text style={{ fontSize: 15, color: colors.brand, fontFamily: "Amiri", textAlign: "right" }}>{dhikrItem.arabic}</Text>
-                      </Pressable>
-                    )}
-                  />
-                </View>
-              ) : (
-                <View style={{ gap: 16, marginTop: 4 }}>
-                  <View>
-                    <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Goal Title</Text>
-                    <AppTextInput
-                      value={newGoalTitle}
-                      onChangeText={setNewGoalTitle}
-                      placeholder={newGoalCategory === "prayer" ? "e.g. Offer Ishraq, Offer Duha" : "e.g. Read Tafseer, Visit Family"}
-                      style={styles.input}
-                    />
-                  </View>
-
-                  <Pressable 
-                    onPress={handleAddCustomGoal}
-                    style={[styles.modalSubmitBtn, { backgroundColor: colors.brand, marginTop: 8, borderRadius: 12 }]}
-                  >
-                    <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 15 }}>Create & Add Goal</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Goal ActionSheet Modal */}
-      <Modal
-        visible={activeActionGoal !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setActiveActionGoal(null)}
-      >
-        <Pressable style={styles.actionSheetOverlay} onPress={() => setActiveActionGoal(null)}>
-          <View style={[styles.actionSheetContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <Pressable 
-              onPress={() => {
-                if (activeActionGoal) {
-                  setActiveActionGoal(null);
-                  router.push("/goal-settings");
-                }
-              }}
-              style={[styles.actionSheetOpt, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-            >
-              <Text style={[styles.actionSheetText, { color: colors.onSurface }]}>Edit goal</Text>
-            </Pressable>
-            
-            <Pressable 
-              onPress={() => {
-                if (activeActionGoal) {
-                  const id = activeActionGoal.id;
-                  setActiveActionGoal(null);
-                  removeGoalFromHome(id);
-                }
-              }}
-              style={[styles.actionSheetOpt, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-            >
-              <Text style={[styles.actionSheetText, { color: colors.error }]}>Remove</Text>
-            </Pressable>
-            
-            <Pressable 
-              onPress={() => setActiveActionGoal(null)}
-              style={styles.actionSheetOpt}
-            >
-              <Text style={[styles.actionSheetText, { color: colors.onSurface, fontWeight: "700" }]}>Cancel</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Confetti Celebration Overlay Modal */}
-      <Modal
-        visible={allCompletedModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAllCompletedModalVisible(false)}
-      >
-        <Pressable 
-          style={StyleSheet.absoluteFillObject} 
-          onPress={() => setAllCompletedModalVisible(false)}
-        >
-          <View style={[styles.congratsOverlay, { backgroundColor: "rgba(0,0,0,0.55)" }]}>
-            {/* Render Confetti Particles */}
-            {confettiParticles.map((p, idx) => {
-              const rotation = p.rotate.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0deg', `${360 + Math.random() * 360}deg`]
-              });
-              const translateX = p.rotate.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, p.drift]
-              });
-              return (
-                <Animated.View
-                  key={idx}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: p.x,
-                    width: p.shape === "rect" ? 14 : 9,
-                    height: 9,
-                    borderRadius: p.shape === "circle" ? 4.5 : 2,
-                    backgroundColor: p.color,
-                    transform: [
-                      { translateY: p.y },
-                      { translateX: translateX },
-                      { rotate: rotation },
-                      { scale: p.scale }
-                    ],
-                    zIndex: 9999,
-                  }}
-                />
-              );
-            })}
-
-            {/* Celebratory Text */}
-            <View style={{ alignItems: "center", justifyContent: "center", flex: 1, paddingHorizontal: 32 }}>
-              <Text style={{ fontSize: 48, color: "#F5D061", fontWeight: "bold", textAlign: "center", marginBottom: 16, fontFamily: "AmiriBold", textShadowColor: "rgba(245,208,97,0.45)", textShadowOffset: { width: 0, height: 4 }, textShadowRadius: 14 }}>
-                سُبْحَانَ ٱللَّٰهِ
-              </Text>
-              <Text style={{ fontSize: 24, color: "#FFFFFF", fontWeight: "800", textAlign: "center", lineHeight: 36, textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 }}>
-                {"You've completed\nall your goals for today."}
-              </Text>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* ── Dua of the Day Pop-up Modal ── */}
-      <Modal
-        visible={!dailyDuaDismissed && !!dailyDua}
-        transparent
-        animationType="fade"
-        onRequestClose={async () => {
-          setDailyDuaDismissed(true);
-          const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-          await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-        }}
-      >
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", padding: 16 }}>
-          <View style={{ width: width * 0.92, maxWidth: 520, borderRadius: 28, padding: 26, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brand + "44", elevation: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.35, shadowRadius: 24 }}>
-            {/* Header */}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center" }}>
-                  <MaterialCommunityIcons name="hands-pray" size={22} color={colors.brand} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontWeight: "800", color: colors.brand, textTransform: "uppercase", letterSpacing: 0.9 }}>
-                    Dua of the Day
-                  </Text>
-                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.onSurface, marginTop: 1 }} numberOfLines={1}>
-                    {dailyDua?.title}
-                  </Text>
-                </View>
-              </View>
-
-              <Pressable
-                onPress={async () => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  setDailyDuaDismissed(true);
-                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-                }}
-                hitSlop={12}
-                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center" }}
-              >
-                <MaterialCommunityIcons name="close" size={22} color={colors.onSurfaceMuted} />
-              </Pressable>
-            </View>
-
-            {/* Arabic + Translation Scrollable Area */}
-            <ScrollView style={{ maxHeight: 300, marginVertical: 10 }} showsVerticalScrollIndicator={false}>
-              <Text style={{ fontFamily: "AmiriBold", fontSize: 28, color: colors.onSurface, textAlign: "right", lineHeight: 48, marginBottom: 16 }}>
-                {dailyDua?.arabic}
-              </Text>
-              <Text style={{ fontSize: 14, color: colors.onSurfaceSecondary, lineHeight: 22, fontStyle: "italic", marginBottom: 12 }}>
-                "{dailyDua?.translation}"
-              </Text>
-              {dailyDua?.source ? (
-                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.brand, marginTop: 4 }}>
-                  Source: {dailyDua.source}
-                </Text>
-              ) : null}
-            </ScrollView>
-
-            {/* Single Full-Width Action Button ("Open Du'as Hub") */}
-            <View style={{ marginTop: 16 }}>
-              <Pressable
-                onPress={async () => {
-                  setDailyDuaDismissed(true);
-                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-                  router.push("/dua-hub" as any);
-                }}
-                style={{ width: "100%", backgroundColor: colors.brand, paddingVertical: 14, borderRadius: 16, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: "800", color: "#FFFFFF" }}>{"Open Du'as Hub"}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  goldHalo: {
-    position: "absolute",
-    top: 70,
-    right: -90,
-    width: 230,
-    height: 230,
-    borderRadius: 115,
-    backgroundColor: "rgba(212,175,55,0.12)",
-  },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
-  headerTitle: { fontSize: 22, fontWeight: "800", letterSpacing: 0.2 },
-  hijriDate: { fontSize: 11, marginTop: 2 },
-  scrollContent: { paddingBottom: 120 },
-  greeting: { paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
-  greetingHi: { fontSize: 13, fontWeight: "600" },
-  cityTxt: { fontSize: 12, marginTop: 4 },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginHorizontal: theme.spacing.lg,
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  locationTxt: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  // Prayer countdown card
-  prayerCard: {
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: 24,
-    padding: theme.spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: theme.spacing.lg,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(212,175,55,0.22)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.18,
-    shadowRadius: 22,
-    elevation: 10,
-  },
-  prayerCardGlow: {
-    position: "absolute",
-    right: -42,
-    top: -58,
-    width: 154,
-    height: 154,
-    borderRadius: 77,
-    backgroundColor: "rgba(212,175,55,0.16)",
-  },
-  prayerLabel: { fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
-  prayerName: { fontSize: 28, fontWeight: "800", marginTop: 2 },
-  prayerTime: { fontSize: 20, fontWeight: "700" },
-  viewAll: { fontSize: 13, fontWeight: "600", marginTop: 8 },
-  ringWrap: { width: RING, height: RING, alignItems: "center", justifyContent: "center" },
-  ringCenter: { position: "absolute", alignItems: "center" },
-  nextLabel: { fontSize: 9, fontWeight: "600" },
-  countdown: { fontSize: 11, fontWeight: "800", marginTop: 2 },
-
-  // Quick actions
-  quickPager: { marginBottom: 2 },
-  quickPagerContent: { alignItems: "flex-start" },
-  quickPage: { width, flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, justifyContent: "flex-start" },
-  quickBtn: { alignItems: "center", justifyContent: "flex-start", width: (width - theme.spacing.lg * 2) / 3, marginBottom: 16 },
-  quickDots: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: -2,
-    marginBottom: theme.spacing.md,
-  },
-  quickDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  quickReorderHint: { fontSize: 11, textAlign: "center", marginBottom: theme.spacing.md },
-  quickIconOnly: {
-    width: 64,
-    height: 64,
-    marginBottom: 7,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  quickLockBadge: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quickLockEmoji: {
-    fontSize: 11,
-  },
-  quickIconImage: {
-    width: 48,
-    height: 48,
-    resizeMode: "contain",
-  },
-  quickEmoji: {
-    fontSize: 42,
-    textShadowColor: "rgba(0,0,0,0.22)",
-    textShadowOffset: { width: 0, height: 5 },
-    textShadowRadius: 7,
-  },
-  quickLabel: { fontSize: 11, fontWeight: "800", textAlign: "center", lineHeight: 15 },
-
-  // Goals card
-  goalsCard: {
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: 24,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(212,175,55,0.16)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 7,
-  },
-  goalsHeader: { marginBottom: theme.spacing.sm },
-  goalsTitle: { fontSize: 16, fontWeight: "700" },
-  progressBg: { height: 6, borderRadius: 3, marginBottom: theme.spacing.sm },
-  progressFill: { height: 6, borderRadius: 3 },
-  catPills: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: theme.spacing.md },
-  pill: { flexDirection: "row", alignItems: "center", gap: 4 },
-  pillDot: { width: 8, height: 8, borderRadius: 4 },
-  pillTxt: { fontSize: 11 },
-  goalRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12, borderBottomWidth: 1 },
-  goalCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  goalTitle: { fontSize: 15, fontWeight: "600" },
-  goalSub: { fontSize: 12, marginTop: 2 },
-  goalArabic: { fontSize: 12, fontFamily: "Amiri", marginTop: 2 },
-  viewMoreBtn: { paddingTop: 12, alignItems: "center" },
-  viewMoreTxt: { fontWeight: "600", fontSize: 14 },
-
-  // Duas grid
-  segment: { flexDirection: "row", marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.pill, padding: 4, marginBottom: theme.spacing.lg },
-  segmentBtn: { flex: 1, paddingVertical: 12, borderRadius: theme.radius.pill, alignItems: "center" },
-  segmentText: { fontWeight: "600", fontSize: 14 },
-  segmentTextActive: { color: "#03201F" },
-  grid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md },
-  card: { height: 140, borderRadius: theme.radius.lg, overflow: "hidden" },
-  cardImage: { flex: 1, justifyContent: "flex-end" },
-  cardScrim: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: theme.spacing.sm },
-  cardLabelContainer: {
-    backgroundColor: "rgba(15, 23, 42, 0.82)", // dark navy translucent overlay
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  cardTitle: { color: "#FFFFFF", fontSize: 11, fontWeight: "800", letterSpacing: 0.8, textAlign: "center" },
-  
-  // Google Calendar Card
-  calendarCard: {
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-  },
-  calendarHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  calendarTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-  calendarBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-  },
-  calendarBtnTxt: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  
-  // Goal checklist items
-  goalsListContainer: {
-    marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-  },
-  goalRowItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  goalCheckArea: {
-    paddingRight: 12,
-  },
-  goalCircleCheck: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  goalItemTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  goalItemSub: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  goalItemArabic: {
-    fontSize: 12,
-    fontFamily: "Amiri",
-    marginTop: 2,
-  },
-  sectionTitleHeader: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  bottomButtonsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: theme.spacing.md,
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  bottomOutlineBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 24,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  bottomBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  
-  // Prayers Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    width: width * 0.9,
-    maxHeight: "80%",
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    padding: theme.spacing.lg,
-    alignItems: "center",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-    width: "100%",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  modalPrayerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: theme.spacing.lg,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  modalPrayerLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  menstrualCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: theme.spacing.lg,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  menstrualTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  menstrualSub: {
-    fontSize: 12,
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  addCustomBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 24,
-    marginTop: 8,
-    width: "100%",
-  },
-  input: {
-    fontSize: 15,
-    marginBottom: 4,
-    width: "100%",
-  },
-  catSelectBtn: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-  },
-  modalSubmitBtn: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 24,
-    width: "100%",
-  },
-  actionSheetOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    justifyContent: "flex-end",
-  },
-  actionSheetContent: {
-    width: "100%",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: theme.spacing.lg,
-    paddingBottom: 24,
-    borderWidth: 1,
-  },
-  actionSheetOpt: {
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-  },
-  actionSheetText: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  congratsOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  congratsContent: {
-    width: width * 0.85,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  congratsTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    marginBottom: 8,
-  },
-  congratsSub: {
-    fontSize: 14,
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 20,
-  },
-  congratsBtn: {
-    width: "100%",
-    paddingVertical: 12,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  congratsBtnTxt: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  balloonContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: "hidden",
-  },
-  congratsBalloon: {
-    position: "absolute",
-    bottom: -100,
-  },
-});
-// End of HomeScreen component
+              <View style={{
