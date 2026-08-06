@@ -72,7 +72,7 @@ export async function fetchIslamicEvents(): Promise<{ name: string; date: Date; 
 
   try {
     const year = new Date().getFullYear();
-    const res = await fetch(`https://api.aladhan.com/v1/calendar/${year}?annual=true`);
+    const res = await fetch(`{{https://api.aladhan.com/v1/calendar/${year}}}?annual=true`);
     if (!res.ok) throw new Error('API error');
     const json = await res.json();
     const found: { name: string; date: Date; emoji: string; grad: [string, string] }[] = [];
@@ -137,7 +137,22 @@ export const QUICK_ACTIONS = [
   { id: "halalFoodScanner",  label: "Halal Product Scanner",   route: "/halal-scanner",          emoji: "🔎",  premium: true },
 ];
 
-export const HOME_QUICK_ACTIONS = QUICK_ACTIONS;
+// Restraint pass: the Home screen now shows only the most-used shortcuts as a
+// single 3x3 grid (no swipeable pages, no dots indicator). The full
+// QUICK_ACTIONS list above stays available for other surfaces if needed.
+export const HOME_QUICK_ACTIONS = QUICK_ACTIONS.filter((a) =>
+  [
+    "nobleQuran",
+    "hadithCollections",
+    "duas",
+    "namesOfAllah",
+    "qiblaDirection",
+    "zakatCalculator",
+    "hijriCalendar",
+    "tasbihCounter",
+    "mosqueFinder",
+  ].includes(a.id)
+);
 
 export function getGreeting(prayerName?: string) {
   const hour = new Date().getHours();
