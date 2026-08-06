@@ -18,7 +18,10 @@ export const theme = {
     success: '#00A884',
   },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 },
-  radius: { sm: 6, md: 12, lg: 20, pill: 999 },
+  // Full xs-xl radius scale. `xl` covers the larger hero/banner cards that
+  // previously hardcoded `borderRadius: 24` inline; `xs` covers small chips
+  // and badges that previously hardcoded `borderRadius: 4-6`.
+  radius: { xs: 4, sm: 6, md: 12, lg: 20, xl: 24, pill: 999 },
   font: {
     display: 'Outfit_600SemiBold',
     displayBold: 'Outfit_700Bold',
@@ -45,7 +48,8 @@ export const theme = {
    *   body     — paragraph text, descriptions, subtitles
    *   label    — tags, badges, micro-captions
    *
-   * Each role has lg / md / sm sizes.
+   * Each role has lg / md / sm sizes. Prefer the `AppText` component
+   * (`@/src/components/ui`) over consuming these directly.
    */
   typography: {
     display:  { lg: 57, md: 45, sm: 36 },
