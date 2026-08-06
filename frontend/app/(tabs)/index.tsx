@@ -113,7 +113,7 @@ async function fetchIslamicEvents(): Promise<{ name: string; date: Date; emoji: 
 
   try {
     const year = new Date().getFullYear();
-    const res = await fetch(`https://api.aladhan.com/v1/calendar/${year}?annual=true`);
+    const res = await fetch(`{{https://api.aladhan.com/v1/calendar/${year}}}?annual=true`);
     if (!res.ok) throw new Error('API error');
     const json = await res.json();
     const found: { name: string; date: Date; emoji: string; grad: [string, string] }[] = [];
@@ -548,7 +548,7 @@ export default function HomeScreen() {
       const loc = await resolveUserLocation();
       setCity(loc.city);
       const settings = await getPrayerSettings();
-      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+      const url = `{{https://api.aladhan.com/v1/timings?latitude=${loc.lat}}}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
       const r = await fetch(url);
       const j = await r.json();
       if (j?.data?.timings) setTimes(j.data.timings);
@@ -626,7 +626,7 @@ export default function HomeScreen() {
         const loc = await resolveUserLocation();
         setCity(loc.city);
         const settings = await getPrayerSettings();
-        const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+        const url = `{{https://api.aladhan.com/v1/timings?latitude=${loc.lat}}}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
         const r = await fetch(url);
         const j = await r.json();
         const fetchedTimings = j?.data?.timings || null;
@@ -1059,7 +1059,7 @@ export default function HomeScreen() {
       );
       const startDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const endDate = startDate;
-      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
+      const calUrl = `{{https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}}}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
 
       const { Linking } = require("react-native");
       await Linking.openURL(calUrl);
@@ -1843,85 +1843,4 @@ export default function HomeScreen() {
             <Pressable 
               onPress={() => {
                 if (profile?.tier !== "premium" && !profile?.trialActive) {
-                  showPremiumModal("Goal Settings");
-                } else {
-                  router.push("/goal-settings");
-                }
-              }}
-              style={[styles.bottomOutlineBtn, { borderColor: colors.border }]}
-            >
-              <Text style={[styles.bottomBtnText, { color: colors.onSurface }]}>Goal Settings</Text>
-            </Pressable>
-          </View>
-        </View>
-
-      </AnimatedScrollView>
-
-      {/* All Prayers Modal */}
-      <Modal
-        visible={prayersModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPrayersModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setPrayersModalVisible(false)}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>All Prayers</Text>
-              <AppIconButton
-                accessibilityLabel="Close all prayers"
-                icon="close"
-                onPress={() => setPrayersModalVisible(false)}
-              />
-            </View>
-            
-            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
-              {["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"].map((pName) => {
-                const isDone = menstrualMode ? true : prayerCompletions[pName];
-                return (
-                  <Pressable 
-                    key={pName} 
-                    onPress={() => {
-                      if (menstrualMode) return;
-                      togglePrayerCompletion(pName);
-                    }}
-                    style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  >
-                    <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{pName}</Text>
-                    <View style={[styles.goalCircleCheck, { borderColor: CATEGORY_COLORS.prayer, backgroundColor: isDone ? CATEGORY_COLORS.prayer : "transparent" }]}>
-                      {isDone && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
-                    </View>
-                  </Pressable>
-                );
-              })}
-              
-              {/* Menstrual Mode Section */}
-              <View style={[styles.menstrualCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={[styles.menstrualTitle, { color: colors.onSurface }]}>Menstrual Mode</Text>
-                  <Text style={[styles.menstrualSub, { color: colors.onSurfaceMuted }]}>
-                    Menstrual mode will excuse your Prayers until you turn it off at the end of your period.
-                  </Text>
-                </View>
-                <AppSwitch
-                  accessibilityLabel="Menstrual mode"
-                  value={menstrualMode}
-                  onValueChange={handleMenstrualModeToggle}
-                />
-              </View>
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Select Daily Adhkar Modal */}
-      <Modal
-        visible={dhikrModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setDhikrModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
-            <View style={styles.modalHeader}>
-              <View style={{
+                  showPremiumModal("
