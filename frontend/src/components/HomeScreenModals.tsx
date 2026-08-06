@@ -58,8 +58,6 @@ export function HomeScreenModals(props: any) {
   colors,
   confettiParticles,
   customGoals,
-  dailyDua,
-  dailyDuaDismissed,
   dhikrModalVisible,
   dhikrSearch,
   handleAddCustomGoal,
@@ -75,7 +73,6 @@ export function HomeScreenModals(props: any) {
   setActiveIds,
   setAllCompletedModalVisible,
   setCustomGoals,
-  setDailyDuaDismissed,
   setDhikrModalVisible,
   setDhikrSearch,
   setNewGoalCategory,
@@ -156,7 +153,7 @@ export function HomeScreenModals(props: any) {
         onRequestClose={() => setDhikrModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: theme.radius.lg }]}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Select Daily Adhkar</Text>
@@ -175,7 +172,7 @@ export function HomeScreenModals(props: any) {
                 setDhikrModalVisible(false);
                 setShowAddCustomModal(true);
               }}
-              style={[styles.addCustomBtn, { backgroundColor: colors.brand, marginVertical: 10, borderRadius: 12, paddingVertical: 10 }]}
+              style={[styles.addCustomBtn, { backgroundColor: colors.brand, marginVertical: 10, borderRadius: theme.radius.md, paddingVertical: 10 }]}
             >
               <MaterialCommunityIcons name="plus-circle-outline" size={20} color={colors.onBrandPrimary} style={{ marginRight: 6 }} />
               <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 14 }}>Create Custom Goal</Text>
@@ -242,7 +239,7 @@ export function HomeScreenModals(props: any) {
         onRequestClose={() => setShowAddCustomModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: theme.radius.lg }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Create Custom Goal</Text>
               <AppIconButton
@@ -326,7 +323,7 @@ export function HomeScreenModals(props: any) {
                           setSurahSearch("");
                           Alert.alert("Goal Created \ud83c\udf89", `Added "Recite Surah ${surah.englishName}" to your daily goals!`);
                         }}
-                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12 }]}
+                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: theme.radius.md }]}
                       >
                         <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brand + "18", alignItems: "center", justifyContent: "center" }}>
                           <Text style={{ fontSize: 11, fontWeight: "700", color: colors.brand }}>{surah.number}</Text>
@@ -389,7 +386,7 @@ export function HomeScreenModals(props: any) {
                           setDhikrSearch("");
                           Alert.alert("Goal Created \ud83c\udf89", `Added "${dhikrItem.title}" to your daily goals!`);
                         }}
-                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12, alignItems: "flex-start" }]}
+                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: theme.radius.md, alignItems: "flex-start" }]}
                       >
                         <View style={{ flex: 1, paddingRight: 8 }}>
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
@@ -423,7 +420,7 @@ export function HomeScreenModals(props: any) {
 
                   <Pressable 
                     onPress={handleAddCustomGoal}
-                    style={[styles.modalSubmitBtn, { backgroundColor: colors.brand, marginTop: 8, borderRadius: 12 }]}
+                    style={[styles.modalSubmitBtn, { backgroundColor: colors.brand, marginTop: 8, borderRadius: theme.radius.md }]}
                   >
                     <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 15 }}>Create & Add Goal</Text>
                   </Pressable>
@@ -534,82 +531,6 @@ export function HomeScreenModals(props: any) {
             </View>
           </View>
         </Pressable>
-      </Modal>
-
-      {/* ── Dua of the Day Pop-up Modal ── */}
-      <Modal
-        visible={!dailyDuaDismissed && !!dailyDua}
-        transparent
-        animationType="fade"
-        onRequestClose={async () => {
-          setDailyDuaDismissed(true);
-          const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-          await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-        }}
-      >
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", padding: 16 }}>
-          <View style={{ width: width * 0.92, maxWidth: 520, borderRadius: 28, padding: 26, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brand + "44", elevation: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.35, shadowRadius: 24 }}>
-            {/* Header */}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center" }}>
-                  <MaterialCommunityIcons name="hands-pray" size={22} color={colors.brand} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontWeight: "800", color: colors.brand, textTransform: "uppercase", letterSpacing: 0.9 }}>
-                    Dua of the Day
-                  </Text>
-                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.onSurface, marginTop: 1 }} numberOfLines={1}>
-                    {dailyDua?.title}
-                  </Text>
-                </View>
-              </View>
-
-              <Pressable
-                onPress={async () => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  setDailyDuaDismissed(true);
-                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-                }}
-                hitSlop={12}
-                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center" }}
-              >
-                <MaterialCommunityIcons name="close" size={22} color={colors.onSurfaceMuted} />
-              </Pressable>
-            </View>
-
-            {/* Arabic + Translation Scrollable Area */}
-            <ScrollView style={{ maxHeight: 300, marginVertical: 10 }} showsVerticalScrollIndicator={false}>
-              <Text style={{ fontFamily: "AmiriBold", fontSize: 28, color: colors.onSurface, textAlign: "right", lineHeight: 48, marginBottom: 16 }}>
-                {dailyDua?.arabic}
-              </Text>
-              <Text style={{ fontSize: 14, color: colors.onSurfaceSecondary, lineHeight: 22, fontStyle: "italic", marginBottom: 12 }}>
-                "{dailyDua?.translation}"
-              </Text>
-              {dailyDua?.source ? (
-                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.brand, marginTop: 4 }}>
-                  Source: {dailyDua.source}
-                </Text>
-              ) : null}
-            </ScrollView>
-
-            {/* Single Full-Width Action Button ("Open Du'as Hub") */}
-            <View style={{ marginTop: 16 }}>
-              <Pressable
-                onPress={async () => {
-                  setDailyDuaDismissed(true);
-                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-                  router.push("/dua-hub" as any);
-                }}
-                style={{ width: "100%", backgroundColor: colors.brand, paddingVertical: 14, borderRadius: 16, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: "800", color: "#FFFFFF" }}>{"Open Du'as Hub"}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
       </Modal>
     </>
   );
