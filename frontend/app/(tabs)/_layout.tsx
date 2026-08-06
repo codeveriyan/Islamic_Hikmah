@@ -116,6 +116,9 @@ function TabsLayoutInner() {
       tabBar={(props) => <AnimatedTabBar {...props} />}
       screenOptions={{
         headerShown: false,
+        // Freeze hidden tabs so they stop re-rendering and running effects
+        // while the user is on another tab (they were stealing JS-thread time)
+        freezeOnBlur: true,
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.onSurfaceMuted,
         tabBarShowLabel: true,
