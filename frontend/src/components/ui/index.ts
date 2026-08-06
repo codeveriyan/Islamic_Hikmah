@@ -36,6 +36,12 @@ export {
   type AppSwitchProps,
 } from "./AppSwitch";
 export {
+  AppText,
+  type AppTextProps,
+  type AppTextVariant,
+  type AppTextWeight,
+} from "./AppText";
+export {
   AppTextInput,
   type AppTextInputProps,
 } from "./AppTextInput";
