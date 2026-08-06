@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { format12Hour } from "@/src/utils/time";
 
 import { theme } from "@/src/theme";
+import { getElevation } from "@/src/elevation";
 import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { PrayerCardSkeleton } from "@/src/components/SkeletonLoader";
@@ -50,12 +51,12 @@ import { PRAYERS, RING, STROKE, RADIUS, CIRC, fetchIslamicEvents, getNextIslamic
 import { styles } from "@/src/data/homeScreenStyles";
 import { HomeScreenModals } from "@/src/components/HomeScreenModals";
 
-// ── Isolated prayer countdown ring ──────────────────────────────────────────
+// ── Isolated prayer countdown ring ────────────────────────────────────────────────
 // The 1-second tick lives in this small memoized component so each interval
 // update re-renders ONLY the ring — not the entire ~3,000-line Home screen.
 // The sticky prayer notification update (throttled to once/minute) lives here too.
 const PrayerCountdownRing = memo(function PrayerCountdownRing({ times }: { times: Record<string, string> | null }) {
-  const { language } = useTheme();
+  const { language, colors } = useTheme();
   const { t } = useTranslation(language);
   const [countdown, setCountdown] = useState("--:--:--");
   const [progress, setProgress] = useState(0);
@@ -99,7 +100,7 @@ const PrayerCountdownRing = memo(function PrayerCountdownRing({ times }: { times
   return (
     <View style={styles.ringWrap}>
       <Svg width={RING} height={RING}>
-        <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke="#70FF00" strokeWidth={STROKE} fill="transparent" opacity={0.85} />
+        <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke={colors.brand} strokeWidth={STROKE} fill="transparent" opacity={0.85} />
         <Circle
           cx={RING/2} cy={RING/2} r={RADIUS}
           stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
@@ -157,11 +158,11 @@ export default function HomeScreen() {
   }, []);
   const arabicGreeting = useMemo(() => {
     const h = new Date().getHours();
-    if (h < 5) return { arabic: "اللَّيْلُ مُبَارَكٌ", english: "Blessed night" };
+    if (h < 5) return { arabic: "اللَّيْلُ مُبَارَكٌ", english: "Blessed night" };
     if (h < 12) return { arabic: "صَبَاحُ الْخَيْرِ", english: greeting.sub };
-    if (h < 17) return { arabic: "اللَّهُمَّ بِكَ أَصْبَحْنَا", english: greeting.sub };
+    if (h < 17) return { arabic: "اللَّهُمَّ بِكَ أَصْبَحْنَا", english: greeting.sub };
     if (h < 20) return { arabic: "مَسَاءُ الْخَيْرِ", english: greeting.sub };
-    return { arabic: "اللَّهُمَّ بِكَ أَمْسَيْنَا", english: "Blessed evening" };
+    return { arabic: "اللَّهُمَّ بِكَ أَمْسَيْنَا", english: "Blessed evening" };
   }, [greeting]);
 
   // Goals
@@ -173,45 +174,6 @@ export default function HomeScreen() {
   // Calendar card states
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarDismissed, setCalendarDismissed] = useState(false);
-
-  // Live UmmahAPI Daily Dua state
-  const [dailyDua, setDailyDua] = useState<{
-    title: string;
-    arabic: string;
-    translation: string;
-    source: string;
-  } | null>(null);
-  const [dailyDuaDismissed, setDailyDuaDismissed] = useState(false);
-
-  useEffect(() => {
-    // Deferred: storage + network work runs after the open transition completes
-    const dailyDuaTask = InteractionManager.runAfterInteractions(() => {
-    (async () => {
-      try {
-        const dismissedDate = await AsyncStorage.getItem("hikmah:daily-dua-dismissed-date");
-        const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-        if (dismissedDate === todayStr) {
-          setDailyDuaDismissed(true);
-        }
-      } catch {}
-    })();
-
-    fetch("https://www.ummahapi.com/api/duas/random")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (json?.data?.title && json?.data?.arabic) {
-          setDailyDua({
-            title: json.data.title,
-            arabic: json.data.arabic,
-            translation: json.data.translation || "",
-            source: json.data.source || "",
-          });
-        }
-      })
-      .catch((err) => console.warn("UmmahAPI daily dua fetch error:", err));
-    });
-    return () => dailyDuaTask.cancel();
-  }, []);
 
   // Menstrual mode
   const [menstrualMode, setMenstrualMode] = useState(false);
@@ -229,9 +191,6 @@ export default function HomeScreen() {
   const [selectedAdhkarCount, setSelectedAdhkarCount] = useState(3);
   const [quickActionOrder, setQuickActionOrder] = useState<string[]>(HOME_QUICK_ACTIONS.map(action => action.id));
   const [reorderFrom, setReorderFrom] = useState<string | null>(null);
-  const [quickPageIndex, setQuickPageIndex] = useState(0);
-  const quickPagerPulse = useRef(new Animated.Value(1)).current;
-  const quickScrollX = useRef(new Animated.Value(0)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
   // Quran last-read (Continue Reading widget)
   const [lastReadQuran, setLastReadQuran] = useState<{ surahNumber: number; surahName: string; ayahNumber?: number } | null>(null);
@@ -244,7 +203,7 @@ export default function HomeScreen() {
       const loc = await resolveUserLocation();
       setCity(loc.city);
       const settings = await getPrayerSettings();
-      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+      const url = `{{https://api.aladhan.com/v1/timings?latitude=${loc.lat}}}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
       const r = await fetch(url);
       const j = await r.json();
       if (j?.data?.timings) setTimes(j.data.timings);
@@ -259,10 +218,6 @@ export default function HomeScreen() {
     const saved = quickActionOrder.map(id => actionsById.get(id)).filter(Boolean) as any[];
     return [...saved, ...HOME_QUICK_ACTIONS.filter(action => !quickActionOrder.includes(action.id))];
   }, [quickActionOrder]);
-  const quickActionPages = useMemo(() => Array.from(
-    { length: Math.ceil(orderedQuickActions.length / 9) },
-    (_, page) => orderedQuickActions.slice(page * 9, page * 9 + 9),
-  ), [orderedQuickActions]);
 
   // Action sheet for 3 dots goal menu
   const [activeActionGoal, setActiveActionGoal] = useState<Goal | null>(null);
@@ -283,22 +238,6 @@ export default function HomeScreen() {
       } catch {}
     }).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.timing(quickPagerPulse, {
-        toValue: 1.35,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.spring(quickPagerPulse, {
-        toValue: 1,
-        friction: 5,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [quickPageIndex, quickPagerPulse]);
 
   // Confetti particles for completion celebration
   const [allCompletedModalVisible, setAllCompletedModalVisible] = useState(false);
@@ -322,7 +261,7 @@ export default function HomeScreen() {
         const loc = await resolveUserLocation();
         setCity(loc.city);
         const settings = await getPrayerSettings();
-        const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+        const url = `{{https://api.aladhan.com/v1/timings?latitude=${loc.lat}}}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
         const r = await fetch(url);
         const j = await r.json();
         const fetchedTimings = j?.data?.timings || null;
@@ -755,7 +694,7 @@ export default function HomeScreen() {
       );
       const startDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const endDate = startDate;
-      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
+      const calUrl = `{{https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}}}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
 
       const { Linking } = require("react-native");
       await Linking.openURL(calUrl);
@@ -1223,15 +1162,11 @@ export default function HomeScreen() {
           style={{
             marginHorizontal: theme.spacing.lg,
             marginBottom: theme.spacing.lg,
-            borderRadius: 24,
+            borderRadius: theme.radius.xl,
             overflow: "hidden",
             borderWidth: 1,
             borderColor: colors.mode === "dark" ? "rgba(0,168,132,0.3)" : "rgba(6,95,70,0.18)",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 12 },
-            shadowOpacity: 0.16,
-            shadowRadius: 20,
-            elevation: 8,
+            ...getElevation(5),
           }}
         >
           <LinearGradient
@@ -1258,7 +1193,7 @@ export default function HomeScreen() {
                   <Text style={{ fontSize: 26, fontWeight: "900", color: "#FFFFFF" }}>
                     {t(prayerPeriods.current.name.toLowerCase())}
                   </Text>
-                  <Text style={{ fontSize: 18, fontWeight: "800", color: "#70FF00", marginTop: 1 }}>
+                  <Text style={{ fontSize: 18, fontWeight: "800", color: colors.brand, marginTop: 1 }}>
                     {format12Hour(prayerPeriods.current.timeStr)}
                   </Text>
                   <Text style={{ fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.85)", marginTop: 6 }}>
@@ -1278,7 +1213,7 @@ export default function HomeScreen() {
         {dynamicIslamicEvent && (
           <AnimatedCard
             onPress={() => router.push('/articles' as any)}
-            style={{ marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: 'hidden' }}
+            style={{ marginHorizontal: 20, marginBottom: 16, borderRadius: theme.radius.lg, overflow: 'hidden' }}
           >
             <LinearGradient
               colors={dynamicIslamicEvent.grad}
@@ -1307,25 +1242,9 @@ export default function HomeScreen() {
           </AnimatedCard>
         )}
 
-        <ScrollView
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          style={styles.quickPager}
-          contentContainerStyle={styles.quickPagerContent}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: quickScrollX } } }],
-            { useNativeDriver: false }
-          )}
-          scrollEventThrottle={16}
-          onMomentumScrollEnd={(event) => {
-            const page = Math.round(event.nativeEvent.contentOffset.x / width);
-            setQuickPageIndex(Math.max(0, Math.min(page, quickActionPages.length - 1)));
-          }}
-        >
-          {quickActionPages.map((page, pageIndex) => (
-            <View key={`quick-page-${pageIndex}`} style={styles.quickPage}>
-              {page.map((a) => (
+        {/* ── Quick Actions — single curated grid (restraint pass: no swipeable pages) ── */}
+        <View style={styles.quickGrid}>
+          {orderedQuickActions.map((a) => (
             <AnimatedCard key={a.id} onPress={() => handleQuickActionPress(a)} onLongPress={() => setReorderFrom(a.id)} delayLongPress={350}
               style={[styles.quickBtn, reorderFrom === a.id && { opacity: 0.45 }, { overflow: "hidden" }]}>
               <View style={styles.quickIconOnly}>
@@ -1347,56 +1266,11 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{a.label}</Text>
             </AnimatedCard>
-              ))}
-            </View>
           ))}
-        </ScrollView>
+        </View>
         {reorderFrom ? (
           <Text style={[styles.quickReorderHint, { color: colors.onSurfaceMuted }]}>Tap another icon to swap its position</Text>
-        ) : (
-          <View
-            style={styles.quickDots}
-            accessible
-            accessibilityRole="adjustable"
-            accessibilityLabel={`Shortcut page ${quickPageIndex + 1} of ${quickActionPages.length}`}
-          >
-            {quickActionPages.map((_, index) => {
-              const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
-
-              const dotWidth = quickScrollX.interpolate({
-                inputRange,
-                outputRange: [8, 22, 8],
-                extrapolate: "clamp",
-              });
-
-              const opacity = quickScrollX.interpolate({
-                inputRange,
-                outputRange: [0.3, 1, 0.3],
-                extrapolate: "clamp",
-              });
-
-              const backgroundColor = quickScrollX.interpolate({
-                inputRange,
-                outputRange: [colors.border, colors.brand, colors.border],
-                extrapolate: "clamp",
-              });
-
-              return (
-                <Animated.View
-                  key={`quick-dot-${index}`}
-                  style={[
-                    styles.quickDot,
-                    {
-                      width: dotWidth,
-                      opacity,
-                      backgroundColor,
-                    },
-                  ]}
-                />
-              );
-            })}
-          </View>
-        )}
+        ) : null}
 
         {/* Connection & Daily Goals Section */}
         
@@ -1560,8 +1434,6 @@ export default function HomeScreen() {
           colors={colors}
           confettiParticles={confettiParticles}
           customGoals={customGoals}
-          dailyDua={dailyDua}
-          dailyDuaDismissed={dailyDuaDismissed}
           dhikrModalVisible={dhikrModalVisible}
           dhikrSearch={dhikrSearch}
           handleAddCustomGoal={handleAddCustomGoal}
@@ -1577,7 +1449,6 @@ export default function HomeScreen() {
           setActiveIds={setActiveIds}
           setAllCompletedModalVisible={setAllCompletedModalVisible}
           setCustomGoals={setCustomGoals}
-          setDailyDuaDismissed={setDailyDuaDismissed}
           setDhikrModalVisible={setDhikrModalVisible}
           setDhikrSearch={setDhikrSearch}
           setNewGoalCategory={setNewGoalCategory}
