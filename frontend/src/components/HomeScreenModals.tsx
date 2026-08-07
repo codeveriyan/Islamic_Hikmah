@@ -1,42 +1,18 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Modal, Alert, RefreshControl, FlatList, InteractionManager,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, Modal, Alert, FlatList,
 } from "react-native";
-import { ScrollView as AnimatedScrollView } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter, useFocusEffect } from "expo-router";
-import { useTranslation } from "@/src/localization";
+import type { Router } from "expo-router";
 import * as Haptics from "expo-haptics";
-import * as Location from "expo-location";
-import Svg, { Circle } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { format12Hour } from "@/src/utils/time";
 
 import { theme } from "@/src/theme";
-import { useTheme } from "@/src/ThemeContext";
-import { AnimatedCard } from "@/src/components/AnimatedCard";
-import { PrayerCardSkeleton } from "@/src/components/SkeletonLoader";
-import { useAuth } from "@/src/AuthContext";
-import { usePremiumModal } from "@/src/PremiumModalContext";
-import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
+import type { AppColors } from "@/src/ThemeContext";
+import { CATEGORY_COLORS, type Goal } from "@/src/data/goals";
 import { SURAH_LIST } from "@/src/data/surahList";
-import { SELECTABLE_ADHKAAR, DHIKRS } from "@/src/data/dhikrs";
-// Note: duas.ts (608 KB) is lazily required inside a deferred effect to keep it off the startup import graph and first paint
-import {
-  resolveUserLocation, getCompletedGoals, toggleGoal,
-  getActiveGoalIds, getPrayerSettings, schedulePrayerNotifications, updateStickyPrayerNotification,
-  getMenstrualModeActive, setMenstrualModeActive,
-  getGoogleCalendarConnected, setGoogleCalendarConnected,
-  getGoogleCalendarDismissed, setGoogleCalendarDismissed,
-  getDailyDhikrCounts, saveDailyDhikrCounts,
-  getPrayerCompletions, savePrayerCompletions,
-  saveActiveGoalIds, getGoalNotifTimes, scheduleGoalNotifications,
-  getPrayerTimingsCache,
-} from "@/src/storage";
-import { useTabBarVisibility } from "@/src/TabBarVisibilityContext";
-import { Image as ExpoImage } from "expo-image";
+import { SELECTABLE_ADHKAAR } from "@/src/data/dhikrs";
+import { saveActiveGoalIds } from "@/src/storage";
 import {
   AppIconButton,
   AppSwitch,
@@ -49,7 +25,64 @@ import {
 // inline JSX.
 const { width, height } = Dimensions.get("window");
 
-export function HomeScreenModals(props: any) {
+type GoalCategory = "prayer" | "quran" | "dhikr" | "other";
+
+type DhikrAndDuaOption = {
+  id: string;
+  title: string;
+  arabic: string;
+  transliteration?: string;
+  translation?: string;
+  categoryTag: string;
+};
+
+type ConfettiParticle = {
+  x: number;
+  y: Animated.Value;
+  rotate: Animated.Value;
+  scale: number;
+  color: string;
+  shape: string;
+  drift: number;
+};
+
+type HomeScreenModalsProps = {
+  activeActionGoal: Goal | null;
+  activeIds: string[];
+  allCompletedModalVisible: boolean;
+  allDhikrAndDuaOptions: DhikrAndDuaOption[];
+  colors: AppColors;
+  confettiParticles: ConfettiParticle[];
+  customGoals: Goal[];
+  dhikrModalVisible: boolean;
+  dhikrSearch: string;
+  handleAddCustomGoal: () => Promise<void>;
+  handleMenstrualModeToggle: (value: boolean) => Promise<void>;
+  menstrualMode: boolean;
+  newGoalCategory: GoalCategory;
+  newGoalTitle: string;
+  prayerCompletions: Record<string, boolean>;
+  prayersModalVisible: boolean;
+  removeGoalFromHome: (goalId: string) => Promise<void>;
+  router: Router;
+  setActiveActionGoal: Dispatch<SetStateAction<Goal | null>>;
+  setActiveIds: Dispatch<SetStateAction<string[]>>;
+  setAllCompletedModalVisible: Dispatch<SetStateAction<boolean>>;
+  setCustomGoals: Dispatch<SetStateAction<Goal[]>>;
+  setDhikrModalVisible: Dispatch<SetStateAction<boolean>>;
+  setDhikrSearch: Dispatch<SetStateAction<string>>;
+  setNewGoalCategory: Dispatch<SetStateAction<GoalCategory>>;
+  setNewGoalTitle: Dispatch<SetStateAction<string>>;
+  setPrayersModalVisible: Dispatch<SetStateAction<boolean>>;
+  setShowAddCustomModal: Dispatch<SetStateAction<boolean>>;
+  setSurahSearch: Dispatch<SetStateAction<string>>;
+  showAddCustomModal: boolean;
+  styles: typeof import("@/src/data/homeScreenStyles").styles;
+  surahSearch: string;
+  togglePrayerCompletion: (prayerName: string) => Promise<void>;
+};
+
+export function HomeScreenModals(props: HomeScreenModalsProps) {
   const {
   activeActionGoal,
   activeIds,

@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Modal, Alert, RefreshControl, FlatList, InteractionManager,
 } from "react-native";
-import { ScrollView as AnimatedScrollView } from "react-native-reanimated";
+import Reanimated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -203,7 +203,7 @@ export default function HomeScreen() {
       const loc = await resolveUserLocation();
       setCity(loc.city);
       const settings = await getPrayerSettings();
-      const url = `{{https://api.aladhan.com/v1/timings?latitude=${loc.lat}}}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
       const r = await fetch(url);
       const j = await r.json();
       if (j?.data?.timings) setTimes(j.data.timings);
@@ -261,7 +261,7 @@ export default function HomeScreen() {
         const loc = await resolveUserLocation();
         setCity(loc.city);
         const settings = await getPrayerSettings();
-        const url = `{{https://api.aladhan.com/v1/timings?latitude=${loc.lat}}}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+        const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
         const r = await fetch(url);
         const j = await r.json();
         const fetchedTimings = j?.data?.timings || null;
@@ -694,7 +694,7 @@ export default function HomeScreen() {
       );
       const startDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const endDate = startDate;
-      const calUrl = `{{https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}}}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
+      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&details=${eventDetails}&dates=${startDate}/${endDate}&allday=true`;
 
       const { Linking } = require("react-native");
       await Linking.openURL(calUrl);
@@ -1138,7 +1138,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <AnimatedScrollView
+      <Reanimated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         removeClippedSubviews
@@ -1425,7 +1425,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-      </AnimatedScrollView>
+      </Reanimated.ScrollView>
       <HomeScreenModals
           activeActionGoal={activeActionGoal}
           activeIds={activeIds}

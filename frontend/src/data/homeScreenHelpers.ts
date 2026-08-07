@@ -72,7 +72,7 @@ export async function fetchIslamicEvents(): Promise<{ name: string; date: Date; 
 
   try {
     const year = new Date().getFullYear();
-    const res = await fetch(`{{https://api.aladhan.com/v1/calendar/${year}}}?annual=true`);
+    const res = await fetch(`https://api.aladhan.com/v1/calendar/${year}?annual=true`);
     if (!res.ok) throw new Error('API error');
     const json = await res.json();
     const found: { name: string; date: Date; emoji: string; grad: [string, string] }[] = [];
