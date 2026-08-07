@@ -89,6 +89,14 @@ const FEATURED: FeatureCard[] = [
     route: "/pillars-of-islam",
     gradient: ["#134E4A", "#0F766E"],
   },
+  {
+    id: "library",
+    title: "Library",
+    subtitle: "Books, Audio & Video",
+    icon: "library-shelves",
+    route: "/library",
+    gradient: ["#5B21B6", "#4C1D95"],
+  }
 ];
 
 type QuickLink = {

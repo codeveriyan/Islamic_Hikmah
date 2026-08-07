@@ -35,6 +35,7 @@ from learn_quran.asr import (
 )
 from quran_corpus import CorpusUnavailableError
 from quran_identify_matcher import NoConfidentMatchError, identify_from_transcript, find_best_match
+from islam_house import islam_house_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1042,23 +1043,23 @@ async def start_trial_backend(current_user: dict = Depends(get_current_user_prof
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Trial has already been started or completed for this account."
         )
-        
+
     now = datetime.now(timezone.utc)
     ends_at = now + timedelta(days=7)
-    
+
     update_data = {
         "trial_started_at": now,
         "trial_active": True,
         "trial_ends_at": ends_at,
         "updated_at": now
     }
-    
+
     await db_update_user(current_user["email"], update_data)
     current_user.update(update_data)
-    
+
     profile_cleaned = check_and_update_trial_status(current_user).copy()
     profile_cleaned.pop("_id", None)
-    
+
     return {
         "status": "success",
         "message": "7-day free trial started successfully.",
@@ -1310,7 +1311,7 @@ def _call_ocr_space(image_bytes: bytes, mime: str) -> str:
 
 @api_router.post("/quran/identify-text", response_model=AyahFinderResult)
 async def identify_quran_text(
-    req: IdentifyTextRequest, 
+    req: IdentifyTextRequest,
     request: Request,
     user: Optional[dict] = Depends(get_optional_user_profile),
 ):
@@ -1575,6 +1576,7 @@ class FatawaItemResponse(BaseModel):
     updated_at: Optional[str] = None
     catalog_version: int = 1
     content_version: int = 1
+    islamhouse_related: Optional[dict] = None
 
 
 class FatawaCategoryResponse(BaseModel):
@@ -1845,6 +1847,28 @@ async def _fetch_islamqa_answer(url: str) -> Optional[dict]:
                 return {"title": title, "answer_text": clean_answer}
     return None
 
+ISLAMHOUSE_API_KEY_FOR_VERIFY = "paV29H2gm56kvLP"
+
+async def _find_related_islamhouse_fatwa(query: str) -> Optional[dict]:
+    """Find related IslamHouse material without claiming semantic verification."""
+    try:
+        encoded_q = urllib.parse.quote(query[:100])
+        url = f"https://api3.islamhouse.com/v3/{ISLAMHOUSE_API_KEY_FOR_VERIFY}/main/get-items/en/fatwa/1/5/json?search={encoded_q}"
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                items = data.get("data", [])
+                if items and len(items) > 0:
+                    first = items[0]
+                    return {
+                        "islamhouse_title": first.get("title", ""),
+                        "islamhouse_id": first.get("id"),
+                        "match_count": len(items),
+                    }
+    except Exception as exc:
+        logger.warning("IslamHouse related-content search failed: %s", exc)
+    return None
 
 async def _synthesize_question_ruling(q: str) -> Optional[dict]:
     matched_url = await _search_islamqa_for_url(q)
@@ -1895,6 +1919,16 @@ async def _synthesize_question_ruling(q: str) -> Optional[dict]:
         cat_en = "General Islamic Ruling"
         cat_ar = "فتوى شرعية"
 
+    # Surface a related IslamHouse search result without treating it as verification.
+    ih_related = await _find_related_islamhouse_fatwa(q)
+    if ih_related:
+        citations.append({
+            "type": "fatwa",
+            "reference": f"IslamHouse.com: {ih_related['islamhouse_title'][:80]}",
+            "url": f"https://islamhouse.com/en/fatwa/{ih_related['islamhouse_id']}",
+            "verified": False,
+        })
+
     return {
         "schema_version": 1,
         "id": f"ask-live-{q_hash}",
@@ -1907,6 +1941,7 @@ async def _synthesize_question_ruling(q: str) -> Optional[dict]:
         "category_name_arabic": cat_ar,
         "evidence_citations": citations,
         "source_provider": "IslamQA.info",
+        "islamhouse_related": ih_related,
         "source_url": matched_url,
         "source_reference": source_reference,
         "scholar_or_author": "IslamQA.info Scholarly Team",
@@ -1992,6 +2027,7 @@ async def get_fatawa_by_id(
 
 
 api_router.include_router(create_learn_quran_router(db, get_current_user_profile))
+api_router.include_router(islam_house_router)
 app.include_router(api_router)
 
 app.add_middleware(

@@ -21,7 +21,7 @@ import { theme } from '@/src/theme';
 import type { DuaItem } from '@/src/data/duas';
 import { MORNING_EVENING_ADHKAR, AdhkarItem } from '@/src/data/adhkar';
 import { DHIKR_DATA } from '@/src/data/quran/dhikrData';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Circle } from 'react-native-svg';
 import {
   AppButton,
   AppIconButton,
@@ -72,11 +72,11 @@ const SUB_VEINS = [
 ];
 
 // ─── Kintsugi / Customized bead graphic ───────────────────────────────────────────
-export type BeadStyleType = 'gold' | 'emerald' | 'ruby' | 'aqua' | 'onyx' | 'pearl';
+export type BeadStyleType = 'gold' | 'emerald' | 'ruby' | 'aqua' | 'onyx' | 'pearl' | 'dotted' | 'diamond';
 
 const BeadGraphic = memo(function BeadGraphic({ size, darkMode, beadStyle = 'onyx' }: { size: number; darkMode: boolean; beadStyle?: BeadStyleType }) {
   const r = size / 2;
-  
+
   let bgColor = '#050505';
   let bColor = darkMode ? '#2b2210' : '#111111';
   let shadowColor = '#000';
@@ -86,7 +86,11 @@ const BeadGraphic = memo(function BeadGraphic({ size, darkMode, beadStyle = 'ony
   let sheenColor = 'rgba(255,255,255,0.05)';
   let hasVeins = true;
 
-  if (beadStyle === 'gold') {
+  if (beadStyle === 'dotted') {
+    bgColor = '#2a1a15'; bColor = '#120a07'; shadowColor = '#000'; hasVeins = false;
+  } else if (beadStyle === 'diamond') {
+    bgColor = '#1a1d21'; bColor = '#050608'; shadowColor = '#000'; hasVeins = false;
+  } else if (beadStyle === 'gold') {
     bgColor = '#DAA520';
     bColor = '#B8860B';
     shadowColor = darkMode ? '#FFD700' : '#8B6508';
@@ -123,7 +127,7 @@ const BeadGraphic = memo(function BeadGraphic({ size, darkMode, beadStyle = 'ony
       }}
     >
       <LinearGradient
-        colors={beadStyle === 'gold' ? ['#FFF0A0', '#D99A16', '#8F5703', '#E8B52C'] : beadStyle === 'emerald' ? ['#65D98B', '#087A38', '#023A1A', '#0C9A49'] : beadStyle === 'ruby' ? ['#FF7580', '#A71929', '#4E0710', '#C6283A'] : beadStyle === 'aqua' ? ['#7EF5F1', '#0799A4', '#03464D', '#16BBC2'] : beadStyle === 'pearl' ? ['#FFFFFF', '#E8E1D5', '#B7B0A6', '#FAF8F2'] : ['#2a2a2a', '#050505', '#171717', '#000000']}
+        colors={beadStyle === 'gold' ? ['#FFF0A0', '#D99A16', '#8F5703', '#E8B52C'] : beadStyle === 'emerald' ? ['#65D98B', '#087A38', '#023A1A', '#0C9A49'] : beadStyle === 'ruby' ? ['#FF7580', '#A71929', '#4E0710', '#C6283A'] : beadStyle === 'aqua' ? ['#7EF5F1', '#0799A4', '#03464D', '#16BBC2'] : beadStyle === 'pearl' ? ['#FFFFFF', '#E8E1D5', '#B7B0A6', '#FAF8F2'] : beadStyle === 'dotted' ? ['#422b24', '#2a1a15', '#120a07', '#2a1a15'] : beadStyle === 'diamond' ? ['#353b42', '#1a1d21', '#050608', '#1a1d21'] : ['#2a2a2a', '#050505', '#171717', '#000000']}
         start={{ x: 0.08, y: 0 }}
         end={{ x: 0.9, y: 1 }}
         style={StyleSheet.absoluteFillObject}
@@ -138,6 +142,29 @@ const BeadGraphic = memo(function BeadGraphic({ size, darkMode, beadStyle = 'ony
         backgroundColor: 'rgba(255,255,255,0.08)',
         transform: [{ rotate: '-24deg' }],
       }} />
+
+      {beadStyle === 'dotted' && (
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+          <Svg width="100%" height="100%" viewBox="0 0 100 100">
+            {Array.from({ length: 40 }).map((_, i) => (
+              <Circle key={'d'+i} cx={(i*23)%100} cy={(i*17)%100} r="2.5" fill="rgba(255,255,255,0.7)" />
+            ))}
+          </Svg>
+        </View>
+      )}
+      {beadStyle === 'diamond' && (
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+          <Svg width="100%" height="100%" viewBox="0 0 100 100">
+            {Array.from({ length: 15 }).map((_, i) => {
+              const cx = (i*31)%100; const cy = (i*23)%100;
+              return (
+                <Path key={'di'+i} d={`M ${cx} ${cy-5} L ${cx+5} ${cy} L ${cx} ${cy+5} L ${cx-5} ${cy} Z`} fill="rgba(255,255,255,0.8)" />
+              );
+            })}
+          </Svg>
+        </View>
+      )}
+
       {/* Depth shadow at bottom-right */}
       <View style={{
         position: 'absolute', right: 0, bottom: 0,
@@ -336,7 +363,7 @@ export default function TasbihScreen() {
   // ─── Appearance State ────────────────────────────────────────────────────
   const [themeType, setThemeType] = useState<'image' | 'color'>('color');
   const [themeValue, setThemeValue] = useState<string>(isDark ? '#0B1120' : '#F8FAFC');
-  const [counterStyle, setCounterStyle] = useState<'beads' | 'line'>('beads');
+  const [counterStyle, setCounterStyle] = useState<'beads' | 'line' | 'digital' | 'ring'>('beads');
   const [beadStyle, setBeadStyle] = useState<BeadStyleType>('onyx');
   const [showAppearanceModal, setShowAppearanceModal] = useState(false);
 
@@ -358,8 +385,9 @@ export default function TasbihScreen() {
   // ─── Load preferences ─────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const hapticRaw = await AsyncStorage.getItem(HAPTIC_KEY);
-      if (hapticRaw !== null) setHapticEnabled(hapticRaw === 'true');
+
+      // haptic handled by focus effect
+
       const customRaw = await AsyncStorage.getItem(CUSTOM_DHIKR_KEY);
       if (customRaw) setAllPhrases([...BUILTIN_PHRASES, ...JSON.parse(customRaw)]);
       const sessionsRaw = await AsyncStorage.getItem(SESSIONS_KEY);
@@ -368,10 +396,10 @@ export default function TasbihScreen() {
       const appearanceRaw = await AsyncStorage.getItem('hikmah:tasbih:appearance:v1');
       if (appearanceRaw) {
         const parsed = JSON.parse(appearanceRaw);
-        setThemeType('color');
-        setThemeValue(isDark ? '#0B1120' : '#F8FAFC');
-        setCounterStyle('beads');
-        const supportedBeads: BeadStyleType[] = ['gold', 'emerald', 'ruby', 'aqua', 'onyx', 'pearl'];
+        setThemeType(parsed.themeType || 'color');
+        setThemeValue(parsed.themeValue || (isDark ? '#0B1120' : '#F8FAFC'));
+        setCounterStyle(parsed.counterStyle || 'beads');
+        const supportedBeads: BeadStyleType[] = ['gold', 'emerald', 'ruby', 'aqua', 'onyx', 'pearl', 'dotted', 'diamond'];
         setBeadStyle(supportedBeads.includes(parsed.beadStyle) ? parsed.beadStyle : 'onyx');
       } else {
         setThemeValue(isDark ? '#0B1120' : '#F8FAFC');
@@ -426,14 +454,14 @@ export default function TasbihScreen() {
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleIncrement = useCallback(() => {
-    if (!isMuted) { 
-      try { 
-        tickPlayer.seekTo(0); tickPlayer.play(); 
+    if (!isMuted) {
+      try {
+        tickPlayer.seekTo(0); tickPlayer.play();
         if (selectedPhrase?.audioUrl && (profile?.tier === 'premium' || profile?.trialActive)) {
           recitationPlayer.replace({ uri: selectedPhrase.audioUrl });
           recitationPlayer.play();
         }
-      } catch {} 
+      } catch {}
     }
     if (hapticEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
@@ -629,7 +657,7 @@ export default function TasbihScreen() {
   const threadColor = isDark ? '#0b0b0b' : '#202020';
   const threadWidth = 4;
 
-  const saveAppearance = async (newThemeType: 'image' | 'color', newThemeValue: string, newCounterStyle: 'beads' | 'line', newBeadStyle: BeadStyleType) => {
+  const saveAppearance = async (newThemeType: 'image' | 'color', newThemeValue: string, newCounterStyle: 'beads' | 'line' | 'digital' | 'ring', newBeadStyle: BeadStyleType) => {
     setThemeType(newThemeType);
     setThemeValue(newThemeValue);
     setCounterStyle(newCounterStyle);
@@ -651,17 +679,16 @@ export default function TasbihScreen() {
             <Pressable onPress={() => setShowAppearanceModal(false)}><MaterialCommunityIcons name="close" size={24} color={colors.onSurface} /></Pressable>
           </View>
           <ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing.lg }}>
-            <Text style={[styles.sectionTitle, { color: colors.brand, marginTop: 12 }]}>Background</Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-              <Pressable onPress={() => saveAppearance('color', isDark ? '#0B1120' : '#F8FAFC', 'beads', beadStyle)} style={[styles.optBtn, { borderColor: colors.brand, borderWidth: 2 }]}>
-                <Text style={{ color: colors.onSurface }}>Default</Text>
-              </Pressable>
-            </View>
-
             <Text style={[styles.sectionTitle, { color: colors.brand }]}>Counter Style</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-              <Pressable onPress={() => saveAppearance('color', isDark ? '#0B1120' : '#F8FAFC', 'beads', beadStyle)} style={[styles.optBtn, { borderColor: colors.brand, borderWidth: 2 }]}>
+              <Pressable onPress={() => saveAppearance(themeType, themeValue, 'beads', beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, counterStyle === 'beads' && { borderColor: colors.brand, borderWidth: 2 }]}>
                 <Text style={{ color: colors.onSurface }}>Beads</Text>
+              </Pressable>
+              <Pressable onPress={() => saveAppearance(themeType, themeValue, 'digital', beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, counterStyle === 'digital' && { borderColor: colors.brand, borderWidth: 2 }]}>
+                <Text style={{ color: colors.onSurface }}>Digital</Text>
+              </Pressable>
+              <Pressable onPress={() => saveAppearance(themeType, themeValue, 'ring', beadStyle)} style={[styles.optBtn, { borderColor: colors.border }, counterStyle === 'ring' && { borderColor: colors.brand, borderWidth: 2 }]}>
+                <Text style={{ color: colors.onSurface }}>Ring</Text>
               </Pressable>
             </View>
 
@@ -669,7 +696,7 @@ export default function TasbihScreen() {
               <>
                 <Text style={[styles.sectionTitle, { color: colors.brand }]}>Bead Style</Text>
                 <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-                  {(['gold', 'emerald', 'ruby', 'aqua', 'onyx', 'pearl'] as BeadStyleType[]).map(bs => (
+                  {(['gold', 'emerald', 'ruby', 'aqua', 'onyx', 'pearl', 'dotted', 'diamond'] as BeadStyleType[]).map(bs => (
                     <Pressable key={bs} onPress={() => saveAppearance(themeType, themeValue, counterStyle, bs)} style={[styles.optBtn, { borderColor: colors.border }, beadStyle === bs && { borderColor: colors.brand, borderWidth: 2 }]}>
                       <View style={{ alignItems: 'center', gap: 6 }}><BeadGraphic size={28} darkMode={isDark} beadStyle={bs} /><Text style={{ color: colors.onSurface, textTransform: 'capitalize' }}>{bs}</Text></View>
                     </Pressable>
@@ -728,7 +755,72 @@ export default function TasbihScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
           {/* ── TASBIH CARD (Tap anywhere to count) ── */}
-          <Pressable
+          {counterStyle === 'digital' ? (
+            <View style={{ alignItems: 'center', marginVertical: 30 }}>
+              <View style={[styles.digitalDevice, isDark ? {} : { backgroundColor: '#1a4e32', borderColor: '#123924' }]}>
+                {/* Screen */}
+                <View style={styles.digitalScreen}>
+                  <Text style={styles.digitalScreenText}>{count}</Text>
+                </View>
+
+                {/* Controls */}
+                <View style={styles.digitalControls}>
+                  <Pressable onPress={handleDecrement} style={styles.digitalSmallBtn}>
+                    <MaterialCommunityIcons name="minus" size={24} color="#5db77f" />
+                  </Pressable>
+                  <Pressable onPress={handleReset} style={styles.digitalSmallBtn}>
+                    <MaterialCommunityIcons name="reload" size={20} color="#5db77f" />
+                  </Pressable>
+                </View>
+
+                {/* Big Tap Button */}
+                <Pressable onPress={handleIncrement} style={styles.digitalTapBtn}>
+                  <Text style={styles.digitalTapText}>TAP</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : counterStyle === 'ring' ? (
+            <View style={{ alignItems: 'center', marginVertical: 40 }}>
+              <Pressable onPress={handleIncrement} style={{ width: 220, height: 220, alignItems: 'center', justifyContent: 'center' }}>
+                <Svg width={220} height={220} style={{ position: 'absolute' }}>
+                  <Circle
+                    cx={110} cy={110} r={100}
+                    stroke={isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}
+                    strokeWidth={14}
+                    fill="none"
+                  />
+                  <Circle
+                    cx={110} cy={110} r={100}
+                    stroke={colors.brand}
+                    strokeWidth={14}
+                    fill="none"
+                    strokeDasharray={2 * Math.PI * 100}
+                    strokeDashoffset={2 * Math.PI * 100 * (1 - (targetCount > 0 ? Math.min(count / targetCount, 1) : 0))}
+                    strokeLinecap="round"
+                    transform="rotate(-90 110 110)"
+                  />
+                </Svg>
+                <Text style={{ fontSize: 48, fontFamily: theme.font.displayBold, color: isComplete ? colors.brand : colors.onSurface }}>
+                  {count}
+                </Text>
+                {targetCount > 0 && (
+                  <Text style={{ fontSize: 16, color: colors.onSurfaceMuted }}>
+                    / {targetCount}
+                  </Text>
+                )}
+              </Pressable>
+
+              <View style={{ flexDirection: 'row', gap: 40, marginTop: 30 }}>
+                  <Pressable onPress={handleDecrement} style={[styles.ringCtrlBtn, { backgroundColor: isDark ? '#202020' : '#e0e0e0' }]}>
+                    <MaterialCommunityIcons name="minus" size={24} color={colors.onSurface} />
+                  </Pressable>
+                  <Pressable onPress={handleReset} style={[styles.ringCtrlBtn, { backgroundColor: isDark ? '#202020' : '#e0e0e0' }]}>
+                    <MaterialCommunityIcons name="reload" size={24} color={colors.onSurface} />
+                  </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
             onPress={handleIncrement}
             style={({ pressed }) => [
               styles.countingCard,
@@ -790,6 +882,7 @@ export default function TasbihScreen() {
               {counterStyle === 'beads' && beads}
             </View>
           </Pressable>
+          )}
 
           {/* ── Active phrase ── */}
           <View style={[styles.phraseRow, { paddingHorizontal: 20 }]}>
@@ -1062,6 +1155,80 @@ const styles = StyleSheet.create({
   // Tasbih full-width area
   tasbihArea: { width: CARD_WIDTH, position: 'relative', overflow: 'hidden' },
 
+
+  digitalDevice: {
+    width: 200,
+    height: 280,
+    backgroundColor: '#0c2e1b',
+    borderRadius: 80,
+    borderBottomLeftRadius: 100,
+    borderBottomRightRadius: 100,
+    borderWidth: 4,
+    borderColor: '#061a0f',
+    alignItems: 'center',
+    paddingTop: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  digitalScreen: {
+    width: 140,
+    height: 50,
+    backgroundColor: '#101a14',
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#2ecc71',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  digitalScreenText: {
+    fontFamily: 'monospace',
+    fontSize: 34,
+    color: '#2ecc71',
+    fontWeight: 'bold',
+  },
+  digitalControls: {
+    flexDirection: 'row',
+    width: 140,
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  digitalSmallBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#06170d',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#113a22',
+  },
+  digitalTapBtn: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: '#092113',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#195c34',
+    marginTop: 25,
+  },
+  digitalTapText: {
+    color: '#2ecc71',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  ringCtrlBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   countingCard: {
     width: CARD_WIDTH,
     borderRadius: 24,
@@ -1227,7 +1394,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
   },
-  
+
   // Appearance Modal Styles
   sheetCard: {
     width: '100%',
@@ -1248,7 +1415,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   optBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  
+
   tabRow: { flexDirection: 'row', borderBottomWidth: 1 },
   tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabTxt: { fontSize: 12, fontWeight: '700' },

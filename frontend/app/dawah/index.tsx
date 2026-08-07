@@ -17,6 +17,7 @@ import { useTheme } from "@/src/ThemeContext";
 import { theme } from "@/src/theme";
 import { DAWAH_HERO, DAWAH_PARTS, DawahSection } from "@/src/data/dawahData";
 import { AppTextInput } from "@/src/components/ui";
+import { ActionBar } from "@/src/components/ui/ActionBar";
 
 const { width } = Dimensions.get("window");
 
@@ -84,13 +85,9 @@ export default function DawahScreen() {
           <Text style={[styles.headerSubtitle, { color: colors.brand }]}>Why Islam & Following It Correctly</Text>
         </View>
 
-        <Pressable
-          onPress={() => handleShareText(DAWAH_HERO.title, "Explore Why Islam and Following It Correctly on Islamic Hikmah.")}
-          style={styles.shareHeaderBtn}
-          hitSlop={10}
-        >
-          <MaterialCommunityIcons name="share-variant-outline" size={22} color={colors.onSurface} />
-        </Pressable>
+        <ActionBar
+          onShare={() => handleShareText(DAWAH_HERO.title, "Explore Why Islam and Following It Correctly on Islamic Hikmah.")}
+        />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
@@ -105,7 +102,7 @@ export default function DawahScreen() {
             <Text style={styles.bismillahText}>{DAWAH_HERO.arabicText}</Text>
             <Text style={styles.heroTitle}>{DAWAH_HERO.title}</Text>
             <Text style={styles.heroSubtitle}>{DAWAH_HERO.subtitle}</Text>
-            
+
             <View style={styles.hadithHeaderBadge}>
               <Text style={styles.hadithHeaderAr}>{DAWAH_HERO.hadithHeader.arabic}</Text>
               <Text style={styles.hadithHeaderEn}>{DAWAH_HERO.hadithHeader.english}</Text>

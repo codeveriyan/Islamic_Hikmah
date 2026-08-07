@@ -8,22 +8,25 @@ import { SkeletonList } from "@/src/components/SkeletonLoader";
 import { useTranslation } from "@/src/localization";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { theme } from "@/src/theme";
+import { ActionBar } from "@/src/components/ui/ActionBar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { HADITH_BOOKS } from "./index";
 import { HADITH_CHAPTERS } from "@/src/data/hadithChapters";
 import { HADITH_INTRODUCTIONS } from "@/src/data/hadithIntroductions";
+import ShareImageCard from "@/src/components/ShareImageCard";
 import { getHadithFallback } from "@/src/services/cdnContentService";
 import { API_BASE_URL } from "@/src/apiBaseUrl";
 import { AppTextInput } from "@/src/components/ui";
+import HadeethEncEnrichment from "@/src/components/HadeethEncEnrichment";
 // hadithFallback.json (19.3 MB) is no longer bundled.
 // It is fetched from Cloudflare R2 CDN on first use and cached to disk.
-import { 
-  toggleFavourite, 
-  getFavourites, 
-  toggleHadithBookmark, 
-  getHadithBookmarks 
+import {
+  toggleFavourite,
+  getFavourites,
+  toggleHadithBookmark,
+  getHadithBookmarks
 } from "@/src/storage";
 
 type Hadith = {
@@ -173,23 +176,16 @@ export default function HadithDetailScreen() {
 
   const [hadiths, setHadiths] = useState<Hadith[]>([]);
   const [loading, setLoading] = useState(true);
-  // True while a background Sunnah.com refresh is running (after initial data is shown)
   const [bgLoading, setBgLoading] = useState(false);
   const [q, setQ] = useState("");
   const [selectedChapterId, setSelectedChapterId] = useState("all");
-  
-  // View Mode: 'index' (Chapters Table) vs 'hadiths' (Hadith Cards)
   const [viewMode, setViewMode] = useState<"index" | "hadiths">("index");
-
-  // Pagination
   const [limit, setLimit] = useState(15);
   const [scrollProgress, setScrollProgress] = useState(0);
-  
-  // Translation cache states
   const [translatedTexts, setTranslatedTexts] = useState<Record<number, string>>({});
   const [translatingIds, setTranslatingIds] = useState<Set<number>>(new Set());
+  const [shareData, setShareData] = useState<{ visible: boolean; item: Hadith | null }>({ visible: false, item: null });
 
-  // Clear translations when language changes so they re-fetch in the new language
   useEffect(() => {
     setTranslatedTexts({});
   }, [language]);
@@ -209,12 +205,6 @@ export default function HadithDetailScreen() {
     setLimit(15);
   }, [chapter, chapters]);
 
-  // ── PROGRESSIVE HADITH LOADING ──────────────────────────────────────────────
-  // Strategy:
-  //   1. Show data INSTANTLY from memory cache → AsyncStorage → bundled fallback
-  //   2. Kick off a silent background refresh from Sunnah.com, streaming page-by-page
-  //   3. When background refresh completes, save to cache & update state
-  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!book) return;
 
@@ -224,9 +214,6 @@ export default function HadithDetailScreen() {
     const sunnahCollection = SUNNAH_COLLECTION_IDS[book];
     let isMounted = true;
 
-    // ── helpers ────────────────────────────────────────────────────────────────
-    // Fetches hadith fallback from CDN (cached on disk after first download).
-    // Returns empty array if CDN not configured or offline with no cache.
     const getFallbackData = async (): Promise<Hadith[]> => {
       const result = await getHadithFallback(book);
       if (!result.success || !result.data) return [];
@@ -276,16 +263,13 @@ export default function HadithDetailScreen() {
       return fetch(url);
     };
 
-    // ── step 1: show something instantly ──────────────────────────────────────
     const showInitial = async (): Promise<Hadith[]> => {
-      // 1a. memory cache (zero latency)
       if (hadithMemoryCache.has(cacheKey)) {
         const cached = hadithMemoryCache.get(cacheKey)!;
         if (isMounted) { setHadiths(cached); setLoading(false); }
         return cached;
       }
 
-      // 1b. AsyncStorage (fast, typically <200ms)
       const offline = await loadOfflineCache();
       if (offline && offline.length > 0) {
         hadithMemoryCache.set(cacheKey, offline);
@@ -293,7 +277,6 @@ export default function HadithDetailScreen() {
         return offline;
       }
 
-      // 1c. CDN fallback (disk-cached after first fetch, never bundled)
       const fallback = await getFallbackData();
       if (fallback.length > 0) {
         hadithMemoryCache.set(cacheKey, fallback);
@@ -301,11 +284,9 @@ export default function HadithDetailScreen() {
         return fallback;
       }
 
-      // Nothing to show yet – keep spinner until background fetch delivers data
       return [];
     };
 
-    // ── step 2: background refresh from Sunnah.com (streams page by page) ────
     const backgroundRefresh = async (initialData: Hadith[]) => {
       if (!sunnahCollection || !API_BASE_URL) return;
       if (!isMounted) return;
@@ -359,7 +340,6 @@ export default function HadithDetailScreen() {
 
         if (!isMounted) return;
 
-        // Final update & persist to AsyncStorage
         if (accumulated.length > (initialData.length === 0 ? 0 : initialData.length)) {
           hadithMemoryCache.set(cacheKey, accumulated);
           if (isMounted) setHadiths([...accumulated]);
@@ -375,12 +355,10 @@ export default function HadithDetailScreen() {
       }
     };
 
-    // ── step 2b: fallback remote fetch (fawazahmed / AhmedBaset CDN) ──────────
     const remoteFallbackRefresh = async () => {
       if (!isMounted) return;
       setBgLoading(true);
       try {
-        // fawazahmed CDN (for malik and fawazahmed-tagged books)
         if (bookMetaLocal?.source === "fawazahmed" || book === "malik") {
           const [engResponse, araResponse] = await Promise.all([
             fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/eng-${book}.min.json`),
@@ -406,7 +384,6 @@ export default function HadithDetailScreen() {
           }
         }
 
-        // AhmedBaset CDN
         const ahmedBasetFiles: Record<string, string> = {
           nawawi40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/nawawi40.json",
           qudsi40: "https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_book/forties/qudsi40.json",
@@ -444,23 +421,17 @@ export default function HadithDetailScreen() {
       }
     };
 
-    // ── orchestrate ────────────────────────────────────────────────────────────
     showInitial().then((initialData) => {
       if (!isMounted) return;
-      // If initial data came from fallback/cache, still refresh silently
       if (sunnahCollection) {
-        // Run Sunnah.com streaming refresh in background (don't await)
         backgroundRefresh(initialData).catch(() => { if (isMounted) setBgLoading(false); });
       } else {
-        // No Sunnah.com — try CDN fallbacks (only if we have no/minimal data)
         if (initialData.length === 0) {
           remoteFallbackRefresh().catch(() => { if (isMounted) setBgLoading(false); });
         } else {
-          // We have data from cache; still try CDN in background for freshness
           remoteFallbackRefresh().catch(() => { if (isMounted) setBgLoading(false); });
         }
       }
-      // If nothing was shown (no cache, no fallback), keep spinner until bg fetch delivers
       if (initialData.length === 0 && isMounted) setLoading(true);
     });
 
@@ -480,6 +451,11 @@ export default function HadithDetailScreen() {
     } catch {}
   };
 
+  const handleShareAsImage = (item: Hadith) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setShareData({ visible: true, item });
+  };
+
   const handleTranslate = async (item: Hadith) => {
     if (translatedTexts[item.hadithnumber] || translatingIds.has(item.hadithnumber)) return;
 
@@ -491,10 +467,10 @@ export default function HadithDetailScreen() {
 
       const targetLang = language === "en" ? "en" : language;
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(textToTranslate)}`;
-      
+
       const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data && data[0]) {
         const translatedText = data[0].map((x: any) => x[0]).join("");
         setTranslatedTexts((prev) => ({
@@ -513,11 +489,10 @@ export default function HadithDetailScreen() {
     }
   };
 
-  // Filter Hadiths based on query and selected chapter
   const filtered = useMemo(() => {
     const selectedChapter = chapters.find((item) => item.id === selectedChapterId);
     const chapterHadiths = selectedChapter
-      ? hadiths.filter((h) => 
+      ? hadiths.filter((h) =>
           (h.bookNumber !== undefined && h.bookNumber === Number(selectedChapter.id)) ||
           (h.hadithnumber >= selectedChapter.first && h.hadithnumber <= selectedChapter.last)
         )
@@ -528,24 +503,22 @@ export default function HadithDetailScreen() {
     if (isNum) {
       return chapterHadiths.filter((h) => h.hadithnumber === Number(q));
     }
-    return chapterHadiths.filter((h) => 
-      h.text.toLowerCase().includes(q.toLowerCase()) || 
+    return chapterHadiths.filter((h) =>
+      h.text.toLowerCase().includes(q.toLowerCase()) ||
       (h.arabicText && h.arabicText.includes(q))
     );
   }, [hadiths, q, chapters, selectedChapterId]);
 
-  // Filtered chapters for the Chapters Index view
   const filteredChapters = useMemo(() => {
     if (!q) return chapters;
     const query = q.toLowerCase();
-    return chapters.filter(c => 
-      c.name.toLowerCase().includes(query) || 
+    return chapters.filter(c =>
+      c.name.toLowerCase().includes(query) ||
       (c.arabicName && c.arabicName.includes(query)) ||
       c.id.includes(query)
     );
   }, [chapters, q]);
 
-  // Paginated subset for Hadith cards
   const paginated = useMemo(() => {
     return filtered.slice(0, limit);
   }, [filtered, limit]);
@@ -563,7 +536,6 @@ export default function HadithDetailScreen() {
     Haptics.selectionAsync().catch(() => {});
   };
 
-  // Render individual Hadith card
   const renderItem = useCallback(({ item }: { item: Hadith }) => {
     const isTranslating = translatingIds.has(item.hadithnumber);
     const tamilText = translatedTexts[item.hadithnumber];
@@ -574,23 +546,35 @@ export default function HadithDetailScreen() {
     return (
       <View style={[styles.hadithCard, { borderBottomColor: colors.border }]}>
         <View style={styles.cardHeader}>
-          <View style={[styles.badge, { backgroundColor: colors.brand + "18" }]}>
-            <Text style={[styles.badgeTxt, { color: colors.brand }]}>Hadith #{item.hadithnumber}</Text>
+          <View style={styles.badgeRow}>
+            <View style={[styles.badge, { backgroundColor: colors.brand + "18" }]}>
+              <Text style={[styles.badgeTxt, { color: colors.brand }]}>Hadith #{item.hadithnumber}</Text>
+            </View>
+            <HadeethEncEnrichment
+              collectionId={String(book)}
+              hadithNumber={item.hadithnumber}
+              hadithText={item.text}
+              language={language}
+              compact={true}
+            />
           </View>
           <View style={styles.headerRight}>
             <Pressable onPress={() => handleToggleFavourite(item)} hitSlop={8} style={styles.headerBtn}>
-              <MaterialCommunityIcons 
-                name={isFav ? "heart" : "heart-outline"} 
-                size={20} 
-                color={isFav ? colors.error : colors.onSurfaceMuted} 
+              <MaterialCommunityIcons
+                name={isFav ? "heart" : "heart-outline"}
+                size={20}
+                color={isFav ? colors.error : colors.onSurfaceMuted}
               />
             </Pressable>
             <Pressable onPress={() => handleToggleBookmark(item)} hitSlop={8} style={styles.headerBtn}>
-              <MaterialCommunityIcons 
-                name={isBookmarked ? "bookmark" : "bookmark-outline"} 
-                size={20} 
-                color={isBookmarked ? colors.brand : colors.onSurfaceMuted} 
+              <MaterialCommunityIcons
+                name={isBookmarked ? "bookmark" : "bookmark-outline"}
+                size={20}
+                color={isBookmarked ? colors.brand : colors.onSurfaceMuted}
               />
+            </Pressable>
+            <Pressable onPress={() => handleShareAsImage(item)} hitSlop={8} style={styles.headerBtn}>
+              <MaterialCommunityIcons name="image-outline" size={20} color={colors.onSurfaceMuted} />
             </Pressable>
             <Pressable onPress={() => handleShare(item)} hitSlop={8} style={styles.headerBtn}>
               <MaterialCommunityIcons name="share-variant" size={20} color={colors.onSurfaceMuted} />
@@ -599,9 +583,9 @@ export default function HadithDetailScreen() {
         </View>
 
         {item.arabicText ? (
-          <Text 
+          <Text
             style={[
-              styles.arabicText, 
+              styles.arabicText,
               { color: colors.onSurface, fontFamily: arabicFontFamily || "NotoNaskhArabic", fontSize: arabicSize, lineHeight: arabicLineHeight, letterSpacing: arabicLetterSpacing }
             ]}
           >
@@ -613,7 +597,6 @@ export default function HadithDetailScreen() {
           <Text style={[styles.englishText, { color: resolvedFontColor, fontSize: bodySize, lineHeight: bodyLineHeight, letterSpacing }]}>{item.text}</Text>
         ) : null}
 
-        {/* Translation Section */}
         {(language !== "en" || ((!item.text || item.text === "[object Object]") && item.arabicText)) && (
           tamilText ? (
             <View style={[styles.tamilBox, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
@@ -647,7 +630,6 @@ export default function HadithDetailScreen() {
           )
         )}
 
-        {/* Reference & Arabic Reference Footer (Matching Sunnah.com) */}
         {(() => {
           const itemChapter = chapters.find(c => item.hadithnumber >= c.first && item.hadithnumber <= c.last);
           const bookNum = itemChapter?.id || "1";
@@ -659,6 +641,12 @@ export default function HadithDetailScreen() {
             </View>
           );
         })()}
+        <HadeethEncEnrichment
+          collectionId={String(book)}
+          hadithNumber={item.hadithnumber}
+          hadithText={item.text}
+          language={language}
+        />
       </View>
     );
   }, [colors, translatedTexts, translatingIds, bookMeta, favIds, bookmarkedIds, language]);
@@ -675,23 +663,22 @@ export default function HadithDetailScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={["top"]}>
-      {/* Top Header */}
       <View style={styles.header}>
-        <Pressable 
+        <Pressable
           onPress={() => {
             if (viewMode === "hadiths" && chapters.length > 0) {
               setViewMode("index");
             } else {
               router.back();
             }
-          }} 
-          hitSlop={10} 
+          }}
+          hitSlop={10}
           style={styles.backBtn}
         >
-          <MaterialCommunityIcons 
-            name={viewMode === "hadiths" && chapters.length > 0 ? "format-list-bulleted" : "chevron-left"} 
-            size={26} 
-            color={colors.onSurface} 
+          <MaterialCommunityIcons
+            name={viewMode === "hadiths" && chapters.length > 0 ? "format-list-bulleted" : "chevron-left"}
+            size={26}
+            color={colors.onSurface}
           />
         </Pressable>
 
@@ -702,17 +689,9 @@ export default function HadithDetailScreen() {
           </Text>
         </View>
 
-        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-          <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10} testID="hadith-home">
-            <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
-          </Pressable>
-          <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
-            <MaterialCommunityIcons name="cog-outline" size={24} color={colors.onSurface} />
-          </Pressable>
-        </View>
+        <ActionBar />
       </View>
 
-      {/* Background sync indicator — shown while Sunnah.com refresh runs */}
       {bgLoading && hadiths.length > 0 && (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: colors.brand + "12" }}>
           <ActivityIndicator size="small" color={colors.brand} />
@@ -722,7 +701,6 @@ export default function HadithDetailScreen() {
         </View>
       )}
 
-      {/* Mode Switcher Tabs (Chapters Index vs Read Hadiths) */}
       {chapters.length > 0 && (
         <View style={[styles.modeTabsRow, { backgroundColor: colors.surfaceSecondary }]}>
           <Pressable
@@ -735,10 +713,10 @@ export default function HadithDetailScreen() {
               viewMode === "index" && { backgroundColor: colors.brand },
             ]}
           >
-            <MaterialCommunityIcons 
-              name="table-of-contents" 
-              size={18} 
-              color={viewMode === "index" ? colors.onBrandPrimary : colors.onSurfaceMuted} 
+            <MaterialCommunityIcons
+              name="table-of-contents"
+              size={18}
+              color={viewMode === "index" ? colors.onBrandPrimary : colors.onSurfaceMuted}
             />
             <Text style={[styles.modeTabTxt, { color: viewMode === "index" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>
               Chapters Index ({chapters.length})
@@ -755,10 +733,10 @@ export default function HadithDetailScreen() {
               viewMode === "hadiths" && { backgroundColor: colors.brand },
             ]}
           >
-            <MaterialCommunityIcons 
-              name="book-open-variant" 
-              size={18} 
-              color={viewMode === "hadiths" ? colors.onBrandPrimary : colors.onSurfaceMuted} 
+            <MaterialCommunityIcons
+              name="book-open-variant"
+              size={18}
+              color={viewMode === "hadiths" ? colors.onBrandPrimary : colors.onSurfaceMuted}
             />
             <Text style={[styles.modeTabTxt, { color: viewMode === "hadiths" ? colors.onBrandPrimary : colors.onSurfaceMuted }]}>
               Read Hadiths
@@ -767,7 +745,6 @@ export default function HadithDetailScreen() {
         </View>
       )}
 
-      {/* Reading progress bar in Hadiths View */}
       {viewMode === "hadiths" && filtered.length > 0 && (() => {
         const loadedFraction = Math.min(limit, filtered.length) / (filtered.length || 1);
         const overallPct = Math.min(100, Math.max(0, Math.round(scrollProgress * loadedFraction * 100)));
@@ -778,7 +755,6 @@ export default function HadithDetailScreen() {
         );
       })()}
 
-      {/* Search Input Bar */}
       <View style={[styles.searchWrap, { backgroundColor: colors.surfaceSecondary }]}>
         <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceMuted} />
         <AppTextInput
@@ -802,11 +778,9 @@ export default function HadithDetailScreen() {
         )}
       </View>
 
-      {/* VIEW 1: CHAPTERS TABLE / INDEX VIEW (Image-1 Layout + Image-2 Intro Card) */}
       {viewMode === "index" && chapters.length > 0 ? (
         <ScrollView contentContainerStyle={styles.chaptersIndexContainer} showsVerticalScrollIndicator={false}>
-          
-          {/* Book Introduction Hero Card (Image-2 Design) */}
+
           <View style={[styles.bookIntroCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             <View style={styles.bookIntroTopRow}>
               <Text style={[styles.bookIntroTitleEng, { color: colors.onSurface }]}>
@@ -824,7 +798,6 @@ export default function HadithDetailScreen() {
             </Text>
           </View>
 
-          {/* Chapters Header Card */}
           <View style={[styles.chaptersHeaderCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             <View style={styles.chaptersHeaderRow}>
               <View style={[styles.chapterCountBadge, { backgroundColor: colors.brand + "18" }]}>
@@ -843,10 +816,8 @@ export default function HadithDetailScreen() {
             </View>
           </View>
 
-          {/* Chapters Table Rows (Image-1 Design with Glitch Fix) */}
           <View style={[styles.chaptersTable, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             {filteredChapters.map((item, index) => {
-              // Glitch Fix: Ensure clean numeric display without text overflow
               const isNumeric = !isNaN(Number(item.id)) && Number(item.id) > 0;
               const displayNum = isNumeric ? item.id : String(index + 1);
 
@@ -861,14 +832,12 @@ export default function HadithDetailScreen() {
                     pressed && { backgroundColor: colors.brand + "10" },
                   ]}
                 >
-                  {/* Chapter ID Pill */}
                   <View style={[styles.chapterNumPill, { backgroundColor: colors.brand + "18" }]}>
                     <Text style={[styles.chapterNumTxt, { color: colors.brand }]} numberOfLines={1}>
                       {displayNum}
                     </Text>
                   </View>
 
-                  {/* Chapter Titles */}
                   <View style={{ flex: 1, marginHorizontal: 12 }}>
                     <Text style={[styles.chapterNameEng, { color: colors.onSurface }]}>
                       {item.name}
@@ -880,7 +849,6 @@ export default function HadithDetailScreen() {
                     ) : null}
                   </View>
 
-                  {/* Chapter Hadith Range & Arrow */}
                   <View style={{ alignItems: "flex-end" }}>
                     <Text style={[styles.chapterRangeBadge, { color: colors.onSurfaceMuted }]}>
                       {item.first} to {item.last}
@@ -893,9 +861,7 @@ export default function HadithDetailScreen() {
           </View>
         </ScrollView>
       ) : (
-        /* VIEW 2: HADITH NARRATION CARDS VIEW */
         <>
-          {/* Horizontal Chips Bar in Hadiths View */}
           {chapters.length > 0 && (
             <View style={styles.chapterSection}>
               <ScrollView
@@ -1003,12 +969,23 @@ export default function HadithDetailScreen() {
           )}
         </>
       )}
+
+      {shareData.item && (
+        <ShareImageCard
+          type="hadith"
+          visible={shareData.visible}
+          onClose={() => setShareData({ visible: false, item: null })}
+          arabic={shareData.item.arabicText || ""}
+          translation={shareData.item.text || ""}
+          reference={`${bookMeta?.name || book} - Hadith #${shareData.item.hadithnumber}`}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
     ...Platform.select({
       web: { height: "100%", overflow: "hidden" } as any
@@ -1175,6 +1152,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   badgeTxt: { fontSize: 12, fontWeight: "800" },
+  badgeRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
   headerBtn: { padding: 4 },
   englishText: { fontFamily: "Figtree_400Regular", marginTop: 4 },

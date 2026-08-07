@@ -72,6 +72,11 @@ export interface FatawaItem {
   updated_at?: string | null;
   catalog_version: number;
   content_version: number;
+  islamhouse_related?: {
+    islamhouse_title: string;
+    islamhouse_id: number;
+    match_count: number;
+  } | null;
 }
 
 export interface FatawaCategoryMeta {

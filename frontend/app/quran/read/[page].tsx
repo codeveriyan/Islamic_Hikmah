@@ -20,9 +20,15 @@ import tafsirIndexData from "@/src/data/quran/tafsirIndex.json";
 import { SURAH_LIST } from "@/src/data/surahList";
 import naqaaReciters from "@/src/data/quran/naqaaReciters.json";
 import { getTafsirSurah } from "@/src/services/cdnContentService";
+import {
+  getStoredTranslationKey,
+  getSurahTranslation,
+  setStoredTranslationKey,
+} from "@/src/services/quranEncService";
 
 const tafsirMemoryCache = new Map<string, any>();
 // surahInfoDetailed (6.9 MB), transliterationWbw (1.6 MB), and
+import ShareImageCard from "@/src/components/ShareImageCard";
 // transliterationTajweed (683 KB) are lazy-required inside useMemo below
 // so they are NOT parsed during app startup.
 import {
@@ -115,6 +121,7 @@ type MushafToken = {
   surahNumber: number;
   ayahNumber: number;
   absoluteNumber: number;
+  wordIndex?: number;
 };
 type MushafRenderLine =
   | { type: "surah_name"; line: number; surah: number }
@@ -141,6 +148,7 @@ const QURAN: LocalSurah[] = quranData as LocalSurah[];
 const PAGE_MAPPING: PageMap[] = pageMappingData as PageMap[];
 const QPC_LAYOUT = qpcV4LayoutData as Record<string, QpcLayoutLine[]>;
 const TOTAL_PAGES = 604;
+const QURANENC_TRANSLATION_ID = -1;
 const JUZ_START_PAGES = [
   1, 22, 42, 62, 82, 102, 122, 142, 162, 182,
   202, 222, 242, 262, 282, 302, 322, 342, 362, 382,
@@ -221,13 +229,14 @@ function getMushafTokenStream(): MushafToken[] {
   QURAN.forEach(surah => {
     surah.ayahs.forEach(ayah => {
       absoluteNumber += 1;
-      tokenizeMushafVerse(surah.number, ayah.numberInSurah, ayah.arabic).forEach(word => {
+      tokenizeMushafVerse(surah.number, ayah.numberInSurah, ayah.arabic).forEach((word, wordIndex) => {
         tokens.push({
           kind: "word",
           text: word,
           surahNumber: surah.number,
           ayahNumber: ayah.numberInSurah,
           absoluteNumber,
+          wordIndex,
         });
       });
       tokens.push({
@@ -684,7 +693,7 @@ export default function QuranPageReader() {
 
   // ─── Core UI State ─────────────────────────────────────────────────────────
   const [readingMode, setReadingMode] = useState<"mushaf" | "arabic" | "verseByVerse" | "translation">("arabic");
-  
+
   // Font scale sizes mapped dynamically (Quran.com style scales 1-10)
   const [fontSizeArabicScale, setFontSizeArabicScale] = useState(4); // Default level 4
   const [fontSizeTransScale, setFontSizeTransScale] = useState(3);   // Default level 3
@@ -706,6 +715,7 @@ export default function QuranPageReader() {
   // ─── Surah Selector (Feature 1) ───────────────────────────────────────────
   const [showSurahSelector, setShowSurahSelector] = useState(false);
   const [surahSearchQuery, setSurahSearchQuery] = useState("");
+  const [shareData, setShareData] = useState<{ visible: boolean; arabic: string; translation: string; ref: string }>({ visible: false, arabic: "", translation: "", ref: "" });
 
   // ─── Modals ────────────────────────────────────────────────────────────────
   const [speakingAyahKey, setSpeakingAyahKey] = useState<string | null>(null);
@@ -782,13 +792,20 @@ export default function QuranPageReader() {
   const [showTranslationsDropdown, setShowTranslationsDropdown] = useState(false);
   const [allTranslations, setAllTranslations] = useState<any[]>([]);
   const [selectedTranslationId, setSelectedTranslationId] = useState<number>(131); // Single active translation
+  const [quranEncTranslationKey, setQuranEncTranslationKey] = useState<string | null>(null);
   const [translationTexts, setTranslationTexts] = useState<Record<string, Record<number, string>>>({});
   const [searchTransQuery, setSearchTransQuery] = useState("");
   const [showFootnotes, setShowFootnotes] = useState(true);
+  const selectedTranslationName = useMemo(() => {
+    if (selectedTranslationId === QURANENC_TRANSLATION_ID && quranEncTranslationKey) {
+      return `QuranEnc · ${quranEncTranslationKey.replace(/_/g, " ")}`;
+    }
+    return allTranslations.find((translation) => translation.id === selectedTranslationId)?.name || "Dr. Mustafa Khattab, The Clear Quran";
+  }, [allTranslations, quranEncTranslationKey, selectedTranslationId]);
 
   // ─── Verse Overflow Menu & Features (Screenshot 4) ────────────────────────
   const [overflowVerse, setOverflowVerse] = useState<{ surah: number; ayah: number } | null>(null);
-  
+
   const [showCompareModal, setShowCompareModal] = useState<{ surah: number; ayah: number } | null>(null);
   const [compareData, setCompareData] = useState<any[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -966,10 +983,6 @@ export default function QuranPageReader() {
         key={`${index}-${segment.text}`}
         style={{
           color: getTajweedColor(segment.rule, mode === "dark", colors.onSurface),
-          fontFamily: fontFam,
-          fontSize: fontSizeArabic,
-          lineHeight: fontSizeArabic * 2.3,
-          letterSpacing: 0,
         }}
       >
         {segment.text}
@@ -1001,7 +1014,7 @@ export default function QuranPageReader() {
         const response = await fetch("https://everyayah.com/data/recitations.js");
         const text = await response.text();
         const data = JSON.parse(text.trim());
-        
+
         const dynamicList: ApiReciter[] = [];
         Object.keys(data).forEach((key) => {
           if (key === "ayahCount") return;
@@ -1017,7 +1030,7 @@ export default function QuranPageReader() {
             category: "Recitations",
           });
         });
-        
+
         if (dynamicList.length > 0) {
           const dynamicReciterIds = new Set(dynamicList.map(reciterIdentity));
           const chapterFallbacks = FALLBACK_RECITERS.filter(
@@ -1079,8 +1092,15 @@ export default function QuranPageReader() {
         const savedAutoScroll = await AsyncStorage.getItem("quran_auto_scroll_to_verse");
         if (savedAutoScroll) setAutoScroll(savedAutoScroll === "true");
 
-        const transId = await AsyncStorage.getItem("quran_selected_translation_id");
-        if (transId) setSelectedTranslationId(parseInt(transId, 10));
+        const storedQuranEncKey = await getStoredTranslationKey();
+        if (storedQuranEncKey) {
+          setQuranEncTranslationKey(storedQuranEncKey);
+          setSelectedTranslationId(QURANENC_TRANSLATION_ID);
+        } else {
+          setQuranEncTranslationKey(null);
+          const transId = await AsyncStorage.getItem("quran_selected_translation_id");
+          if (transId) setSelectedTranslationId(parseInt(transId, 10));
+        }
 
         const wbw = await AsyncStorage.getItem("quran_wbw_enabled");
         if (wbw) setWbwEnabled(wbw === "true");
@@ -1175,28 +1195,32 @@ export default function QuranPageReader() {
         const id = selectedTranslationId;
         const uniqueSurahs = Array.from(new Set(pageVerses.map(v => v.surahNumber)));
         for (const sId of uniqueSurahs) {
-          const ck = `cached_trans_${id}_surah_${sId}`;
           let list: any[] = [];
-          const cached = await AsyncStorage.getItem(ck);
-          if (cached) { list = JSON.parse(cached); }
-          else {
-            const r = await fetch(`https://api.quran.com/api/v4/quran/translations/${id}?chapter_number=${sId}`);
-            const d = await r.json();
-            list = d.translations || [];
-            if (list.length > 0) await AsyncStorage.setItem(ck, JSON.stringify(list));
+          if (id === QURANENC_TRANSLATION_ID && quranEncTranslationKey) {
+            list = await getSurahTranslation(quranEncTranslationKey, sId);
+          } else {
+            const ck = `cached_trans_${id}_surah_${sId}`;
+            const cached = await AsyncStorage.getItem(ck);
+            if (cached) { list = JSON.parse(cached); }
+            else {
+              const r = await fetch(`https://api.quran.com/api/v4/quran/translations/${id}?chapter_number=${sId}`);
+              const d = await r.json();
+              list = d.translations || [];
+              if (list.length > 0) await AsyncStorage.setItem(ck, JSON.stringify(list));
+            }
           }
           list.forEach((t: any, index: number) => {
-            const ayahNum = index + 1;
+            const ayahNum = id === QURANENC_TRANSLATION_ID ? Number(t.aya) : index + 1;
             const key = `${sId}-${ayahNum}`;
             if (!updated[key]) updated[key] = {};
-            updated[key][id] = t.text;
+            updated[key][id] = id === QURANENC_TRANSLATION_ID ? t.translation : t.text;
           });
         }
         setTranslationTexts(updated);
       } catch (e) { console.warn("Trans fetch failed:", e); }
     };
     fetchTrans();
-  }, [currentPageNum, selectedTranslationId]);
+  }, [currentPageNum, quranEncTranslationKey, selectedTranslationId]);
 
   // ─── Fetch: WBW data when enabled ─────────────────────────────────────────
   useEffect(() => {
@@ -1308,11 +1332,11 @@ export default function QuranPageReader() {
     let isStrong = false;
     let isItalic = false;
     const segments: { text: string; bold: boolean; italic: boolean; heading: boolean }[] = [];
-    
+
     for (let i = 0; i < parts.length; i++) {
       const token = parts[i];
       if (!token) continue;
-      
+
       if (token.startsWith("<") && token.endsWith(">")) {
         const lowerToken = token.toLowerCase();
         if (lowerToken.startsWith("<h") && !lowerToken.startsWith("</")) {
@@ -1342,7 +1366,7 @@ export default function QuranPageReader() {
           .replace(/&mdash;/g, "—")
           .replace(/&#39;/g, "'")
           .replace(/&quot;/g, '"');
-        
+
         segments.push({
           text: decoded,
           bold: isStrong,
@@ -1351,7 +1375,7 @@ export default function QuranPageReader() {
         });
       }
     }
-    
+
     return (
       <Text style={{ lineHeight: 22 }}>
         {segments.map((seg, idx) => {
@@ -1367,7 +1391,7 @@ export default function QuranPageReader() {
           if (seg.italic) {
             textStyles.push({ fontStyle: "italic" });
           }
-          
+
           return (
             <Text key={idx} style={textStyles}>
               {seg.text}
@@ -1538,7 +1562,7 @@ export default function QuranPageReader() {
       }
       player.replace({ uri: url });
     }
-    
+
     try {
       (player as any).playbackRate = playbackSpeed;
       (player as any).muted = isMuted;
@@ -1693,6 +1717,11 @@ export default function QuranPageReader() {
     } catch {}
   };
 
+  const handleShareAsImage = (arabic: string, translation: string, ref: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setShareData({ visible: true, arabic, translation, ref });
+  };
+
   // ─── Advanced Copy Exec ──────────────────────────────────────────────────
   const executeAdvancedCopy = async (verse: any) => {
     let copyText = "";
@@ -1735,8 +1764,12 @@ export default function QuranPageReader() {
   // ─── Translation toggling ─────────────────────────────────────────────────
   const handleToggleTranslation = async (id: number) => {
     Haptics.selectionAsync().catch(() => {});
+    setQuranEncTranslationKey(null);
     setSelectedTranslationId(id);
-    await AsyncStorage.setItem("quran_selected_translation_id", String(id));
+    await Promise.all([
+      AsyncStorage.setItem("quran_selected_translation_id", String(id)),
+      setStoredTranslationKey(""),
+    ]);
     setShowTranslationsList(false); // Single selection closes modal
   };
 
@@ -1920,22 +1953,22 @@ export default function QuranPageReader() {
       } else {
         const total = pageVerses.length;
         let count = 0;
-        
+
         for (const v of pageVerses) {
           count++;
           setDownloadProgress(`Downloading verse ${count} of ${total}...`);
-          
+
           const url = getReciterAudioUrl(selectedReciter, v.surahNumber, v.ayahNumber, v.absoluteNumber);
           if (!url) throw new Error(`Audio unavailable for ${v.surahNumber}:${v.ayahNumber}`);
           const filename = `everyayah_${selectedReciter.id}_${v.surahNumber}_${v.ayahNumber}.mp3`;
           const localUri = `${(FileSystem as any).documentDirectory}${filename}`;
-          
+
           const fileInfo = await FileSystem.getInfoAsync(localUri);
           if (!fileInfo.exists) {
             await FileSystem.downloadAsync(url, localUri);
           }
         }
-        
+
         Alert.alert("Success", `Recitation for this page successfully cached for offline use.`);
       }
     } catch (err) {
@@ -2067,7 +2100,7 @@ export default function QuranPageReader() {
         {readingMode !== "mushaf" && pageVerses.filter(v => v.ayahNumber === 1).map(verse => (
           <View key={`card-${verse.surahNumber}`} style={[styles.surahCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             <View style={styles.cardLayoutRow}>
-              
+
               {/* Left Column: Surah Title */}
               <View style={styles.cardLeftCol}>
                 <View style={styles.cardTitleWithIcon}>
@@ -2098,7 +2131,7 @@ export default function QuranPageReader() {
                 <Pressable onPress={() => setShowTranslationsDropdown(!showTranslationsDropdown)}
                   style={[styles.transPillBtnInsideCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <Text style={[styles.transPillBtnTextInsideCard, { color: colors.onSurface }]}>
-                    Translation: {allTranslations.find(t => t.id === selectedTranslationId)?.name?.substring(0, 16) || "Dr. Mustafa Khattab"}...
+                    Translation: {selectedTranslationName.substring(0, 16)}...
                   </Text>
                   <MaterialCommunityIcons name={showTranslationsDropdown ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurface} />
                 </Pressable>
@@ -2221,14 +2254,37 @@ export default function QuranPageReader() {
                         color: colors.onSurface,
                         fontFamily: getArabicFontFamily(quranScript),
                         fontSize: mushafFontSize,
-                        lineHeight: Math.max(32, Math.min(46, mushafFontSize * 1.68)),
+                        lineHeight: mushafFontSize * 1.8,
                         textAlign: line.centered ? "center" : "justify",
                       },
                     ]}
                   >
-                    {line.tokens.map((token, tokenIndex) => {
-                      const isHighlighted =
-                        highlightActive && playingAyah?.absolute === token.absoluteNumber;
+                  {line.tokens.map((token, tokenIndex) => {
+                    const isHighlighted = highlightActive && playingAyah?.absolute === token.absoluteNumber;
+
+                    let displayedWord = token.text;
+                      let isTajweed = false;
+                      if (quranScript === "tajweed" && token.kind === "word" && token.wordIndex !== undefined) {
+                        const fullTajweed = tajweedTexts[`${token.surahNumber}:${token.ayahNumber}`];
+                        if (fullTajweed) {
+                          // Fix Tajweed tags that span across spaces (e.g. [f:81[foo bar])
+                          // so they don't break when we split the ayah into words
+                          const fixedTajweed = fullTajweed.replace(/\[([a-z]+(?::\d+)?)\[([^\]]+)\]/gi, (match: string, code: string, inner: string) => {
+                            if (inner.includes(' ')) {
+                              return inner.split(' ').map((part: string) => `[${code}[${part}]`).join(' ');
+                            }
+                            return match;
+                          });
+
+                          const words = fixedTajweed.trim().split(/ +/);
+                          const tw = words[token.wordIndex];
+                          if (tw) {
+                            displayedWord = tw;
+                            isTajweed = true;
+                          }
+                        }
+                      }
+
                       return (
                         <Text
                           key={`${line.line}-${token.absoluteNumber}-${tokenIndex}`}
@@ -2250,7 +2306,13 @@ export default function QuranPageReader() {
                             },
                           ]}
                         >
-                          {token.text}
+                          {isTajweed
+                            ? parseTajweedText(displayedWord).map((seg, idx) => (
+                                <Text key={idx} style={{ color: getTajweedColor(seg.rule, mode === "dark", isHighlighted ? colors.brand : colors.onSurface) }}>
+                                  {seg.text}
+                                </Text>
+                              ))
+                            : displayedWord}
                           {tokenIndex < line.tokens.length - 1 ? " " : ""}
                         </Text>
                       );
@@ -2343,6 +2405,9 @@ export default function QuranPageReader() {
                       <Pressable onPress={() => handleCopyVerse(verse.arabicText, verse.translationText, `${verse.surahNumber}:${verse.ayahNumber}`)}>
                         <MaterialCommunityIcons name="content-copy" size={20} color={colors.onSurfaceMuted} />
                       </Pressable>
+                      <Pressable onPress={() => handleShareAsImage(verse.arabicText, verse.translationText, `Surah Al-${verse.surahName} ${verse.surahNumber}:${verse.ayahNumber}`)}>
+                        <MaterialCommunityIcons name="image-outline" size={20} color={colors.onSurfaceMuted} />
+                      </Pressable>
                       <Pressable onPress={() => handleShareVerse(verse.arabicText, verse.translationText, `Quran ${verse.surahNumber}:${verse.ayahNumber}`)}>
                         <MaterialCommunityIcons name="share-variant-outline" size={20} color={colors.onSurfaceMuted} />
                       </Pressable>
@@ -2397,7 +2462,7 @@ export default function QuranPageReader() {
                     style={{ gap: 6, marginTop: 4 }}
                   >
                     <Text style={[styles.transAuthorLabel, { color: colors.brand }]}>
-                      {(allTranslations.find(t => t.id === selectedTranslationId)?.name || "Translation").toUpperCase()}:
+                      {selectedTranslationName.toUpperCase()}:
                     </Text>
                     <Text style={[styles.transVbV, { fontSize: fontSizeTrans, color: colors.onSurfaceSecondary }]}>
                       {selectedTranslationId === 131 ? verse.translationText : (translationTexts[vKey]?.[selectedTranslationId] || "Loading...")}
@@ -2697,7 +2762,7 @@ export default function QuranPageReader() {
                   {/* Preview Box */}
                   <View style={[styles.previewBox, { borderColor: colors.border, marginBottom: 16 }]}>
                     <Text style={{ fontSize: 10, alignSelf: "flex-start", color: colors.onSurfaceMuted, marginBottom: 4 }}>Preview:</Text>
-                    <Text style={[styles.previewArabic, { fontSize: fontSizeArabic, color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَٰনِ الرَّহِيمِ</Text>
+                    <Text style={[styles.previewArabic, { fontSize: fontSizeArabic, color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّহِيمِ</Text>
                     <Text style={[styles.previewTrans, { fontSize: fontSizeTrans, color: colors.onSurfaceMuted }]}>In the Name of Allah — the Most Compassionate, Most Merciful</Text>
                   </View>
 
@@ -2705,7 +2770,7 @@ export default function QuranPageReader() {
                   <Pressable onPress={() => { setShowSettings(false); setShowTranslationsList(true); }}
                     style={[styles.reciterRow, { borderColor: colors.border, marginBottom: 16 }]}>
                     <Text style={[styles.reciterRowText, { color: colors.brand }]}>
-                      {allTranslations.find(t => t.id === selectedTranslationId)?.name || "Dr. Mustafa Khattab, The Clear Quran"}
+                      {selectedTranslationName}
                     </Text>
                     <MaterialCommunityIcons name="chevron-right" size={20} color={colors.brand} />
                   </Pressable>
@@ -2743,7 +2808,7 @@ export default function QuranPageReader() {
                   {/* Preview Box */}
                   <View style={[styles.previewBox, { borderColor: colors.border, marginBottom: 16 }]}>
                     <Text style={{ fontSize: 10, alignSelf: "flex-start", color: colors.onSurfaceMuted, marginBottom: 4 }}>Preview:</Text>
-                    <Text style={[styles.previewArabic, { fontSize: fontSizeArabic, color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَٰনِ الرَّহِيمِ</Text>
+                    <Text style={[styles.previewArabic, { fontSize: fontSizeArabic, color: colors.onSurface }]}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّহِيمِ</Text>
                     <Text style={[styles.previewTrans, { fontSize: fontSizeTrans, color: colors.onSurfaceMuted }]}>In the Name of Allah — the Most Compassionate, Most Merciful</Text>
                   </View>
 
@@ -2869,7 +2934,7 @@ export default function QuranPageReader() {
                   <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginBottom: 12 }}>
                     Select your preferred language. The verse Tafsir viewer will show commentary in this language.
                   </Text>
-                  
+
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                     {[
                       { id: "english", label: "English" },
@@ -2960,7 +3025,7 @@ export default function QuranPageReader() {
                   <Text style={[styles.sheetTitle, { color: colors.onSurface }]}>Options</Text>
                   <Pressable onPress={() => setShowOptionsMenu(false)}><MaterialCommunityIcons name="close" size={24} color={colors.onSurface} /></Pressable>
                 </View>
-                
+
                 <Pressable onPress={handleDownloadSurah} style={[styles.menuItem, { borderBottomColor: colors.border }]}>
                   <MaterialCommunityIcons name="download" size={22} color={colors.onSurfaceSecondary} />
                   <Text style={[styles.menuItemText, { color: colors.onSurface }]}>Download Recitation</Text>
@@ -3092,7 +3157,7 @@ export default function QuranPageReader() {
           <Modal visible animationType="slide" transparent onRequestClose={() => setShowInfo(null)}>
             <View style={styles.bottomSheetOverlay}>
               <View style={[styles.bottomSheet, { backgroundColor: colors.surface, maxHeight: "90%", paddingHorizontal: 0 }]}>
-                
+
                 {/* Header */}
                 <View style={[styles.sheetHeader, { paddingHorizontal: 20, marginBottom: 8 }]}>
                   <Text style={[styles.sheetTitle, { color: colors.onSurface }]}>Surah Info</Text>
@@ -3102,7 +3167,7 @@ export default function QuranPageReader() {
                 </View>
 
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
-                  
+
                   {/* Arabic Name Calligraphy / Large Font */}
                   <View style={{ alignItems: "center", marginVertical: 12 }}>
                     <Text style={{ fontSize: 36, color: colors.brand, fontFamily: Platform.OS === "ios" ? "Amiri" : "serif" }}>
@@ -3111,7 +3176,7 @@ export default function QuranPageReader() {
                     <Text style={{ fontSize: 20, fontWeight: "800", color: colors.onSurface, marginTop: 4 }}>
                       Surah {showInfo.englishName}
                     </Text>
-                    
+
                     {/* Meta info row */}
                     <View style={{ flexDirection: "row", gap: 16, marginTop: 8 }}>
                       <Text style={{ fontSize: 13, color: colors.onSurfaceSecondary }}>
@@ -3195,7 +3260,7 @@ export default function QuranPageReader() {
           <Modal visible animationType="fade" transparent onRequestClose={() => setFocusedVerse(null)}>
             <Pressable style={styles.modalBackdropDismiss} onPress={() => setFocusedVerse(null)}>
               <Pressable style={[styles.focusedVerseCard, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-                
+
                 {/* Header row */}
                 <View style={[styles.sheetHeader, { marginBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 10 }]}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -3214,10 +3279,13 @@ export default function QuranPageReader() {
                       <MaterialCommunityIcons name={isBm ? "bookmark" : "bookmark-outline"} size={24} color={isBm ? colors.brand : colors.onSurfaceMuted} />
                     </Pressable>
                   </View>
-                  
+
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
                     <Pressable onPress={() => handleCopyVerse(focusedVerse.arabicText, focusedVerse.translationText, `${focusedVerse.surahNumber}:${focusedVerse.ayahNumber}`)}>
                       <MaterialCommunityIcons name="content-copy" size={20} color={colors.onSurfaceSecondary} />
+                    </Pressable>
+                    <Pressable onPress={() => handleShareAsImage(focusedVerse.arabicText, focusedVerse.translationText, `Surah Al-${focusedVerse.surahName} ${focusedVerse.surahNumber}:${focusedVerse.ayahNumber}`)}>
+                      <MaterialCommunityIcons name="image-outline" size={20} color={colors.onSurfaceSecondary} />
                     </Pressable>
                     <Pressable onPress={() => handleShareVerse(focusedVerse.arabicText, focusedVerse.translationText, `Quran ${focusedVerse.surahNumber}:${focusedVerse.ayahNumber}`)}>
                       <MaterialCommunityIcons name="share-variant-outline" size={20} color={colors.onSurfaceSecondary} />
@@ -3233,12 +3301,12 @@ export default function QuranPageReader() {
 
                 {/* Content Area */}
                 <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }} contentContainerStyle={{ paddingBottom: 16 }}>
-                  
+
                   {/* Arabic Text */}
                   <Text style={[styles.arabicVbV, { fontSize: fontSizeArabic, color: colors.onSurface, textAlign: "right", marginVertical: 12, lineHeight: fontSizeArabic * 1.8 }]}>
                     {focusedVerse.arabicText}
                   </Text>
-                  
+
                   {/* Translation */}
                   <Text style={[styles.transVbV, { fontSize: fontSizeTrans, color: colors.onSurfaceSecondary, marginBottom: 16 }]}>
                     {focusedVerse.translationText}
@@ -3583,6 +3651,16 @@ export default function QuranPageReader() {
         </Modal>
       )}
 
+      {shareData.visible && (
+        <ShareImageCard
+          type="verse"
+          visible={shareData.visible}
+          onClose={() => setShareData({ visible: false, arabic: "", translation: "", ref: "" })}
+          arabic={shareData.arabic}
+          translation={shareData.translation}
+          reference={shareData.ref}
+        />
+      )}
     </SafeAreaView>
   );
 }

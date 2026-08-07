@@ -93,10 +93,10 @@ export default function HadithIndexScreen() {
         ]}
       >
         {item.cover ? (
-          <Image 
-            source={item.cover} 
-            style={styles.bookCoverImage} 
-            resizeMode="cover" 
+          <Image
+            source={item.cover}
+            style={styles.bookCoverImage}
+            resizeMode="cover"
           />
         ) : (
           <DynamicBookCover name={item.name} color={item.color} />
@@ -130,7 +130,27 @@ export default function HadithIndexScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
+
+        {/* Browse by Topic — HadeethEnc thematic browsing */}
+        <AnimatedPressable
+          onPress={() => router.push("/hadith/topics" as any)}
+          style={[
+            styles.topicCard,
+            { backgroundColor: colors.brand + "12", borderColor: colors.brand + "30" },
+          ]}
+        >
+          <View style={[styles.topicIconWrap, { backgroundColor: colors.brand + "20" }]}>
+            <MaterialCommunityIcons name="shape-outline" size={26} color={colors.brand} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.topicTitle, { color: colors.onSurface }]}>Browse by Topic</Text>
+            <Text style={[styles.topicSubtitle, { color: colors.onSurfaceMuted }]}>
+              Explore hadiths by theme — Creed, Worship, Manners, and more
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={24} color={colors.brand} />
+        </AnimatedPressable>
+
         {/* The Nine Books Section */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: colors.brand }]}>THE NINE BOOKS</Text>
@@ -257,4 +277,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Platform.OS === "ios" ? "Amiri" : "serif",
   },
+  topicCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 24,
+  },
+  topicIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  topicTitle: { fontSize: 15, fontWeight: "700" },
+  topicSubtitle: { fontSize: 12, marginTop: 2 },
 });

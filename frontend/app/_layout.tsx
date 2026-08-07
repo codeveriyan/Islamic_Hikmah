@@ -42,7 +42,7 @@ async function checkPrayerNotificationExpired(notification: Notification): Promi
     const title = notification.request.content.title || "";
     const data = notification.request.content.data;
     const prayer = data?.prayer || (title.match(/^(Fajr|Dhuhr|Asr|Maghrib|Isha)/)?.[1]);
-    
+
     // Timestamp check: > 60 seconds delayed means expired
     const diffMs = Math.abs(Date.now() - notification.date);
     if (diffMs > 60000) return true;
@@ -385,14 +385,17 @@ export default function RootLayout() {
         const kind = data?.notificationKind ?? "";
 
         // 1. Route by notificationKind in payload data (highest priority)
+        const type = data?.type ?? "";
         if (kind === "sticky-prayer" || kind === "adhan" || kind === "prayer") {
           router.push("/(tabs)/prayer" as any);
         } else if (kind === "goal" || kind === "goals") {
           router.push("/goals" as any);
         } else if (kind === "reminder" || kind === "adhkar") {
           router.push("/(tabs)/reminder" as any);
-        } else if (kind === "quran") {
+        } else if (kind === "quran" || type === "daily_verse") {
           router.push("/(tabs)/quran-tab" as any);
+        } else if (type === "daily_hadith") {
+          router.push("/hadith" as any);
         }
         // 2. Route by category identifier
         else if (categoryId === "prayer-actions") {
@@ -447,9 +450,9 @@ export default function RootLayout() {
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject}
         />
-        <Image 
-          source={require("../assets/images/icon.png")} 
-          style={{ width: 140, height: 140, borderRadius: 28 }} 
+        <Image
+          source={require("../assets/images/icon.png")}
+          style={{ width: 140, height: 140, borderRadius: 28 }}
           resizeMode="contain"
         />
       </View>

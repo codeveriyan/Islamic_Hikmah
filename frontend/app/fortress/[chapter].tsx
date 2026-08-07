@@ -9,6 +9,7 @@ import * as Haptics from "expo-haptics";
 import data from "@/src/data/hisnulMuslim.json";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
 import { useTheme } from "@/src/ThemeContext";
+import { ActionBar } from "@/src/components/ui/ActionBar";
 import { theme } from "@/src/theme";
 
 const FORTRESS_FAVS_KEY = "hikmah:fortress-favs:v1";
@@ -123,100 +124,23 @@ export default function FortressChapterScreen() {
           <Text numberOfLines={1} style={[styles.title, { color: colors.onSurface }]}>{current.title}</Text>
           <Text style={[styles.subtitle, { color: colors.onSurfaceMuted }]}>Chapter {current.number} · {current.duas.length} du&apos;as</Text>
         </View>
-        <Pressable onPress={() => router.replace("/(tabs)")} hitSlop={10}>
-          <MaterialCommunityIcons name="home-outline" size={24} color={colors.onSurface} />
-        </Pressable>
+        <ActionBar
+          isFav={isFav}
+          toggleFav={toggleFav}
+          isBm={isBm}
+          toggleBm={toggleBm}
+          onShare={shareChapter}
+          onTextSize={cycleFontSize}
+        />
       </View>
 
-      {/* ── 6-Action Bar (Image-2 Feature) ── */}
-      <View style={styles.actionBarRow}>
-        {/* 1. Tt (Font Size) */}
-        <Pressable
-          style={[styles.actionBtn, { backgroundColor: btnBg }]}
-          onPress={cycleFontSize}
-          hitSlop={6}
-          accessibilityLabel="Toggle font size"
-        >
-          <Text style={[styles.ttIcon, { color: colors.brand }]}>Tt</Text>
-        </Pressable>
-
-        {/* 2. Heart (Favorite) */}
-        <Pressable
-          style={[styles.actionBtn, { backgroundColor: btnBg }]}
-          onPress={toggleFav}
-          hitSlop={6}
-          accessibilityLabel="Favorite chapter"
-        >
-          <MaterialCommunityIcons
-            name={isFav ? "heart" : "heart-outline"}
-            size={22}
-            color={isFav ? "#EF4444" : colors.onSurfaceMuted}
-          />
-        </Pressable>
-
-        {/* 3. Bookmark */}
-        <Pressable
-          style={[styles.actionBtn, { backgroundColor: btnBg }]}
-          onPress={toggleBm}
-          hitSlop={6}
-          accessibilityLabel="Bookmark chapter"
-        >
-          <MaterialCommunityIcons
-            name={isBm ? "bookmark" : "bookmark-outline"}
-            size={22}
-            color={isBm ? colors.brand : colors.onSurfaceMuted}
-          />
-        </Pressable>
-
-        {/* 4. Share */}
-        <Pressable
-          style={[styles.actionBtn, { backgroundColor: btnBg }]}
-          onPress={shareChapter}
-          hitSlop={6}
-          accessibilityLabel="Share chapter"
-        >
-          <MaterialCommunityIcons
-            name="share-variant-outline"
-            size={22}
-            color={colors.onSurfaceMuted}
-          />
-        </Pressable>
-
-        {/* 5. Home */}
-        <Pressable
-          style={[styles.actionBtn, { backgroundColor: btnBg }]}
-          onPress={() => router.replace("/(tabs)")}
-          hitSlop={6}
-          accessibilityLabel="Go to Home"
-        >
-          <MaterialCommunityIcons
-            name="home-outline"
-            size={22}
-            color={colors.onSurfaceMuted}
-          />
-        </Pressable>
-
-        {/* 6. Settings */}
-        <Pressable
-          style={[styles.actionBtn, { backgroundColor: btnBg }]}
-          onPress={() => router.push("/quran/personalise" as any)}
-          hitSlop={6}
-          accessibilityLabel="Font & Display Settings"
-        >
-          <MaterialCommunityIcons
-            name="cog-outline"
-            size={22}
-            color={colors.onSurfaceMuted}
-          />
-        </Pressable>
-      </View>
 
       <FlatList
         data={current.duas}
         keyExtractor={(item, index) => `${item.id}-${index}`}
         contentContainerStyle={styles.list}
         renderItem={({ item, index }) => (
-          <View style={[styles.duaCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+          <View style={[styles.duaCard, { backgroundColor: mode === "dark" ? "#000000" : "#FFFFFF", borderColor: "transparent" }]}>
             <View style={styles.cardHeader}>
               <View style={[styles.badge, { backgroundColor: colors.brand + "20" }]}>
                 <Text style={[styles.badgeText, { color: colors.brand }]}>Du&apos;a {index + 1}</Text>

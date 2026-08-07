@@ -10,9 +10,9 @@ import { useTranslation } from "@/src/localization";
 import { useArabicFont } from "@/src/hooks/useArabicFont";
 import * as Haptics from "expo-haptics";
 import { CATEGORIES, getCategory } from "@/src/data/duas";
-import { 
-  toggleFavourite, 
-  getFavourites, 
+import {
+  toggleFavourite,
+  getFavourites,
   Favourite,
   getDhikrBookmarks,
   toggleDhikrBookmark
@@ -26,14 +26,14 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 export default function DuaCategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const router = useRouter();
-  const { colors, language, fontSize, fontColor } = useTheme();
+  const { colors, language, fontSize, fontColor, mode } = useTheme();
   const { t } = useTranslation(language);
   const arabicFontFamily = useArabicFont();
   const cat = getCategory(String(category));
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [translatedTexts, setTranslatedTexts] = useState<Record<string, { translation: string; transliteration?: string }>>({});
-  
+
   // View Modes: 'list' (master) or 'reader' (detail carousel)
   const [viewMode, setViewMode] = useState<'list' | 'reader'>('list');
   const [activeDuaIndex, setActiveDuaIndex] = useState<number>(0);
@@ -42,17 +42,17 @@ export default function DuaCategoryScreen() {
   const [readerViewportHeight, setReaderViewportHeight] = useState<number | null>(
     Platform.OS === "web" ? Math.max(240, SCREEN_HEIGHT - 205) : null,
   );
-  
+
   // Audio state
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [isLooping, setIsLooping] = useState(false);
   const [isPlayingAll, setIsPlayingAll] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [progressWidth, setProgressWidth] = useState(0);
-  
+
   const [webCurrentTime, setWebCurrentTime] = useState(0);
   const [webDuration, setWebDuration] = useState(0);
-  
+
   // Detail Overlay
   const [showInfo, setShowInfo] = useState(false);
 
@@ -281,7 +281,7 @@ export default function DuaCategoryScreen() {
       scrollTimeoutRef.current = setTimeout(() => {
         flatListRef.current?.scrollToIndex({ index: activeDuaIndex, animated: false });
       }, 100);
-      
+
       // If we were playing all, trigger playback
       if (isPlayingAll) {
         playDua(cat.duas[activeDuaIndex]);
@@ -309,7 +309,7 @@ export default function DuaCategoryScreen() {
       if (cat) playDua(cat.duas[activeDuaIndex]);
       return;
     }
-    
+
     if (isPlayingAll && cat) {
       if (activeDuaIndex + 1 < cat.duas.length) {
         const nextIdx = activeDuaIndex + 1;
@@ -487,8 +487,8 @@ export default function DuaCategoryScreen() {
           const relativeX = Math.max(0, Math.min(width, pageX - px));
           const pct = relativeX / width;
           setDragPercent(pct * 100);
-          
-          const validDuration = Platform.OS === "web" 
+
+          const validDuration = Platform.OS === "web"
             ? (webAudioInstance.current && Number.isFinite(webAudioInstance.current.duration) ? webAudioInstance.current.duration : 0)
             : (typeof duration === "number" && Number.isFinite(duration) ? duration : 0);
 
@@ -533,7 +533,7 @@ export default function DuaCategoryScreen() {
   ).current;
 
   const handleSeek = (e: any) => {
-    const validDuration = Platform.OS === "web" 
+    const validDuration = Platform.OS === "web"
       ? (webAudioInstance.current && Number.isFinite(webAudioInstance.current.duration) ? webAudioInstance.current.duration : 0)
       : (typeof duration === "number" && Number.isFinite(duration) ? duration : 0);
 
@@ -765,7 +765,7 @@ export default function DuaCategoryScreen() {
             <Text style={[styles.arabic, { color: colors.onSurface, fontSize: getArabicSize(), lineHeight: getArabicLineHeight(), fontFamily: arabicFontFamily, letterSpacing: -0.3, marginTop: 10 }]}>
               {item.arabic}
             </Text>
-            
+
             {item.transliteration ? (
               <Text style={[styles.translit, { color: colors.brand, fontSize: getTranslitSize(), lineHeight: getTranslitLineHeight() }]}>
                 {language === "ta" ? (translatedTexts[item.id]?.transliteration || transliterateToTamil(item.transliteration)) : (translatedTexts[item.id]?.transliteration || item.transliteration)}
@@ -839,8 +839,9 @@ export default function DuaCategoryScreen() {
 
     const readerPct = Math.round(((activeDuaIndex + 1) / cat.duas.length) * 100);
 
+    const pureBg = mode === "dark" ? "#000000" : "#FFFFFF";
     return (
-      <View style={[StyleSheet.absoluteFillObject, styles.readerContainer, { backgroundColor: colors.surface }]}>
+      <View style={[StyleSheet.absoluteFillObject, styles.readerContainer, { backgroundColor: pureBg }]}>
         <SafeAreaView style={{ flex: 1, minHeight: 0 }} edges={["top", "bottom"]}>
           {/* Vibrant Brand Green Hero Banner Header */}
           <View style={{ backgroundColor: colors.brand, paddingBottom: 16 }}>
@@ -869,7 +870,7 @@ export default function DuaCategoryScreen() {
               <Text numberOfLines={2} style={{ fontSize: 20, fontWeight: "700", color: "#FFFFFF", lineHeight: 28 }}>
                 {activeItem.title}
               </Text>
-              
+
               <View style={{ alignSelf: "flex-start", backgroundColor: "#FFFFFF", paddingHorizontal: 14, paddingVertical: 4, borderRadius: 16, marginTop: 10 }}>
                 <Text style={{ fontSize: 13, fontWeight: "700", color: colors.brand }}>
                   {activeDuaIndex + 1}/{cat.duas.length} · {readerPct}% {t("readPercent")}
@@ -950,7 +951,7 @@ export default function DuaCategoryScreen() {
                 const displayPct = isDraggingSeek && dragPercent !== null ? dragPercent : progressPercent;
                 return (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                    <View 
+                    <View
                       ref={seekTrackRef}
                       {...panResponder.panHandlers}
                       style={{ flex: 1, height: 26, justifyContent: "center", position: "relative", cursor: Platform.OS === "web" ? "pointer" : "default" } as any}
@@ -963,7 +964,7 @@ export default function DuaCategoryScreen() {
                       </View>
 
                       {/* YouTube-Style Circular Green Drag Knob */}
-                      <View 
+                      <View
                         style={{
                           position: "absolute",
                           left: `${Math.max(0, Math.min(96, displayPct))}%`,
@@ -997,18 +998,18 @@ export default function DuaCategoryScreen() {
                 </Pressable>
 
                 {/* 2. Rewind 5s Button (⏮) -> Continuous rewind on hold */}
-                <Pressable 
+                <Pressable
                   onPressIn={startContinuousRewind}
                   onPressOut={stopContinuousSeek}
                   onPress={rewind5Sec}
-                  hitSlop={10} 
+                  hitSlop={10}
                   style={{ padding: 4 }}
                 >
                   <MaterialCommunityIcons name="rewind-5" size={26} color={colors.onSurface} />
                 </Pressable>
 
                 {/* 3. Play / Pause Toggle (⏯) */}
-                <Pressable 
+                <Pressable
                   onPress={() => {
                     const activeItem = cat.duas[activeDuaIndex];
                     if (playingId === activeItem.id && !isAudioPaused) {
@@ -1022,30 +1023,30 @@ export default function DuaCategoryScreen() {
                     } else {
                       playDua(activeItem);
                     }
-                  }} 
+                  }}
                   hitSlop={10}
                   style={{ padding: 4 }}
                 >
-                  <MaterialCommunityIcons 
-                    name={(playingId === activeItem.id && !isAudioPaused) ? "pause-circle" : "play-circle"} 
-                    size={40} 
-                    color={colors.brand} 
+                  <MaterialCommunityIcons
+                    name={(playingId === activeItem.id && !isAudioPaused) ? "pause-circle" : "play-circle"}
+                    size={40}
+                    color={colors.brand}
                   />
                 </Pressable>
 
                 {/* 4. Fast Forward 5s Button (⏭) -> Continuous fast-forward on hold */}
-                <Pressable 
+                <Pressable
                   onPressIn={startContinuousFastForward}
                   onPressOut={stopContinuousSeek}
                   onPress={fastForward5Sec}
-                  hitSlop={10} 
+                  hitSlop={10}
                   style={{ padding: 4 }}
                 >
                   <MaterialCommunityIcons name="fast-forward-5" size={26} color={colors.onSurface} />
                 </Pressable>
 
                 {/* 5. Playback Speed Button (0.25x -> 2x) */}
-                <Pressable 
+                <Pressable
                   onPress={cycleSpeed}
                   style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3, alignItems: "center" }}
                   hitSlop={10}
@@ -1133,8 +1134,9 @@ export default function DuaCategoryScreen() {
   }
 
   // Otherwise list view
+  const pureBg = mode === "dark" ? "#000000" : "#FFFFFF";
   return (
-    <View style={[styles.container, { backgroundColor: colors.surface }]}>
+    <View style={[styles.container, { backgroundColor: pureBg }]}>
       <ImageBackground source={imgSource} resizeMode="cover" style={styles.heroImage} imageStyle={{ borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }}>
         <LinearGradient colors={["rgba(0,0,0,0.2)", "rgba(0,0,0,0.75)"]} style={styles.heroScrim}>
           <SafeAreaView edges={["top"]}>
@@ -1192,9 +1194,9 @@ export default function DuaCategoryScreen() {
         {/* Numbered Duas List Items */}
         {cat.duas.map((d: any, i: number) => {
           return (
-            <Pressable 
-              key={d.id} 
-              style={[styles.listItem, { backgroundColor: colors.surfaceSecondary }]} 
+            <Pressable
+              key={d.id}
+              style={[styles.listItem, { backgroundColor: colors.surfaceSecondary }]}
               onPress={() => {
                 setActiveDuaIndex(i);
                 setViewMode('reader');
@@ -1254,9 +1256,8 @@ const CATEGORY_IMAGES: Record<string, any> = {
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: theme.colors.surface,
+  container: {
+    flex: 1,
     ...Platform.select({
       web: { height: "100%", overflow: "hidden" } as any
     })
@@ -1284,7 +1285,7 @@ const styles = StyleSheet.create({
   },
   categoryChipText: { fontSize: 13, fontWeight: "700", maxWidth: 140 },
   categoryChipCount: { fontSize: 11, fontWeight: "800" },
-  
+
   // List style (play store)
   relatedArticlesCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderRadius: theme.radius.md, marginBottom: 16 },
   relatedArticlesText: { fontSize: 15, fontWeight: "600" },
@@ -1292,38 +1293,38 @@ const styles = StyleSheet.create({
   listItemNumberContainer: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   listItemNumber: { fontSize: 15, fontWeight: "700" },
   listItemTitle: { fontSize: 16, fontWeight: "600" },
-  
+
   // Sticky Bottom Bar
   stickyBottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, flexDirection: "row", padding: 16, gap: 12, borderTopWidth: 1 },
   playAllBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, height: 48, borderRadius: theme.radius.pill },
   playAllText: { fontSize: 16, fontWeight: "700" },
   favouriteBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, height: 48, borderRadius: theme.radius.pill, borderWidth: 1 },
   favouriteText: { fontSize: 16, fontWeight: "700" },
-  
+
   // Reader style
   readerContainer: { flex: 1 },
   readerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
   readerHeaderTitle: { fontSize: 18, fontWeight: "700", flex: 1, marginLeft: 12 },
   pageIndicator: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   pageIndicatorText: { fontSize: 13, fontWeight: "700" },
-  
+
   readerCardScroll: { flexGrow: 1, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
   readerContent: { paddingHorizontal: theme.spacing.sm, paddingBottom: 160 },
   arabic: { fontFamily: "NotoNaskhArabic", textAlign: "right", marginTop: theme.spacing.md },
   translit: { fontStyle: "italic", marginTop: theme.spacing.md, lineHeight: 21 },
   translation: { marginTop: theme.spacing.sm, lineHeight: 22 },
-  
+
   // Tap Counter
   counterContainer: { alignItems: "center", marginTop: 28, gap: 8 },
   circularCounter: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
   counterText: { fontSize: 32, fontWeight: "700" },
   counterSubText: { fontSize: 13, fontWeight: "600" },
-  
+
   // Bottom toolbar (Play, Info, Share, Like)
   actionsToolbar: { flexDirection: "row", justifyContent: "space-around", paddingVertical: 12, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   actionIconBtn: { alignItems: "center", gap: 4, width: 60 },
   actionIconLabel: { fontSize: 11, fontWeight: "600" },
-  
+
   // Full-screen reference reader
   infoScreen: { flex: 1 },
   infoScreenHead: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth },
@@ -1336,14 +1337,14 @@ const styles = StyleSheet.create({
   infoDrawerTitle: { fontSize: 15, fontWeight: "700" },
   infoDrawerRef: { fontSize: 14, fontWeight: "700", flex: 1 },
   infoDrawerText: { fontSize: 17, lineHeight: 28 },
-  
+
   // Audio Control Bar
   audioControlBar: { paddingHorizontal: 20, paddingBottom: 16, paddingTop: 8 },
   progressBarRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
   progressTimeText: { fontSize: 12, minWidth: 32, textAlign: "center" },
   progressBarTrack: { flex: 1, height: 6, borderRadius: 3, overflow: "hidden", position: "relative" },
   progressBarFill: { height: "100%" },
-  
+
   audioButtonsRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 10 },
   speedSelector: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, minWidth: 44, alignItems: "center" },
   speedSelectorText: { fontSize: 12, fontWeight: "700" },

@@ -37,7 +37,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@/src/ThemeContext";
@@ -48,6 +48,7 @@ import {
   ReviewStatus,
   EvidenceCitation,
   fetchFatawaCategories,
+  fetchFatawaById,
   searchFatawa,
   askFatawaQuestion,
   FatawaHttpError,
@@ -115,6 +116,9 @@ function EvidenceTag({ citation }: { citation: EvidenceCitation }) {
 
 export default function FatawaScreen() {
   const router = useRouter();
+  const { id, q } = useLocalSearchParams<{ id?: string | string[]; q?: string | string[] }>();
+  const requestedFatwaId = Array.isArray(id) ? id[0] : id;
+  const initialQuery = (Array.isArray(q) ? q[0] : q) || "";
   const { colors, mode } = useTheme();
 
   // Data state
@@ -125,7 +129,7 @@ export default function FatawaScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Filter state
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedCategory, setSelectedCategory] = useState<FatawaCategory | null>(null);
 
   // Bookmarks
@@ -143,7 +147,8 @@ export default function FatawaScreen() {
 
   // Search debounce
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
+  const openedRouteFatwaRef = useRef<string | null>(null);
 
   const handleAskQuestion = async (customQ?: string) => {
     const q = (customQ || searchQuery).trim();
@@ -293,6 +298,19 @@ export default function FatawaScreen() {
     setSelectedItem(item);
     setModalVisible(true);
   };
+
+  useEffect(() => {
+    if (!requestedFatwaId || openedRouteFatwaRef.current === requestedFatwaId) return;
+    openedRouteFatwaRef.current = requestedFatwaId;
+    fetchFatawaById(requestedFatwaId)
+      .then((item) => {
+        setSelectedItem(item);
+        setModalVisible(true);
+      })
+      .catch(() => {
+        openedRouteFatwaRef.current = null;
+      });
+  }, [requestedFatwaId]);
 
   const closeModal = () => {
     setModalVisible(false);
@@ -570,6 +588,36 @@ export default function FatawaScreen() {
                       </Pressable>
                     );
                   })}
+                </View>
+              )}
+
+              {/* Differing opinions */}
+              {/* Related IslamHouse material */}
+              {item.islamhouse_related && (
+                <View style={styles.sectionBlock}>
+                  <Text style={[styles.sectionLabel, { color: colors.brand }]}>
+                    Related source
+                  </Text>
+                  <Pressable
+                    onPress={() => openSourceUrl(`https://islamhouse.com/en/fatwa/${item.islamhouse_related!.islamhouse_id}`)}
+                    style={[styles.opinionsBox, { backgroundColor: colors.brand + "12", borderColor: colors.brand + "35" }]}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <MaterialCommunityIcons name="link-variant" size={18} color={colors.brand} />
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: colors.brand }}>
+                        Related result from IslamHouse.com
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 13, color: colors.onSurface, marginBottom: 4 }} numberOfLines={2}>
+                      &quot;{item.islamhouse_related!.islamhouse_title}&quot;
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.onSurfaceMuted }}>
+                      Found {item.islamhouse_related!.match_count} related fatwa{item.islamhouse_related!.match_count > 1 ? "s" : ""}
+                    </Text>
+                    <Text style={[styles.evidenceLink, { color: colors.brand, marginTop: 6 }]}>
+                      View on IslamHouse ↗
+                    </Text>
+                  </Pressable>
                 </View>
               )}
 

@@ -164,6 +164,7 @@ const QUICK_ACTIONS = [
   { id: "duas",              label: "Du'as",                   route: "/dua-hub",               emoji: "🤲" },
   { id: "fortressMuslim",    label: "Fortress of Muslim",      route: "/fortress",              emoji: "🛡️" },
   { id: "namesOfAllah",      label: "Asma Al-Husna",          route: "/names",                  emoji: "✨" },
+  { id: "babyNames",         label: "Baby Names",             route: "/baby-names",             emoji: "👶" },
   { id: "qiblaDirection",    label: "Qiblah Direction",        route: "/qibla",                  emoji: "🧭" },
   { id: "zakatCalculator",   label: "Zakat Calculator",        route: "/zakat-calculator",       emoji: "💰" },
   { id: "views360",          label: "360° Views",             route: "/views360",               emoji: "🌐" },
@@ -210,13 +211,13 @@ function getHijriDate() {
     let g_y = date.getFullYear();
     let g_m = date.getMonth();
     let g_d = date.getDate();
-    
+
     let myDate = new Date(Date.UTC(g_y, g_m, g_d, 12, 0, 0));
-    
+
     let y = myDate.getUTCFullYear();
     let m = myDate.getUTCMonth() + 1;
     let d = myDate.getUTCDate();
-    
+
     if (m <= 2) {
       y -= 1;
       m += 12;
@@ -225,15 +226,15 @@ function getHijriDate() {
     let B = 2 - A + Math.floor(A / 4);
     // Added +1 day offset to align arithmetic calendar with standard Umm al-Qura calendar
     let jd = Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5 + 1;
-    
-    let epoch = 1948439.5; 
+
+    let epoch = 1948439.5;
     let diff = jd - epoch;
     let cycle = Math.floor(diff / 10631);
     let rem = diff % 10631;
-    
+
     let h_y = 30 * cycle + 1;
     const leap_years = [2, 5, 7, 10, 13, 16, 18, 21, 24, 26, 29];
-    
+
     for (let i = 1; i <= 30; i++) {
       const is_leap = leap_years.includes(i);
       const length = is_leap ? 355 : 354;
@@ -243,13 +244,13 @@ function getHijriDate() {
       }
       rem -= length;
     }
-    
+
     const month_lengths = [30, 29, 30, 29, 30, 29, 30, 29, 30, 29, 30, 29];
     const current_year_in_cycle = (h_y - 1) % 30 + 1;
     if (leap_years.includes(current_year_in_cycle)) {
       month_lengths[11] = 30;
     }
-    
+
     let h_m = 1;
     for (let i = 0; i < 12; i++) {
       if (rem < month_lengths[i]) {
@@ -258,22 +259,22 @@ function getHijriDate() {
       }
       rem -= month_lengths[i];
     }
-    
+
     let h_d = Math.floor(rem) + 1;
-    
+
     const monthNames = [
       "Muharram", "Safar", "Rabi' al-Awwal", "Rabi' al-Thani",
       "Jumada al-Awwal", "Jumada al-Thani", "Rajab", "Sha'ban",
       "Ramadan", "Shawwal", "Dhu al-Qi'dah", "Dhu al-Hijjah"
     ];
-    
+
     const mName = monthNames[h_m - 1] || "Muharram";
-    
+
     let suffix = "th";
     if (h_d % 10 === 1 && h_d !== 11) suffix = "st";
     else if (h_d % 10 === 2 && h_d !== 12) suffix = "nd";
     else if (h_d % 10 === 3 && h_d !== 13) suffix = "rd";
-    
+
     return `${h_d}${suffix} ${mName} ${h_y} AH`;
   } catch {
     return "";
@@ -289,7 +290,7 @@ function parseTime(t: string): Date {
 
 function getPrayerPeriods(times: Record<string, string>) {
   const now = new Date();
-  
+
   // Parse all times into Dates for comparison
   const parsed = PRAYERS.map((name) => {
     const t = times[name];
@@ -304,9 +305,9 @@ function getPrayerPeriods(times: Record<string, string>) {
 
   // Find next prayer (first one where date > now)
   let nextIdx = parsed.findIndex((p) => p.date > now);
-  
+
   let current, next;
-  
+
   if (nextIdx === -1) {
     // All prayers for today have passed.
     // Current is Isha.
@@ -453,7 +454,7 @@ export default function HomeScreen() {
   });
   // Prayers Modal
   const [prayersModalVisible, setPrayersModalVisible] = useState(false);
-  
+
   // Custom Daily Adhkars selection modal states
   const [dhikrModalVisible, setDhikrModalVisible] = useState(false);
   const [selectedAdhkarCount, setSelectedAdhkarCount] = useState(3);
@@ -620,7 +621,7 @@ export default function HomeScreen() {
           AsyncStorage.getItem("hikmah:custom-goals:v1"),
         ]);
         setCompleted(comp);
-        
+
         // Auto-reconcile dhikr goals if activeIds is missing them
         const defaultDhikrIds = ['morning-adhkar', 'evening-adhkar', 'sleep-adhkar', 'dhikr-after-salah', 'istighfar-100'];
         let validIds = ids;
@@ -635,10 +636,10 @@ export default function HomeScreen() {
         setCalendarDismissed(calDismissed);
         setDhikrCounts(dCounts || {});
         setPrayerCompletions(pCompletions || { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false });
-        
+
         const parsedCount = sa !== null ? parseInt(sa, 10) : 5;
         setSelectedAdhkarCount(isNaN(parsedCount) || parsedCount <= 0 ? 5 : parsedCount);
-        
+
         const loadedCustom = customRaw ? JSON.parse(customRaw) : [];
         setCustomGoals(loadedCustom);
 
@@ -718,7 +719,7 @@ export default function HomeScreen() {
     return allGoals.filter(g => {
       if (!activeIds.includes(g.id)) return false;
       if (g.repeat === 'weekly') return g.weekDay === today;
-      
+
       // Filter adhkars by selectedAdhkarCount limit
       if (dhikrIdsOrder.includes(g.id)) {
         const idx = dhikrIdsOrder.indexOf(g.id);
@@ -732,7 +733,7 @@ export default function HomeScreen() {
     const dhikrIdsOrder = ['morning-adhkar', 'evening-adhkar', 'sleep-adhkar', 'dhikr-after-salah', 'istighfar-100'];
     return allGoals.filter(g => {
       if (!activeIds.includes(g.id)) return false;
-      
+
       // Filter adhkars by selectedAdhkarCount limit
       if (dhikrIdsOrder.includes(g.id)) {
         const idx = dhikrIdsOrder.indexOf(g.id);
@@ -800,12 +801,12 @@ export default function HomeScreen() {
     Haptics.selectionAsync().catch(() => {});
     const goalId = prayerName.toLowerCase();
     await toggleGoal(goalId);
-    
+
     const [comp, pCompletions] = await Promise.all([
       getCompletedGoals(),
       getPrayerCompletions()
     ]);
-    
+
     const updatedPrayers = { ...pCompletions, [prayerName]: !pCompletions[prayerName] };
     setPrayerCompletions(updatedPrayers);
     await savePrayerCompletions(updatedPrayers);
@@ -821,13 +822,13 @@ export default function HomeScreen() {
   const removeGoalFromHome = async (goalId: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     const isPrayer = ["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(goalId.toLowerCase());
-    const updatedIds = isPrayer 
+    const updatedIds = isPrayer
       ? activeIds.filter(id => !["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(id))
       : activeIds.filter(id => id !== goalId);
-      
+
     setActiveIds(updatedIds);
     await saveActiveGoalIds(updatedIds);
-    
+
     if (times) {
       try {
         const goalTimes = await getGoalNotifTimes();
@@ -887,20 +888,20 @@ export default function HomeScreen() {
       category: newGoalCategory,
       repeat: "daily" as const
     };
-    
+
     try {
       const updatedCustom = [...customGoals, newGoal];
       setCustomGoals(updatedCustom);
       await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
-      
+
       const updatedActive = [...activeIds, newGoal.id];
       setActiveIds(updatedActive);
       await saveActiveGoalIds(updatedActive);
-      
+
       setNewGoalTitle("");
       setNewGoalCategory("other");
       setShowAddCustomModal(false);
-      
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       Alert.alert("Goal Created", "Custom goal has been created and added to your homepage.");
     } catch (e) {
@@ -910,7 +911,7 @@ export default function HomeScreen() {
 
   const toggleCustomGoalActive = async (id: string) => {
     Haptics.selectionAsync().catch(() => {});
-    const updatedActive = activeIds.includes(id) 
+    const updatedActive = activeIds.includes(id)
       ? activeIds.filter(activeId => activeId !== id)
       : [...activeIds, id];
     setActiveIds(updatedActive);
@@ -932,18 +933,18 @@ export default function HomeScreen() {
     if (nextCount > 3) {
       nextCount = 0;
     }
-    
+
     const updatedCounts = { ...dhikrCounts, [goalId]: nextCount };
     setDhikrCounts(updatedCounts);
     await saveDailyDhikrCounts(updatedCounts);
-    
+
     const isCompleted = completed.includes(goalId);
     if (nextCount === 3 && !isCompleted) {
       await toggleGoal(goalId);
     } else if (nextCount === 0 && isCompleted) {
       await toggleGoal(goalId);
     }
-    
+
     const comp = await getCompletedGoals();
     setCompleted(comp);
   };
@@ -1041,7 +1042,7 @@ export default function HomeScreen() {
     }
     await saveActiveGoalIds(nextActive);
     setActiveIds(nextActive);
-    
+
     // Auto-reschedule notifications
     if (times) {
       try {
@@ -1061,7 +1062,7 @@ export default function HomeScreen() {
       const nextActive = [...currentActive, id];
       await saveActiveGoalIds(nextActive);
       setActiveIds(nextActive);
-      
+
       // Auto-reschedule notifications
       if (times) {
         try {
@@ -1131,8 +1132,8 @@ export default function HomeScreen() {
     // 3. Tahajjud Prayer (Qiyam time)
     if (goalId === "tahajjud" || goalId.includes("tahajjud")) {
       const fajrInfo = getPrayerTimeInfo("Fajr", 4, 30);
-      const qiyamInfo = times?.Lastthird 
-        ? { minutes: times.Lastthird.split(":").map(Number)[0] * 60 + times.Lastthird.split(":").map(Number)[1], formatted: format12Hour(times.Lastthird) } 
+      const qiyamInfo = times?.Lastthird
+        ? { minutes: times.Lastthird.split(":").map(Number)[0] * 60 + times.Lastthird.split(":").map(Number)[1], formatted: format12Hour(times.Lastthird) }
         : { minutes: 1 * 60, formatted: "01:00 AM" };
       const isQiyamTime = (currentTimeVal >= qiyamInfo.minutes || currentTimeVal < fajrInfo.minutes) && (currentHour >= 23 || currentHour < 6);
       if (!isQiyamTime) {
@@ -1224,10 +1225,10 @@ export default function HomeScreen() {
         handleGoalTap(goal.id);
       }
     };
-    
+
     return (
       <View key={goal.id} style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, opacity: isLocked ? 0.55 : 1 }]}>
-        <Pressable 
+        <Pressable
           onPress={handlePressGoal}
           onLongPress={() => handleGoalLongPress(goal.id)}
           style={styles.goalCheckArea}
@@ -1240,8 +1241,8 @@ export default function HomeScreen() {
             ) : null}
           </View>
         </Pressable>
-        
-        <Pressable 
+
+        <Pressable
           onPress={handlePressGoal}
           onLongPress={() => handleGoalLongPress(goal.id)}
           style={{ flex: 1 }}
@@ -1263,8 +1264,8 @@ export default function HomeScreen() {
             <Text style={[styles.goalItemArabic, { color: colors.brand }]}>{goal.arabic}</Text>
           )}
         </Pressable>
-        
-        <Pressable 
+
+        <Pressable
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
             setActiveActionGoal(goal);
@@ -1292,7 +1293,7 @@ export default function HomeScreen() {
           </Text>
           <Text style={[styles.goalItemSub, { color: colors.onSurfaceMuted }]}>{subText}</Text>
         </View>
-        <Pressable 
+        <Pressable
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
             Alert.alert("Upcoming Goal", `This goal is scheduled for ${targetDay}s.`);
@@ -1307,11 +1308,11 @@ export default function HomeScreen() {
 
   const renderSuggestedGoalItem = (title: string, action: 'dhikr' | 'sadqa') => {
     return (
-      <Pressable 
+      <Pressable
         key={action}
         onPress={() => handleSuggestedGoal(action)}
         style={({ pressed }) => [
-          styles.goalRowItem, 
+          styles.goalRowItem,
           { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
           pressed && { opacity: 0.8 }
         ]}
@@ -1332,10 +1333,10 @@ export default function HomeScreen() {
     const timeStatus = isGoalEnabledAtCurrentTime(pId);
     const isLocked = !timeStatus.enabled;
     const catColor = CATEGORY_COLORS.prayer;
-    
+
     return (
       <View key="collapsed-prayer" style={[styles.goalRowItem, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, opacity: isLocked ? 0.6 : 1 }]}>
-        <Pressable 
+        <Pressable
           onPress={() => {
             if (menstrualMode) return;
             if (isLocked) {
@@ -1351,8 +1352,8 @@ export default function HomeScreen() {
             {isCompleted ? <MaterialCommunityIcons name="check" size={14} color="#fff" /> : isLocked ? <MaterialCommunityIcons name="lock-outline" size={12} color={colors.onSurfaceMuted} /> : null}
           </View>
         </Pressable>
-        
-        <Pressable 
+
+        <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
             setExpandPrayersInline(!expandPrayersInline);
@@ -1369,8 +1370,8 @@ export default function HomeScreen() {
           </View>
           <MaterialCommunityIcons name={expandPrayersInline ? "chevron-up" : "chevron-down"} size={20} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
         </Pressable>
-        
-        <Pressable 
+
+        <Pressable
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
             setActiveActionGoal({
@@ -1604,10 +1605,10 @@ export default function HomeScreen() {
               style={[styles.quickBtn, reorderFrom === a.id && { opacity: 0.45 }, { overflow: "hidden" }]}>
               <View style={styles.quickIconOnly}>
                 {"image" in a && a.image ? (
-                  <ExpoImage 
-                    source={a.image} 
+                  <ExpoImage
+                    source={a.image}
                     contentFit="contain"
-                    style={styles.quickIconImage} 
+                    style={styles.quickIconImage}
                   />
                 ) : (
                   <Text style={styles.quickEmoji}>{"emoji" in a ? a.emoji : "✨"}</Text>
@@ -1673,7 +1674,7 @@ export default function HomeScreen() {
         )}
 
         {/* Connection & Daily Goals Section */}
-        
+
 
 
         {/* Daily Goals Summary */}
@@ -1746,7 +1747,7 @@ export default function HomeScreen() {
           {activeIds.some(id => ["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(id)) && (
             expandPrayersInline ? (
               <View style={{ gap: 8, marginBottom: 8 }}>
-                <Pressable 
+                <Pressable
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                     setExpandPrayersInline(false);
@@ -1775,12 +1776,12 @@ export default function HomeScreen() {
               renderCollapsedPrayerRow()
             )
           )}
-          
+
           {/* Other active goals today */}
           {activeGoals
             .filter(g => !["fajr", "dhuhr", "asr", "maghrib", "isha"].includes(g.id))
             .map(g => renderInlineGoalItem(g))}
-            
+
           {/* Upcoming Section */}
           {upcomingGoals.length > 0 && (
             <View style={{ marginTop: 16 }}>
@@ -1794,10 +1795,10 @@ export default function HomeScreen() {
             {renderSuggestedGoalItem("Add New Dhikr", "dhikr")}
             {!activeIds.includes("give-sadqa") && renderSuggestedGoalItem("Give Sadqa", "sadqa")}
           </View>
-          
+
           {/* Bottom Navigation Buttons */}
           <View style={styles.bottomButtonsRow}>
-            <Pressable 
+            <Pressable
               onPress={() => {
                 if (profile?.tier !== "premium" && !profile?.trialActive) {
                   showPremiumModal("Previous Goals");
@@ -1809,8 +1810,8 @@ export default function HomeScreen() {
             >
               <Text style={[styles.bottomBtnText, { color: colors.onSurface }]}>View Previous Goals</Text>
             </Pressable>
-            
-            <Pressable 
+
+            <Pressable
               onPress={() => {
                 if (profile?.tier !== "premium" && !profile?.trialActive) {
                   showPremiumModal("Goal Settings");
@@ -1844,13 +1845,13 @@ export default function HomeScreen() {
                 onPress={() => setPrayersModalVisible(false)}
               />
             </View>
-            
+
             <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
               {["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"].map((pName) => {
                 const isDone = menstrualMode ? true : prayerCompletions[pName];
                 return (
-                  <Pressable 
-                    key={pName} 
+                  <Pressable
+                    key={pName}
                     onPress={() => {
                       if (menstrualMode) return;
                       togglePrayerCompletion(pName);
@@ -1864,7 +1865,7 @@ export default function HomeScreen() {
                   </Pressable>
                 );
               })}
-              
+
               {/* Menstrual Mode Section */}
               <View style={[styles.menstrualCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={{ flex: 1, paddingRight: 10 }}>
@@ -1921,8 +1922,8 @@ export default function HomeScreen() {
               {SELECTABLE_ADHKAAR.map((item) => {
                 const isAdded = activeIds.includes(item.id);
                 return (
-                  <View 
-                    key={item.id} 
+                  <View
+                    key={item.id}
                     style={{
                       backgroundColor: colors.surface,
                       borderColor: colors.border,
@@ -1987,7 +1988,7 @@ export default function HomeScreen() {
                 onPress={() => setShowAddCustomModal(false)}
               />
             </View>
-            
+
             <View style={{ gap: 14, marginTop: 8, width: "100%", flex: 1 }}>
               <View>
                 <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Category</Text>
@@ -2003,7 +2004,7 @@ export default function HomeScreen() {
                           setNewGoalCategory(cat);
                         }}
                         style={[
-                          styles.catSelectBtn, 
+                          styles.catSelectBtn,
                           { flex: 1, borderColor: colors.border, backgroundColor: isSel ? colors.brand : colors.surface, paddingVertical: 10, alignItems: "center", borderRadius: 10 }
                         ]}
                       >
@@ -2157,7 +2158,7 @@ export default function HomeScreen() {
                     />
                   </View>
 
-                  <Pressable 
+                  <Pressable
                     onPress={handleAddCustomGoal}
                     style={[styles.modalSubmitBtn, { backgroundColor: colors.brand, marginTop: 8, borderRadius: 12 }]}
                   >
@@ -2179,7 +2180,7 @@ export default function HomeScreen() {
       >
         <Pressable style={styles.actionSheetOverlay} onPress={() => setActiveActionGoal(null)}>
           <View style={[styles.actionSheetContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <Pressable 
+            <Pressable
               onPress={() => {
                 if (activeActionGoal) {
                   setActiveActionGoal(null);
@@ -2190,8 +2191,8 @@ export default function HomeScreen() {
             >
               <Text style={[styles.actionSheetText, { color: colors.onSurface }]}>Edit goal</Text>
             </Pressable>
-            
-            <Pressable 
+
+            <Pressable
               onPress={() => {
                 if (activeActionGoal) {
                   const id = activeActionGoal.id;
@@ -2203,8 +2204,8 @@ export default function HomeScreen() {
             >
               <Text style={[styles.actionSheetText, { color: colors.error }]}>Remove</Text>
             </Pressable>
-            
-            <Pressable 
+
+            <Pressable
               onPress={() => setActiveActionGoal(null)}
               style={styles.actionSheetOpt}
             >
@@ -2221,8 +2222,8 @@ export default function HomeScreen() {
         animationType="fade"
         onRequestClose={() => setAllCompletedModalVisible(false)}
       >
-        <Pressable 
-          style={StyleSheet.absoluteFillObject} 
+        <Pressable
+          style={StyleSheet.absoluteFillObject}
           onPress={() => setAllCompletedModalVisible(false)}
         >
           <View style={[styles.congratsOverlay, { backgroundColor: "rgba(0,0,0,0.55)" }]}>
@@ -2522,7 +2523,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.08)",
   },
   cardTitle: { color: "#FFFFFF", fontSize: 11, fontWeight: "800", letterSpacing: 0.8, textAlign: "center" },
-  
+
   // Google Calendar Card
   calendarCard: {
     marginHorizontal: theme.spacing.lg,
@@ -2552,7 +2553,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
-  
+
   // Goal checklist items
   goalsListContainer: {
     marginHorizontal: theme.spacing.lg,
@@ -2615,7 +2616,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
-  
+
   // Prayers Modal
   modalOverlay: {
     flex: 1,

@@ -27,7 +27,7 @@ import * as Location from 'expo-location';
 import { Accelerometer, Magnetometer } from 'expo-sensors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Svg, { Line, Path, Rect } from 'react-native-svg';
+import Svg, { Line, Path, Rect, Circle, Defs, RadialGradient, Stop, G, Text as SvgText, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import { WebView } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/src/ThemeContext';
@@ -50,11 +50,74 @@ const KAABA_COORDS: LocationCoords = {
   longitude: 39.8262,
 };
 
+const COMPASS_SIZE = Math.min(width - 40, 340);
+const COMPASS_R = COMPASS_SIZE / 2;
+
 const DIAL_SKINS = [
-  { id: 'hikmah', name: 'Brass Classic', ringColor: '#b87333', bg: '#efe4a8', accent: '#3a2418', needleColorLight: '#3b2430', needleColorDark: '#1d1118', caseGradient: ['#fff0b8', '#c9822e', '#8a4a1f', '#3b1f12'] },
-  { id: 'emerald', name: 'Emerald Noor', ringColor: '#00c896', bg: '#062520', accent: '#9fffe0', needleColorLight: '#2ecc71', needleColorDark: '#008f70', caseGradient: ['#8fffe0', '#00c896', '#007a62', '#031713'] },
-  { id: 'moon', name: 'Moon Silver', ringColor: '#bdc3c7', bg: '#17242b', accent: '#ecf0f1', needleColorLight: '#f1d36b', needleColorDark: '#D4AF37', caseGradient: ['#ffffff', '#bdc3c7', '#6b7b82', '#17242b'] },
-  { id: 'obsidian', name: 'Obsidian', ringColor: '#3498db', bg: '#101114', accent: '#5dade2', needleColorLight: '#00c896', needleColorDark: '#008f70', caseGradient: ['#5dade2', '#3498db', '#1f618d', '#061713'] },
+  {
+    id: 'hikmah', name: 'Royal Gold',
+    bezelStops: ['#f7e8a0', '#d4a94c', '#f5d778', '#c5912a', '#e8c551', '#8a5a1e'],
+    innerRingStops: ['#c8982a', '#a07322', '#d4a94c', '#8a5a1e', '#6b4412'],
+    chamberFill: '#1a1108',
+    dialFaceStops: ['#fef8e0', '#f5e6b8', '#e6d08a', '#c8a04a'],
+    dialStroke: '#b8922a',
+    roseColor: 'rgba(139,90,30,0.6)', roseMuted: 'rgba(139,90,30,0.3)',
+    tickColor: '#5a3812', tickMajor: 'rgba(90,56,18,0.7)', tickMinor: 'rgba(90,56,18,0.4)',
+    cardinalColor: '#8B0000', labelColor: '#3a2418', degreeColor: 'rgba(58,36,24,0.45)',
+    concentricColor: 'rgba(139,90,30,0.2)',
+    needleLight: '#1a6b35', needleDark: '#0d3a1c',
+    needleBottomLight: '#666', needleBottomDark: '#333',
+    capStops: ['#ffe899', '#d4a94c', '#7a4a12'], capStroke: '#a07322',
+    ringColor: '#d4a94c', bg: '#fef8e0', accent: '#3a2418',
+  },
+  {
+    id: 'emerald', name: 'Emerald Noor',
+    bezelStops: ['#a0f7d0', '#2ecc71', '#5db77f', '#1a8a52', '#2ecc71', '#0d5c32'],
+    innerRingStops: ['#1a8a52', '#126b3e', '#2ecc71', '#0d5c32', '#083d20'],
+    chamberFill: '#031a10',
+    dialFaceStops: ['#e0fff0', '#b8f5d8', '#8ae6b8', '#4ac88a'],
+    dialStroke: '#2a9a5a',
+    roseColor: 'rgba(13,92,50,0.6)', roseMuted: 'rgba(13,92,50,0.3)',
+    tickColor: '#0d5c32', tickMajor: 'rgba(13,92,50,0.7)', tickMinor: 'rgba(13,92,50,0.4)',
+    cardinalColor: '#0d5c32', labelColor: '#0a4a28', degreeColor: 'rgba(13,92,50,0.45)',
+    concentricColor: 'rgba(13,92,50,0.2)',
+    needleLight: '#1a6b35', needleDark: '#0d3a1c',
+    needleBottomLight: '#555', needleBottomDark: '#2a2a2a',
+    capStops: ['#a0f7d0', '#2ecc71', '#0d5c32'], capStroke: '#1a8a52',
+    ringColor: '#2ecc71', bg: '#e0fff0', accent: '#0d5c32',
+  },
+  {
+    id: 'moon', name: 'Moon Silver',
+    bezelStops: ['#f0f0f0', '#c0c0c0', '#e8e8e8', '#8a8a8a', '#d0d0d0', '#505050'],
+    innerRingStops: ['#a0a0a0', '#707070', '#b0b0b0', '#505050', '#303030'],
+    chamberFill: '#0a0a12',
+    dialFaceStops: ['#f0f2f5', '#dce0e6', '#c0c8d0', '#8a94a0'],
+    dialStroke: '#8a94a0',
+    roseColor: 'rgba(60,70,90,0.6)', roseMuted: 'rgba(60,70,90,0.3)',
+    tickColor: '#3c465a', tickMajor: 'rgba(60,70,90,0.7)', tickMinor: 'rgba(60,70,90,0.4)',
+    cardinalColor: '#1a2a40', labelColor: '#2a3a50', degreeColor: 'rgba(40,50,70,0.45)',
+    concentricColor: 'rgba(60,70,90,0.15)',
+    needleLight: '#d4a94c', needleDark: '#8a5a1e',
+    needleBottomLight: '#606060', needleBottomDark: '#303030',
+    capStops: ['#e8e8e8', '#a0a0a0', '#505050'], capStroke: '#707070',
+    ringColor: '#b0b0b0', bg: '#f0f2f5', accent: '#2a3a50',
+  },
+  {
+    id: 'obsidian', name: 'Obsidian Night',
+    bezelStops: ['#6090d0', '#3070b0', '#5080c0', '#204880', '#4070b0', '#102850'],
+    innerRingStops: ['#204880', '#183868', '#3070b0', '#102850', '#081838'],
+    chamberFill: '#060810',
+    dialFaceStops: ['#1a2030', '#141820', '#0e1218', '#080a10'],
+    dialStroke: '#2a4060',
+    roseColor: 'rgba(80,140,220,0.5)', roseMuted: 'rgba(80,140,220,0.25)',
+    tickColor: '#508cdc', tickMajor: 'rgba(80,140,220,0.6)', tickMinor: 'rgba(80,140,220,0.35)',
+    cardinalColor: '#70b0ff', labelColor: '#5090e0', degreeColor: 'rgba(80,140,220,0.5)',
+    concentricColor: 'rgba(80,140,220,0.12)',
+    needleLight: '#00c896', needleDark: '#008060',
+    needleBottomLight: '#404050', needleBottomDark: '#202030',
+    capStops: ['#5080c0', '#3060a0', '#102850'], capStroke: '#3070b0',
+    ringColor: '#3070b0', bg: '#141820', accent: '#70b0ff',
+  },
 ];
 
 function KaabaOverlayIcon({ size = 170, color = '#050505' }: { size?: number; color?: string }) {
@@ -516,29 +579,29 @@ export default function QiblaScreen() {
           <Text style={[styles.title, { color: colors.onSurface }]}>Qibla Finder</Text>
           <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 2 }}>📍 {locationName}</Text>
         </View>
-        
+
         {/* Toggle Mode Button & Nav Buttons */}
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-          <Pressable 
+          <Pressable
             onPress={() => setMode(mode === 'map' ? 'compass' : 'map')}
             style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
           >
-            <MaterialCommunityIcons 
+            <MaterialCommunityIcons
               name={mode === 'map' ? "compass-outline" : "map-legend"}
-              size={22} 
-              color={colors.brand} 
+              size={22}
+              color={colors.brand}
             />
           </Pressable>
-          <Pressable 
-            onPress={() => router.replace("/(tabs)")} 
-            hitSlop={10} 
+          <Pressable
+            onPress={() => router.replace("/(tabs)")}
+            hitSlop={10}
             style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
           >
             <MaterialCommunityIcons name="home-outline" size={20} color={colors.onSurface} />
           </Pressable>
-          <Pressable 
-            onPress={() => router.push("/settings")} 
-            hitSlop={10} 
+          <Pressable
+            onPress={() => router.push("/settings")}
+            hitSlop={10}
             style={[styles.modeToggle, { backgroundColor: colors.surfaceSecondary }]}
           >
             <MaterialCommunityIcons name="cog-outline" size={20} color={colors.onSurface} />
@@ -787,7 +850,7 @@ export default function QiblaScreen() {
       ) : (
         // Compass view
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+
           {/* Tilt Calibration Alert */}
           {isSensorsAvailable && !isFlat && (
             <View style={styles.tiltWarning}>
@@ -796,197 +859,248 @@ export default function QiblaScreen() {
             </View>
           )}
 
-          {/* Compass layout container */}
+          {/* Premium Golden Compass */}
           <View style={styles.compassContainer}>
-            
-            {/* 3D Outer Beveled Casing */}
-            <LinearGradient
-              colors={activeSkin.caseGradient as [string, string, ...string[]]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.caseOuterBorder}
-            >
-              {/* Inner metallic drop shadows and casing depth */}
-              <LinearGradient
-                colors={['#000', '#1c1b18', '#38352e']}
-                style={styles.caseInnerChamber}
-              >
-                {/* 12 o'clock fixed top pointer inside the static casing */}
-                <View style={styles.topPointer}>
-                  <MaterialCommunityIcons name="triangle" size={14} color={isAligned && isFlat ? '#2ecc71' : '#e74c3c'} />
-                </View>
+            <View style={{ width: COMPASS_SIZE, height: COMPASS_SIZE }}>
+              <Svg width={COMPASS_SIZE} height={COMPASS_SIZE} viewBox={`0 0 ${COMPASS_SIZE} ${COMPASS_SIZE}`}>
+                <Defs>
+                  <SvgLinearGradient id="outerRingGrad" x1="0" y1="0" x2="1" y2="1">
+                    <Stop offset="0" stopColor={activeSkin.bezelStops[0]} />
+                    <Stop offset="0.2" stopColor={activeSkin.bezelStops[1]} />
+                    <Stop offset="0.45" stopColor={activeSkin.bezelStops[2]} />
+                    <Stop offset="0.6" stopColor={activeSkin.bezelStops[3]} />
+                    <Stop offset="0.8" stopColor={activeSkin.bezelStops[4]} />
+                    <Stop offset="1" stopColor={activeSkin.bezelStops[5]} />
+                  </SvgLinearGradient>
+                  <SvgLinearGradient id="innerRingGrad" x1="0" y1="0" x2="1" y2="1">
+                    <Stop offset="0" stopColor={activeSkin.innerRingStops[0]} />
+                    <Stop offset="0.3" stopColor={activeSkin.innerRingStops[1]} />
+                    <Stop offset="0.5" stopColor={activeSkin.innerRingStops[2]} />
+                    <Stop offset="0.7" stopColor={activeSkin.innerRingStops[3]} />
+                    <Stop offset="1" stopColor={activeSkin.innerRingStops[4]} />
+                  </SvgLinearGradient>
+                  <RadialGradient id="dialFaceGrad" cx="50%" cy="45%" r="52%">
+                    <Stop offset="0" stopColor={activeSkin.dialFaceStops[0]} />
+                    <Stop offset="0.4" stopColor={activeSkin.dialFaceStops[1]} />
+                    <Stop offset="0.7" stopColor={activeSkin.dialFaceStops[2]} />
+                    <Stop offset="1" stopColor={activeSkin.dialFaceStops[3]} />
+                  </RadialGradient>
+                  <RadialGradient id="capGrad" cx="45%" cy="40%" r="55%">
+                    <Stop offset="0" stopColor={activeSkin.capStops[0]} />
+                    <Stop offset="0.5" stopColor={activeSkin.capStops[1]} />
+                    <Stop offset="1" stopColor={activeSkin.capStops[2]} />
+                  </RadialGradient>
+                </Defs>
 
-                {/* 3D Tilted Compass Chamber (Animates based on phone tilt for deep parallax) */}
-                <Animated.View
-                  style={[
-                    styles.tiltedChamber,
-                    tiltedChamberStyle,
-                  ]}
-                >
-                  {/* Rotating Dial Disk */}
-                  <Animated.View
-                    style={[
-                      styles.rotatingDialDisk,
-                      {
-                        backgroundColor: activeSkin.bg,
-                        borderColor: isAligned && isFlat ? '#2ecc71' : activeSkin.ringColor,
-                      },
-                      dialRotationStyle,
-                    ]}
-                  >
-                    {/* Concentric texture circles for physical detailing */}
-                    <View style={styles.concentricCircle} />
-                    <View style={[styles.concentricCircle, { width: 140, height: 140 }]} />
-                    <View style={[styles.concentricCircle, { width: 80, height: 80 }]} />
-                    <LinearGradient
-                      colors={isLightDial ? ['rgba(255,255,255,0.48)', 'rgba(185,116,40,0.08)', 'rgba(58,36,24,0.08)'] : ['rgba(255,255,255,0.14)', 'transparent']}
-                      style={styles.dialPatina}
-                    />
-                    {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
-                      <View key={`rose-${deg}`} style={[styles.roseArm, { transform: [{ rotate: `${deg}deg` }] }]}>
-                        <View style={[styles.roseArmFill, { borderBottomColor: deg % 90 === 0 ? dialInk : dialMuted }]} />
-                      </View>
-                    ))}
+                {/* Drop shadow */}
+                <Circle cx={COMPASS_R} cy={COMPASS_R + 4} r={COMPASS_R - 4} fill="rgba(0,0,0,0.25)" />
+                {/* Outer bezel */}
+                <Circle cx={COMPASS_R} cy={COMPASS_R} r={COMPASS_R - 4} fill="url(#outerRingGrad)" />
+                {/* Bezel engravings */}
+                <Circle cx={COMPASS_R} cy={COMPASS_R} r={COMPASS_R - 10} fill="none" stroke={`${activeSkin.bezelStops[5]}80`} strokeWidth={1} />
+                <Circle cx={COMPASS_R} cy={COMPASS_R} r={COMPASS_R - 14} fill="none" stroke={`${activeSkin.bezelStops[0]}50`} strokeWidth={0.5} />
+                {/* Inner ring */}
+                <Circle cx={COMPASS_R} cy={COMPASS_R} r={COMPASS_R - 18} fill="url(#innerRingGrad)" />
+                {/* Dark chamber */}
+                <Circle cx={COMPASS_R} cy={COMPASS_R} r={COMPASS_R - 22} fill={activeSkin.chamberFill} />
+              </Svg>
 
-                    {/* Rotating Cardinal Directions */}
-                    <View style={styles.rotatingCardinals}>
-                      <Text style={[styles.cardinal, { position: 'absolute', top: 10, color: isAligned && isFlat ? '#2ecc71' : activeSkin.accent, fontSize: 19 }]}>N</Text>
-                      <Text style={[styles.cardinal, { position: 'absolute', right: 10, color: dialInk }]}>E</Text>
-                      <Text style={[styles.cardinal, { position: 'absolute', bottom: 10, color: dialInk }]}>S</Text>
-                      <Text style={[styles.cardinal, { position: 'absolute', left: 10, color: dialInk }]}>W</Text>
-                    </View>
+              {/* Rotating dial */}
+              <Animated.View style={[{
+                position: 'absolute',
+                width: COMPASS_SIZE - 48,
+                height: COMPASS_SIZE - 48,
+                left: 24,
+                top: 24,
+              }, dialRotationStyle]}>
+                <Svg width={COMPASS_SIZE - 48} height={COMPASS_SIZE - 48} viewBox={`0 0 ${COMPASS_SIZE - 48} ${COMPASS_SIZE - 48}`}>
+                  <Defs>
+                    <RadialGradient id="dialFace2" cx="50%" cy="45%" r="52%">
+                      <Stop offset="0" stopColor={activeSkin.dialFaceStops[0]} />
+                      <Stop offset="0.4" stopColor={activeSkin.dialFaceStops[1]} />
+                      <Stop offset="0.75" stopColor={activeSkin.dialFaceStops[2]} />
+                      <Stop offset="1" stopColor={activeSkin.dialFaceStops[3]} />
+                    </RadialGradient>
+                  </Defs>
 
-                    {/* 3D Kaaba target icon on the dial ring at Mecca angle */}
-                    <View
-                      style={[
-                        styles.rotatingKaabaMarker,
-                        {
-                          transform: [
-                            { rotate: `${qiblaDirection}deg` },
-                            { translateY: -98 } 
-                          ]
-                        }
-                      ]}
-                    >
-                      <Text style={{ fontSize: 18, transform: [{ rotate: `-${qiblaDirection}deg` }] }}>🕋</Text>
-                    </View>
+                  <Circle cx={(COMPASS_SIZE-48)/2} cy={(COMPASS_SIZE-48)/2} r={(COMPASS_SIZE-48)/2 - 2} fill="url(#dialFace2)" />
+                  <Circle cx={(COMPASS_SIZE-48)/2} cy={(COMPASS_SIZE-48)/2} r={(COMPASS_SIZE-48)/2 - 2} fill="none" stroke={activeSkin.dialStroke} strokeWidth={1.5} />
 
-                    {/* Compass Ticks */}
-                    {Array.from({ length: 72 }, (_, i) => i * 5).map(deg => {
+                  {/* Concentric rings */}
+                  <Circle cx={(COMPASS_SIZE-48)/2} cy={(COMPASS_SIZE-48)/2} r={(COMPASS_SIZE-48)/2 - 14} fill="none" stroke={activeSkin.concentricColor} strokeWidth={0.5} />
+                  <Circle cx={(COMPASS_SIZE-48)/2} cy={(COMPASS_SIZE-48)/2} r={(COMPASS_SIZE-48)/2 - 28} fill="none" stroke={activeSkin.concentricColor} strokeWidth={0.5} />
+                  <Circle cx={(COMPASS_SIZE-48)/2} cy={(COMPASS_SIZE-48)/2} r={50} fill="none" stroke={activeSkin.concentricColor} strokeWidth={0.5} />
+
+                  <G transform={`translate(${(COMPASS_SIZE-48)/2}, ${(COMPASS_SIZE-48)/2})`}>
+                    {/* 8-point compass rose */}
+                    {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => {
+                      const isCardinal = deg % 90 === 0;
+                      const len = isCardinal ? (COMPASS_SIZE-48)/2 - 22 : (COMPASS_SIZE-48)/2 - 40;
+                      const w = isCardinal ? 5 : 3;
+                      const rad = deg * Math.PI / 180;
+                      const x2 = Math.sin(rad) * len;
+                      const y2 = -Math.cos(rad) * len;
+                      return (
+                        <Line key={'rose-'+deg} x1={0} y1={0} x2={x2} y2={y2}
+                          stroke={isCardinal ? activeSkin.roseColor : activeSkin.roseMuted}
+                          strokeWidth={w} strokeLinecap="round" />
+                      );
+                    })}
+
+                    {/* 72 tick marks */}
+                    {Array.from({length: 72}, (_, i) => i * 5).map(deg => {
                       const isCardinal = deg % 90 === 0;
                       const isMajor = deg % 30 === 0;
+                      const outerR = (COMPASS_SIZE - 48) / 2 - 4;
+                      const innerR = isCardinal ? outerR - 18 : isMajor ? outerR - 13 : outerR - 7;
+                      const rad = deg * Math.PI / 180;
+                      const x1 = Math.sin(rad) * outerR;
+                      const y1 = -Math.cos(rad) * outerR;
+                      const x2 = Math.sin(rad) * innerR;
+                      const y2 = -Math.cos(rad) * innerR;
                       return (
-                        <View
-                          key={deg}
-                          style={[
-                            styles.degreeMarker,
-                            {
-                              transform: [{ rotate: `${deg}deg` }],
-                            },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.markerLine,
-                              { 
-                                backgroundColor: isCardinal ? activeSkin.accent : isMajor ? dialInk : dialMuted,
-                                height: isCardinal ? 15 : isMajor ? 11 : 6,
-                              }
-                            ]}
-                          />
-                        </View>
+                        <Line key={'tick-'+deg} x1={x1} y1={y1} x2={x2} y2={y2}
+                          stroke={isCardinal ? activeSkin.tickColor : isMajor ? activeSkin.tickMajor : activeSkin.tickMinor}
+                          strokeWidth={isCardinal ? 2.5 : isMajor ? 1.5 : 1}
+                          strokeLinecap="round" />
                       );
                     })}
 
-                    {/* Degree text readouts */}
-                    {[0, 90, 180, 270].map(deg => {
-                      const r = 82;
-                      const x = r * Math.sin((deg * Math.PI) / 180);
-                      const y = -r * Math.cos((deg * Math.PI) / 180);
+                    {/* Cardinal labels */}
+                    <SvgText x={0} y={-((COMPASS_SIZE-48)/2 - 38)} textAnchor="middle" alignmentBaseline="central"
+                      fontSize={22} fontWeight="900" fill={isAligned && isFlat ? "#2ecc71" : activeSkin.cardinalColor}>N</SvgText>
+                    <SvgText x={(COMPASS_SIZE-48)/2 - 38} y={0} textAnchor="middle" alignmentBaseline="central"
+                      fontSize={16} fontWeight="800" fill={activeSkin.labelColor}>E</SvgText>
+                    <SvgText x={0} y={(COMPASS_SIZE-48)/2 - 38} textAnchor="middle" alignmentBaseline="central"
+                      fontSize={16} fontWeight="800" fill={activeSkin.labelColor}>S</SvgText>
+                    <SvgText x={-((COMPASS_SIZE-48)/2 - 38)} y={0} textAnchor="middle" alignmentBaseline="central"
+                      fontSize={16} fontWeight="800" fill={activeSkin.labelColor}>W</SvgText>
+
+                    {/* Intercardinals */}
+                    {[{deg: 45, label: 'NE'}, {deg: 135, label: 'SE'}, {deg: 225, label: 'SW'}, {deg: 315, label: 'NW'}].map(({deg, label}) => {
+                      const r = (COMPASS_SIZE-48)/2 - 38;
+                      const rad = deg * Math.PI / 180;
                       return (
-                        <Text
-                          key={`text-${deg}`}
-                          style={[
-                            styles.degreeText,
-                            {
-                              position: 'absolute',
-                              left: 111 + x,
-                              top: 111 + y,
-                              transform: [{ translateX: -10 }, { translateY: -6 }],
-                              color: 'rgba(255,255,255,0.3)',
-                            },
-                          ]}
-                        >
-                          {deg}°
-                        </Text>
+                        <SvgText key={label} x={Math.sin(rad) * r} y={-Math.cos(rad) * r}
+                          textAnchor="middle" alignmentBaseline="central"
+                          fontSize={10} fontWeight="600" fill={activeSkin.degreeColor}>{label}</SvgText>
                       );
                     })}
-                  </Animated.View>
 
-                  {/* 3D Beveled Needle (Points to Mecca relative to dial/phone rotation) */}
-                  <Animated.View
-                    style={[
-                      styles.needleWrapper,
-                      {
-                        transform: [{ rotate: `${relativeAngle}deg` }],
-                      },
-                    ]}
-                  >
-                    {/* Beveled Top Needle half pointers */}
-                    <View style={styles.needlePair}>
-                      <View style={[styles.needleHalfLeft, { borderBottomColor: isAligned && isFlat ? '#2ecc71' : activeSkin.needleColorLight }]} />
-                      <View style={[styles.needleHalfRight, { borderBottomColor: isAligned && isFlat ? '#27ae60' : activeSkin.needleColorDark }]} />
-                    </View>
-                    {/* Beveled Bottom balance pointers */}
-                    <View style={[styles.needlePair, { transform: [{ rotate: '180deg' }] }]}>
-                      <View style={[styles.needleHalfLeft, { borderBottomColor: '#7f8c8d', borderBottomWidth: 40, borderLeftWidth: 6 }]} />
-                      <View style={[styles.needleHalfRight, { borderBottomColor: '#34495e', borderBottomWidth: 40, borderRightWidth: 6 }]} />
-                    </View>
+                    {/* Degree numerals */}
+                    {[30, 60, 120, 150, 210, 240, 300, 330].map(deg => {
+                      const r = (COMPASS_SIZE-48)/2 - 38;
+                      const rad = deg * Math.PI / 180;
+                      return (
+                        <SvgText key={'num-'+deg} x={Math.sin(rad) * r} y={-Math.cos(rad) * r}
+                          textAnchor="middle" alignmentBaseline="central"
+                          fontSize={9} fontWeight="500" fill={activeSkin.degreeColor}>{deg}°</SvgText>
+                      );
+                    })}
 
-                    {/* Kaaba pointer target text at the needle tip */}
-                    <View style={styles.floatingMeccaIndicator}>
-                      <Text style={{ fontSize: 16 }}>🕋</Text>
-                    </View>
-                  </Animated.View>
+                    {/* Kaaba marker */}
+                    <G transform={`rotate(${qiblaDirection})`}>
+                      <SvgText x={0} y={-((COMPASS_SIZE-48)/2 - 10)} textAnchor="middle" fontSize={16}>🕋</SvgText>
+                    </G>
+                  </G>
+                </Svg>
+              </Animated.View>
 
-                  {/* Central Cap & Bubble level */}
-                  {isSensorsAvailable ? (
-                    <View style={styles.centerBrassCap}>
-                      <View style={styles.bubbleLevelRing}>
-                        <View style={[
-                          styles.bubbleIndicatorDot, 
-                          {
-                            transform: [
-                              { translateX: Math.max(-10, Math.min(10, tilt.x * 20)) },
-                              { translateY: Math.max(-10, Math.min(10, -tilt.y * 20)) }
-                            ],
-                            backgroundColor: isFlat ? '#2ecc71' : colors.warning
-                          }
-                        ]} />
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.staticCenterPivot} />
-                  )}
+              {/* Needle */}
+              <Animated.View style={[{
+                position: 'absolute',
+                width: COMPASS_SIZE,
+                height: COMPASS_SIZE,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }]}>
+                <View style={{ transform: [{ rotate: relativeAngle + 'deg' }], width: COMPASS_SIZE, height: COMPASS_SIZE, alignItems: 'center', justifyContent: 'center' }}>
+                  <Svg width={COMPASS_SIZE} height={COMPASS_SIZE} viewBox={`0 0 ${COMPASS_SIZE} ${COMPASS_SIZE}`}>
+                    <Defs>
+                      <SvgLinearGradient id="needleTop2" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0" stopColor={isAligned && isFlat ? "#2ecc71" : activeSkin.needleLight} />
+                        <Stop offset="1" stopColor={isAligned && isFlat ? "#27ae60" : activeSkin.needleDark} />
+                      </SvgLinearGradient>
+                      <SvgLinearGradient id="needleBot2" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0" stopColor={activeSkin.needleBottomLight} />
+                        <Stop offset="1" stopColor={activeSkin.needleBottomDark} />
+                      </SvgLinearGradient>
+                    </Defs>
+                    <Path d={`M${COMPASS_R - 7} ${COMPASS_R} L${COMPASS_R} 50 L${COMPASS_R + 7} ${COMPASS_R} Z`}
+                      fill="url(#needleTop2)" stroke="rgba(0,0,0,0.3)" strokeWidth={0.5} />
+                    <Path d={`M${COMPASS_R - 7} ${COMPASS_R} L${COMPASS_R} 50 L${COMPASS_R} ${COMPASS_R} Z`}
+                      fill="rgba(255,255,255,0.15)" />
+                    <Path d={`M${COMPASS_R - 5} ${COMPASS_R} L${COMPASS_R} ${COMPASS_SIZE - 60} L${COMPASS_R + 5} ${COMPASS_R} Z`}
+                      fill="url(#needleBot2)" stroke="rgba(0,0,0,0.2)" strokeWidth={0.5} />
+                    <SvgText x={COMPASS_R} y={42} textAnchor="middle" fontSize={14}>🕋</SvgText>
+                  </Svg>
+                </View>
+              </Animated.View>
 
-                </Animated.View>
+              {/* Center cap */}
+              <View style={{
+                position: 'absolute',
+                left: COMPASS_R - 16,
+                top: COMPASS_R - 16,
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                zIndex: 30,
+              }}>
+                <Svg width={32} height={32} viewBox="0 0 32 32">
+                  <Defs>
+                    <RadialGradient id="capGrad2" cx="40%" cy="35%" r="60%">
+                      <Stop offset="0" stopColor={activeSkin.capStops[0]} />
+                      <Stop offset="0.5" stopColor={activeSkin.capStops[1]} />
+                      <Stop offset="1" stopColor={activeSkin.capStops[2]} />
+                    </RadialGradient>
+                  </Defs>
+                  <Circle cx={16} cy={16} r={14} fill="url(#capGrad2)" />
+                  <Circle cx={16} cy={16} r={14} fill="none" stroke={activeSkin.capStroke} strokeWidth={1.5} />
+                  <Circle cx={16} cy={16} r={8} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={0.5} />
+                  <Circle
+                    cx={16 + Math.max(-6, Math.min(6, tilt.x * 12))}
+                    cy={16 + Math.max(-6, Math.min(6, -tilt.y * 12))}
+                    r={3}
+                    fill={isFlat ? "#2ecc71" : "#F59E0B"}
+                    stroke="rgba(0,0,0,0.2)"
+                    strokeWidth={0.5}
+                  />
+                </Svg>
+              </View>
 
-                {/* Hyper-realistic Glass Dome Reflection shine cover overlay */}
-                <LinearGradient
-                  colors={['rgba(255, 255, 255, 0.22)', 'rgba(255, 255, 255, 0.05)', 'transparent']}
-                  style={styles.glassReflectionGlare}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0.8, y: 0.8 }}
-                />
-              </LinearGradient>
-            </LinearGradient>
+              {/* Top pointer */}
+              <View style={{
+                position: 'absolute',
+                top: 6,
+                alignSelf: 'center',
+                left: COMPASS_R - 8,
+                zIndex: 40,
+              }}>
+                <Svg width={16} height={14} viewBox="0 0 16 14">
+                  <Path d="M8 0 L14 14 L2 14 Z" fill={isAligned && isFlat ? "#2ecc71" : "#c0392b"} stroke="rgba(0,0,0,0.3)" strokeWidth={0.5} />
+                </Svg>
+              </View>
 
+              {/* Glass dome */}
+              <Svg width={COMPASS_SIZE} height={COMPASS_SIZE} viewBox={`0 0 ${COMPASS_SIZE} ${COMPASS_SIZE}`}
+                style={{ position: 'absolute', zIndex: 50, pointerEvents: 'none' }}>
+                <Defs>
+                  <SvgLinearGradient id="glassShine" x1="0.2" y1="0" x2="0.7" y2="0.8">
+                    <Stop offset="0" stopColor="rgba(255,255,255,0.22)" />
+                    <Stop offset="0.3" stopColor="rgba(255,255,255,0.06)" />
+                    <Stop offset="1" stopColor="rgba(255,255,255,0)" />
+                  </SvgLinearGradient>
+                </Defs>
+                <Circle cx={COMPASS_R} cy={COMPASS_R} r={COMPASS_R - 4} fill="url(#glassShine)" />
+              </Svg>
+            </View>
           </View>
 
           {/* Direction Banner */}
           <View style={[
-            styles.directionGuide, 
-            { 
+            styles.directionGuide,
+            {
               backgroundColor: isAligned && isFlat ? 'rgba(46, 204, 113, 0.12)' : 'rgba(245, 158, 11, 0.08)',
               borderColor: isAligned && isFlat ? '#2ecc71' : colors.border
             }
@@ -1039,7 +1153,7 @@ export default function QiblaScreen() {
                 >
                   <View style={[styles.skinPreview, { backgroundColor: skin.bg, borderColor: skin.ringColor }]}>
                     <Text style={[styles.skinNorth, { color: skin.accent }]}>N</Text>
-                    <View style={[styles.skinNeedle, { backgroundColor: skin.needleColorLight }]} />
+                    <View style={[styles.skinNeedle, { backgroundColor: skin.needleLight }]} />
                     <View style={[styles.skinHub, { backgroundColor: skin.ringColor }]} />
                   </View>
                   <Text style={[styles.skinName, { color: colors.onSurface }]}>{skin.name}</Text>
@@ -1458,7 +1572,7 @@ const styles = StyleSheet.create({
     marginVertical: 18,
     minHeight: 300,
   },
-  
+
   // Realistic 3D Casing & Layers
   caseOuterBorder: {
     width: Math.min(width - 54, 304),

@@ -31,43 +31,11 @@ export default function AllahNamesScreen() {
   const { profile } = useAuth();
   const { showPremiumModal } = usePremiumModal();
 
-  // Tab State: 'intro' | 'allah' | 'islamic_names'
-  const [activeTab, setActiveTab] = useState<"intro" | "allah" | "islamic_names">("intro");
+  // Tab State: 'intro' | 'allah'
+  const [activeTab, setActiveTab] = useState<"intro" | "allah">("intro");
   const [isGrid, setIsGrid] = useState(true);
   const [playingNumber, setPlayingNumber] = useState<number | null>(null);
   const [selectedName, setSelectedName] = useState<AllahName | null>(null);
-
-  // UmmahAPI Islamic Names state
-  const [islamicNames, setIslamicNames] = useState<Array<{
-    id: number;
-    name: string;
-    arabic: string;
-    gender: string;
-    meaning: string;
-    origin: string;
-    root?: string;
-    note?: string;
-  }>>([]);
-  const [namesSearch, setNamesSearch] = useState("");
-  const [namesGender, setNamesGender] = useState<"all" | "male" | "female">("all");
-  const [namesLoading, setNamesLoading] = useState(false);
-
-  // Fetch live Islamic Names from UmmahAPI
-  useEffect(() => {
-    if (activeTab !== "islamic_names") return;
-    setNamesLoading(true);
-    let url = `https://www.ummahapi.com/api/names?limit=210`;
-    if (namesGender !== "all") url += `&gender=${namesGender}`;
-    fetch(url)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (json?.data?.names && Array.isArray(json.data.names)) {
-          setIslamicNames(json.data.names);
-        }
-      })
-      .catch((err) => console.warn("UmmahAPI names fetch error:", err))
-      .finally(() => setNamesLoading(false));
-  }, [activeTab, namesGender]);
 
   // Play All state (Single MP3 track of Mishary Rashid Alafasy)
   const [isPlayingAll, setIsPlayingAll] = useState(false);
@@ -195,10 +163,10 @@ export default function AllahNamesScreen() {
   const renderListItem = useCallback(({ item }: { item: AllahName }) => {
     const isPlaying = playingNumber === item.number;
     return (
-      <Pressable 
+      <Pressable
         onPress={() => setSelectedName(item)}
         style={({ pressed }) => [
-          styles.listCard, 
+          styles.listCard,
           { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1 },
           isPlaying && { borderColor: colors.brand, borderWidth: 1.5 },
           pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] }
@@ -249,10 +217,10 @@ export default function AllahNamesScreen() {
   const renderGridItem = useCallback(({ item }: { item: AllahName }) => {
     const isPlaying = playingNumber === item.number;
     return (
-      <Pressable 
+      <Pressable
         onPress={() => setSelectedName(item)}
         style={({ pressed }) => [
-          styles.gridCard, 
+          styles.gridCard,
           { backgroundColor: colors.surfaceSecondary, width: GRID_ITEM_WIDTH, borderColor: colors.border, borderWidth: 1 },
           isPlaying && { borderWidth: 1.5, borderColor: colors.brand },
           pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }
@@ -326,7 +294,7 @@ export default function AllahNamesScreen() {
         </View>
       </View>
 
-      {/* Tab Selector: Intro | 99 Names of Allah | Islamic Baby Names */}
+      {/* Tab Selector: Intro | 99 Names of Allah */}
       <View style={{ flexDirection: "row", marginHorizontal: 20, marginBottom: 12, backgroundColor: colors.surfaceSecondary, borderRadius: 12, padding: 4 }}>
         <Pressable
           onPress={() => setActiveTab("intro")}
@@ -345,21 +313,12 @@ export default function AllahNamesScreen() {
             ✨ 99 Names
           </Text>
         </Pressable>
-
-        <Pressable
-          onPress={() => setActiveTab("islamic_names")}
-          style={{ flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 8, backgroundColor: activeTab === "islamic_names" ? colors.brand : "transparent" }}
-        >
-          <Text style={{ fontSize: 12, fontWeight: "700", color: activeTab === "islamic_names" ? "#FFF" : colors.onSurfaceMuted }}>
-            👶 Baby Names
-          </Text>
-        </Pressable>
       </View>
 
       {/* TAB 1: INTRODUCTION / FOUNDATION OVERVIEW */}
       {activeTab === "intro" ? (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-          
+
           {/* Hero Banner Card */}
           <View style={[styles.introHeroCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             <Text style={[styles.introHeroTitleAra, { color: colors.brand, fontFamily: arabicFontFamily || "NotoNaskhArabic" }]}>
@@ -381,7 +340,7 @@ export default function AllahNamesScreen() {
                 What are the 99 names of Allah?
               </Text>
             </View>
-            
+
             <Text style={[styles.introParagraph, { color: colors.onSurface }]}>
               <Text style={{ fontWeight: "700" }}>Al-asma' al-husna</Text>, "the most beautiful names," is the Quranic term for the divine names that describe Allah's attributes. The foundational verse is <Text style={{ fontWeight: "700" }}>al-A'raf 7:180</Text>:
             </Text>
@@ -554,59 +513,12 @@ export default function AllahNamesScreen() {
           </Pressable>
 
         </ScrollView>
-      ) : activeTab === "islamic_names" ? (
-        /* TAB 3: ISLAMIC BABY NAMES DIRECTORY */
-        <View style={{ flex: 1, paddingHorizontal: 20 }}>
-          {/* Gender Filter Pills */}
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
-            {(["all", "male", "female"] as const).map((g) => (
-              <Pressable
-                key={g}
-                onPress={() => setNamesGender(g)}
-                style={{
-                  paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-                  backgroundColor: namesGender === g ? colors.brand : colors.surfaceSecondary,
-                  borderWidth: 1, borderColor: namesGender === g ? colors.brand : colors.border,
-                }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "700", color: namesGender === g ? "#FFF" : colors.onSurfaceSecondary }}>
-                  {g === "all" ? "All Names" : g === "male" ? "👦 Male" : "👧 Female"}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {namesLoading ? (
-            <ActivityIndicator color={colors.brand} style={{ marginTop: 40 }} />
-          ) : (
-            <FlatList
-              data={islamicNames}
-              keyExtractor={(item) => String(item.id)}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 40, gap: 12 }}
-              renderItem={({ item }) => (
-                <View style={[styles.listCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, padding: 14 }]}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                      <Text style={{ fontSize: 16, fontWeight: "800", color: colors.onSurface }}>{item.name}</Text>
-                      <Text style={{ fontFamily: "AmiriBold", fontSize: 22, color: colors.brand }}>{item.arabic}</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, color: colors.onSurfaceSecondary, marginBottom: 4 }}>{item.meaning}</Text>
-                    {item.note ? (
-                      <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, fontStyle: "italic" }}>{item.note}</Text>
-                    ) : null}
-                  </View>
-                </View>
-              )}
-            />
-          )}
-        </View>
       ) : (
         /* TAB 2: 99 NAMES OF ALLAH GRID / LIST */
         <>
           {/* Play Asma Al Husna Banner */}
           {!isPlayingAll && (
-            <Pressable 
+            <Pressable
               onPress={startPlayAll}
               style={({ pressed }) => [
                 styles.playAllBanner,
@@ -647,7 +559,7 @@ export default function AllahNamesScreen() {
       {/* ─── Premium Floating Music Player Bar (Full track) ─── */}
       {isPlayingAll && (
         <View style={[styles.floatingPlayer, { backgroundColor: colors.surfaceSecondary, borderTopColor: colors.border }]}>
-          <Pressable 
+          <Pressable
             onPress={handleSeek}
             onLayout={(e) => setProgressBarWidth(e.nativeEvent.layout.width)}
             style={styles.playerProgressBg}
@@ -673,8 +585,8 @@ export default function AllahNamesScreen() {
                 <MaterialCommunityIcons name="rewind" size={28} color={colors.onSurface} />
               </Pressable>
 
-              <Pressable 
-                onPress={player.playing ? pausePlayAll : resumePlayAll} 
+              <Pressable
+                onPress={player.playing ? pausePlayAll : resumePlayAll}
                 style={[styles.playerPlayBtn, { backgroundColor: colors.brand }]}
                 hitSlop={6}
               >
@@ -701,10 +613,10 @@ export default function AllahNamesScreen() {
         onRequestClose={() => setSelectedName(null)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setSelectedName(null)}>
-          <Pressable 
+          <Pressable
             onPress={(e) => e.stopPropagation()}
             style={[
-              styles.modalContent, 
+              styles.modalContent,
               { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }
             ]}
           >
@@ -719,8 +631,8 @@ export default function AllahNamesScreen() {
                   </Pressable>
                 </View>
 
-                <ScrollView 
-                  style={styles.modalScrollView} 
+                <ScrollView
+                  style={styles.modalScrollView}
                   contentContainerStyle={{ paddingBottom: 30 }}
                   showsVerticalScrollIndicator={true}
                 >

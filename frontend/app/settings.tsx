@@ -16,6 +16,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { AppBottomSheet, AppBottomSheetRef } from "@/src/components/AppBottomSheet";
 import { AppButton, AppSwitch } from "@/src/components/ui";
+import { DailyNotificationError, isDailyHadithEnabled, isDailyVerseEnabled, scheduleDailyHadithNotification, scheduleDailyVerseNotification, cancelDailyHadithNotification, cancelDailyVerseNotification } from "@/src/services/dailyContentService";
+import AttributionFooter from "@/src/components/AttributionFooter";
+import {
+  getAvailableTranslations,
+  getStoredTranslationKey,
+  QuranEncTranslation,
+  setStoredTranslationKey,
+} from "@/src/services/quranEncService";
 
 type SettingItem = {
   id: string;
@@ -79,10 +87,15 @@ export default function SettingsScreen() {
   const [dailyNotif, setDailyNotif] = useState(true);
   const [reminderNotif, setReminderNotif] = useState(true);
   const [articleNotif, setArticleNotif] = useState(true);
+  const [dailyHadithNotif, setDailyHadithNotif] = useState(false);
+  const [dailyVerseNotif, setDailyVerseNotif] = useState(false);
 
   const [translationEnabled, setTranslationEnabled] = useState(true);
   const [transliterationEnabled, setTransliterationEnabled] = useState(true);
   const [transliterationType, setTransliterationType] = useState<"tajweed" | "syllables" | "wbw">("tajweed");
+
+  const [availableTranslations, setAvailableTranslations] = useState<QuranEncTranslation[]>([]);
+  const [selectedTranslationKey, setSelectedTranslationKey] = useState<string | null>(null);
 
   const [audioSpeed, setAudioSpeed] = useState("1.0x");
   const [tasbihVibe, setTasbihVibe] = useState(true);
@@ -94,6 +107,13 @@ export default function SettingsScreen() {
     AsyncStorage.getItem("quran_tafsir_lang").then(l => {
       if (l) setTafsirLang(l);
     }).catch(() => {});
+
+    AsyncStorage.getItem("hikmah:tasbih:haptic:v1").then(h => {
+      if (h !== null) setTasbihVibe(h === 'true');
+    }).catch(() => {});
+
+    isDailyHadithEnabled().then(setDailyHadithNotif);
+    isDailyVerseEnabled().then(setDailyVerseNotif);
   }, []);
 
   const { profile, logout } = useAuth();
@@ -170,7 +190,12 @@ export default function SettingsScreen() {
         setTransliterationType(val as any);
       }
     });
-  }, []);
+    getStoredTranslationKey().then(val => {
+      if (val) setSelectedTranslationKey(val);
+    });
+
+    getAvailableTranslations(language).then(setAvailableTranslations).catch(console.error);
+  }, [language]);
 
   const handleToggleTranslation = async (val: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -213,6 +238,38 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleToggleDailyHadith = async (val: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const previous = dailyHadithNotif;
+    setDailyHadithNotif(val);
+    try {
+      if (val) await scheduleDailyHadithNotification(8, 0);
+      else await cancelDailyHadithNotification();
+    } catch (error) {
+      setDailyHadithNotif(previous);
+      const message = error instanceof DailyNotificationError && error.code === "permission"
+        ? "Please allow notifications in your device settings to enable this reminder."
+        : "The daily Hadith reminder could not be updated. Please try again.";
+      if (Platform.OS !== "web") Alert.alert("Notifications unavailable", message);
+    }
+  };
+
+  const handleToggleDailyVerse = async (val: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const previous = dailyVerseNotif;
+    setDailyVerseNotif(val);
+    try {
+      if (val) await scheduleDailyVerseNotification(7, 0);
+      else await cancelDailyVerseNotification();
+    } catch (error) {
+      setDailyVerseNotif(previous);
+      const message = error instanceof DailyNotificationError && error.code === "permission"
+        ? "Please allow notifications in your device settings to enable this reminder."
+        : "The daily Verse reminder could not be updated. Please try again.";
+      if (Platform.OS !== "web") Alert.alert("Notifications unavailable", message);
+    }
+  };
+
   const handleItemPress = (item: SettingItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setActiveItem(item);
@@ -227,12 +284,24 @@ export default function SettingsScreen() {
         return (
           <View style={styles.modalContent}>
             <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Notification Settings</Text>
-            
+
             <AppSwitch
               description="Receive morning and evening reminders."
               label="Daily Adhkar alerts"
               onValueChange={setDailyNotif}
               value={dailyNotif}
+            />
+            <AppSwitch
+              description="Daily Hadith of the day at 8:00 AM."
+              label="Hadith of the Day"
+              onValueChange={handleToggleDailyHadith}
+              value={dailyHadithNotif}
+            />
+            <AppSwitch
+              description="Daily Verse of the day at 7:00 AM."
+              label="Verse of the Day"
+              onValueChange={handleToggleDailyVerse}
+              value={dailyVerseNotif}
             />
             <AppSwitch
               description="Receive reminders for your custom habit goals."
@@ -362,6 +431,57 @@ export default function SettingsScreen() {
               </View>
             )}
 
+            {translationEnabled && availableTranslations.length > 0 && (
+              <View style={{ marginTop: 24 }}>
+                <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted, marginBottom: 8 }]}>Translation Source</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -24 }} contentContainerStyle={{ paddingHorizontal: 24, gap: 12 }}>
+                  <Pressable
+                    onPress={async () => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                      setSelectedTranslationKey(null);
+                      await setStoredTranslationKey("");
+                    }}
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      backgroundColor: selectedTranslationKey === null ? colors.brand + "15" : colors.surfaceTertiary,
+                      borderColor: selectedTranslationKey === null ? colors.brand : colors.border,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: "600", color: selectedTranslationKey === null ? colors.brand : colors.onSurface }}>
+                      Quran.com (Default)
+                    </Text>
+                  </Pressable>
+                  {availableTranslations.map(trans => (
+                    <Pressable
+                      key={trans.key}
+                      onPress={async () => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                        setSelectedTranslationKey(trans.key);
+                        await setStoredTranslationKey(trans.key);
+                      }}
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        backgroundColor: selectedTranslationKey === trans.key ? colors.brand + "15" : colors.surfaceTertiary,
+                        borderColor: selectedTranslationKey === trans.key ? colors.brand : colors.border,
+                      }}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: "600", color: selectedTranslationKey === trans.key ? colors.brand : colors.onSurface }}>
+                        {trans.title}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            <View style={{ height: 32 }} />
+
             <Text style={[styles.sectionLabel, { color: colors.onSurfaceMuted, marginTop: 16 }]}>Font Size</Text>
             <View style={[styles.speedRow, { marginBottom: 12 }]}>
               {(["small", "medium", "large"] as const).map((size) => (
@@ -391,7 +511,7 @@ export default function SettingsScreen() {
                 </Pressable>
               ))}
             </View>
-            
+
             <View style={[styles.previewBox, { backgroundColor: colors.surfaceTertiary, marginTop: 8 }]}>
               <Text style={[styles.previewLabel, { color: colors.brand }]}>PREVIEW</Text>
               <Text style={[styles.arabicPreview, { color: colors.onSurface, fontSize: getPreviewArabicSize() }]}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</Text>
@@ -437,7 +557,10 @@ export default function SettingsScreen() {
               containerStyle={{ marginTop: 24 }}
               description="Use haptic feedback when the Tasbih counter is tapped."
               label="Tasbih vibration"
-              onValueChange={setTasbihVibe}
+              onValueChange={async (val) => {
+                setTasbihVibe(val);
+                await AsyncStorage.setItem("hikmah:tasbih:haptic:v1", String(val));
+              }}
               value={tasbihVibe}
             />
             <AppSwitch
@@ -585,6 +708,14 @@ export default function SettingsScreen() {
             <Text style={[styles.paragraph, { color: colors.onSurfaceMuted, fontSize: 12 }]}>
               Islamic Hikmah is provided for educational and spiritual purposes. We do not store or collect any location or personal data on external servers.
             </Text>
+
+            <Text style={[styles.sectionLabel, { color: colors.brand, marginTop: 16 }]}>About Our Sources</Text>
+            <Text style={[styles.paragraph, { color: colors.onSurfaceMuted, fontSize: 12, marginBottom: 8 }]}>
+              We are grateful to the following platforms for providing authentic Islamic content via open APIs:
+            </Text>
+            <AttributionFooter source="hadeethenc" prominent />
+            <AttributionFooter source="quranenc" prominent />
+            <AttributionFooter source="islamhouse" prominent />
 
             <Pressable onPress={() => setActiveItem(null)} style={[styles.btn, { backgroundColor: colors.brand, marginTop: 24 }]}>
               <Text style={[styles.btnTxt, { color: colors.onBrandPrimary }]}>Close</Text>
@@ -922,7 +1053,7 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 16, fontWeight: "700" },
   rowSub: { fontSize: 12, marginTop: 4, lineHeight: 16 },
   version: { textAlign: "center", marginTop: theme.spacing.xl, fontSize: 12 },
-  
+
   // Sheet Modal Styles
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   modalCard: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: theme.spacing.lg, paddingBottom: 40, maxHeight: "85%" },
@@ -936,7 +1067,7 @@ const styles = StyleSheet.create({
   optionSub: { fontSize: 12, marginTop: 4 },
   btn: { padding: 14, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
   btnTxt: { fontWeight: "700", fontSize: 15 },
-  
+
   // Preview block
   previewBox: { padding: theme.spacing.md, borderRadius: theme.radius.md },
   previewLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 4 },

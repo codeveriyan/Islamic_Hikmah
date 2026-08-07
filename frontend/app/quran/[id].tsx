@@ -38,6 +38,7 @@ import {
   prefetchNextSurahTafsir,
 } from "@/src/services/cdnContentService";
 import * as Speech from "expo-speech";
+import { getStoredTranslationKey, getSurahTranslation } from "@/src/services/quranEncService";
 
 type Ayah = {
   number: number;
@@ -416,6 +417,7 @@ export default function SurahDetail() {
   const [showTransliteration, setShowTransliteration] = useState<boolean>(true);
   const [transliterationType, setTransliterationType] = useState<"tajweed" | "syllables" | "wbw">("tajweed");
   const [quranTransLang, setQuranTransLang] = useState<string>("en");
+  const [quranEncTranslationKey, setQuranEncTranslationKey] = useState<string | null>(null);
   const [translit, setTranslit] = useState<Ayah[]>([]);
   const [verseTimings, setVerseTimings] = useState<any[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -798,8 +800,9 @@ export default function SurahDetail() {
         };
       });
 
-      if (quranTransLang !== "en") {
-        const cacheKey = `islamic_hikmah:quran_trans_${quranTransLang}_${surahId}_${transliterationType}`;
+      if (quranEncTranslationKey || quranTransLang !== "en") {
+        const translationSource = quranEncTranslationKey || quranTransLang;
+        const cacheKey = `islamic_hikmah:quran_trans_${translationSource}_${surahId}_${transliterationType}`;
         setTrans(englishTrans);
         setTranslit(englishTranslit);
 
@@ -824,7 +827,17 @@ export default function SurahDetail() {
               const transResults: Ayah[] = [...englishTrans];
               const translitResults: Ayah[] = [...englishTranslit];
               const translationId = TRANSLATION_MAP[quranTransLang as keyof typeof TRANSLATION_MAP];
-              if (quranTransLang === "ta") {
+              if (quranEncTranslationKey) {
+                const quranEncVerses = await getSurahTranslation(quranEncTranslationKey, surahId);
+                quranEncVerses.forEach((verse) => {
+                  const ayahNumber = Number(verse.aya);
+                  const idx = transResults.findIndex((ayah) => ayah.numberInSurah === ayahNumber);
+                  if (idx >= 0) {
+                    const cleanText = verse.translation.replace(/<[^>]*>/g, "").trim();
+                    transResults[idx] = { ...transResults[idx], text: cleanText };
+                  }
+                });
+              } else if (quranTransLang === "ta") {
                 // Load from local Jan Trust JSON file
                 const taJanTrust = require("@/src/data/quran/ta-jan-trust-simple.json");
                 transResults.forEach((ayah, idx) => {
@@ -837,7 +850,7 @@ export default function SurahDetail() {
                 // Fetch directly from Quran.com API v4
                 const response = await fetch(`https://api.quran.com/api/v4/quran/translations/${translationId}?chapter_number=${surahId}`);
                 if (!active) return;
-                
+
                 if (response.ok) {
                   const data = await response.json();
                   if (data && data.translations && data.translations.length > 0) {
@@ -959,7 +972,7 @@ export default function SurahDetail() {
     return () => {
       active = false;
     };
-  }, [id, quranTransLang, transliterationType]);
+  }, [id, quranTransLang, quranEncTranslationKey, transliterationType]);
 
   // Returns the local filesystem path for a downloaded surah audio file.
   const getOfflinePath = (qId: string | number, sId: number) =>
@@ -1222,6 +1235,7 @@ export default function SurahDetail() {
           setQuranTransLang(language);
         }
       });
+      getStoredTranslationKey().then(setQuranEncTranslationKey);
       AsyncStorage.getItem("islamic_hikmah:quran_reading_mode").then((val) => {
         if (val) setReadingMode(val as any);
       });
@@ -1847,15 +1861,15 @@ export default function SurahDetail() {
                 if (!isLocal) return null;
                 const isDownloaded = downloadedTafsirs[activeTafsirId];
                 return (
-                  <Pressable 
-                    onPress={() => isDownloaded ? null : downloadTafsirOffline(activeTafsirId)} 
+                  <Pressable
+                    onPress={() => isDownloaded ? null : downloadTafsirOffline(activeTafsirId)}
                     style={{ marginLeft: 12, flexDirection: "row", alignItems: "center", gap: 4 }}
                     hitSlop={10}
                   >
-                    <MaterialCommunityIcons 
-                      name={isDownloaded ? "cloud-check" : "cloud-download-outline"} 
-                      size={20} 
-                      color={isDownloaded ? colors.brand : rc.trans} 
+                    <MaterialCommunityIcons
+                      name={isDownloaded ? "cloud-check" : "cloud-download-outline"}
+                      size={20}
+                      color={isDownloaded ? colors.brand : rc.trans}
                     />
                     <Text style={{ fontSize: 11, color: isDownloaded ? colors.brand : rc.trans }}>
                       {isDownloaded ? "Saved" : "Save Offline"}
@@ -1917,7 +1931,7 @@ export default function SurahDetail() {
                   <Text style={{ fontSize: 12, color: colors.brand, fontWeight: "700", marginBottom: 6 }}>
                     Surah {id} · Ayah {selectedAyahForGrammar.ayah}
                   </Text>
-                  
+
                   {/* Thematic Topic Tags for this specific Verse */}
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
                     {(() => {
@@ -1935,7 +1949,7 @@ export default function SurahDetail() {
                         // General contextual tags
                         tags.push("Faith (Iman)", "Reflection");
                       }
-                      
+
                       return tags.map((tag, tIdx) => (
                         <View key={tIdx} style={{ backgroundColor: colors.brand + "22", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                           <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>#{tag}</Text>
@@ -2008,7 +2022,7 @@ export default function SurahDetail() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
     ...Platform.select({
       web: { height: "100%", overflow: "hidden" } as any
