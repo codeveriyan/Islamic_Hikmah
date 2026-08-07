@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Modal, Alert, RefreshControl, FlatList,
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated, ImageBackground, Image, Modal, Alert, RefreshControl, FlatList, InteractionManager,
 } from "react-native";
+import Reanimated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -14,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { format12Hour } from "@/src/utils/time";
 
 import { theme } from "@/src/theme";
+import { getElevation } from "@/src/elevation";
 import { useTheme } from "@/src/ThemeContext";
 import { AnimatedCard } from "@/src/components/AnimatedCard";
 import { PrayerCardSkeleton } from "@/src/components/SkeletonLoader";
@@ -22,7 +24,7 @@ import { usePremiumModal } from "@/src/PremiumModalContext";
 import { DEFAULT_GOALS, CATEGORY_COLORS, Goal } from "@/src/data/goals";
 import { SURAH_LIST } from "@/src/data/surahList";
 import { SELECTABLE_ADHKAAR, DHIKRS } from "@/src/data/dhikrs";
-// Note: duas.ts is lazily required inside allDhikrAndDuaOptions useMemo to keep it off the startup import graph
+// Note: duas.ts (608 KB) is lazily required inside a deferred effect to keep it off the startup import graph and first paint
 import {
   resolveUserLocation, getCompletedGoals, toggleGoal,
   getActiveGoalIds, getPrayerSettings, schedulePrayerNotifications, updateStickyPrayerNotification,
@@ -44,536 +46,22 @@ import {
 
 const { width, height } = Dimensions.get("window");
 const CARD_WIDTH = (width - theme.spacing.lg * 2 - theme.spacing.md) / 2;
-const PRAYERS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
 
-const CATEGORY_IMAGES: Record<string, any> = {
-  ummah: require("@/assets/images/ummah_background.png"),
-  morning: { uri: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=500&auto=format&fit=crop&q=80" },
-  evening: { uri: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=500&auto=format&fit=crop&q=80" },
-  sleep: { uri: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=500&auto=format&fit=crop&q=80" },
-  tahajjud: { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
-  salah: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
-  "after-salah": { uri: "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=500&auto=format&fit=crop&q=80" },
-  istikharah: { uri: "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500&auto=format&fit=crop&q=80" },
-  gatherings: { uri: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=500&auto=format&fit=crop&q=80" },
-  difficulties: { uri: "https://images.unsplash.com/photo-1428908728789-d2de25dbd4e2?w=500&auto=format&fit=crop&q=80" },
-  iman: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
-  hajj: { uri: "https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=500&auto=format&fit=crop&q=80" },
-  travel: { uri: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=500&auto=format&fit=crop&q=80" },
-  money: { uri: "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=500&auto=format&fit=crop&q=80" },
-  social: { uri: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=500&auto=format&fit=crop&q=80" },
-  marriage: { uri: "https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=500&auto=format&fit=crop&q=80" },
-  death: { uri: "https://images.unsplash.com/photo-1453791052107-5c843da62d97?w=500&auto=format&fit=crop&q=80" },
-  nature: { uri: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=500&auto=format&fit=crop&q=80" },
-  ramadan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
-  ruqyah: { uri: "https://images.unsplash.com/photo-1552089123-2d26226fc2b7?w=500&auto=format&fit=crop&q=80" },
-  "daily-life": { uri: "https://images.unsplash.com/photo-1517842645767-c639042777db?w=500&auto=format&fit=crop&q=80" },
-  adhan: { uri: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=500&auto=format&fit=crop&q=80" },
-  wudu: { uri: "https://images.unsplash.com/photo-1548813730-e8f20cc74a4a?w=500&auto=format&fit=crop&q=80" },
-  masjid: { uri: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&auto=format&fit=crop&q=80" },
-  sickness: { uri: "https://images.unsplash.com/photo-1584017911766-d451b3d0e843?w=500&auto=format&fit=crop&q=80" },
-  forgiveness: { uri: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=500&auto=format&fit=crop&q=80" },
-};
+import { PRAYERS, RING, STROKE, RADIUS, CIRC, fetchIslamicEvents, getNextIslamicEvent, QUICK_ACTIONS, HOME_QUICK_ACTIONS, getGreeting, getHijriDate, getPrayerPeriods } from "@/src/data/homeScreenHelpers";
+import { styles } from "@/src/data/homeScreenStyles";
+import { HomeScreenModals } from "@/src/components/HomeScreenModals";
 
-// Countdown ring size
-const RING = 112;
-const STROKE = 7;
-const RADIUS = (RING - STROKE) / 2;
-const CIRC = 2 * Math.PI * RADIUS;
-
-// ── Islamic Event Calendar (approximate Gregorian dates for 2025–2026) ─────────
-// B3: Islamic events — fetched from Aladhan API, cached 30 days.
-// No longer hardcoded so they stay accurate beyond 2026.
-const ISLAMIC_EVENTS_CACHE_KEY = 'hikmah:islamic-events-cache:v1';
-const EVENTS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-// Known Hijri events to look for in the Aladhan calendar response
-const HIJRI_EVENT_KEYWORDS: { keyword: string; emoji: string; grad: [string, string] }[] = [
-  { keyword: 'Ramadan',      emoji: '🌙', grad: ['#0F2D5A', '#1D4ED8'] },
-  { keyword: 'Eid al-Fitr',  emoji: '🌙', grad: ['#065F46', '#10B981'] },
-  { keyword: 'Eid al-Adha',  emoji: '🕌', grad: ['#78350F', '#B45309'] },
-  { keyword: 'Dhul Hijjah',  emoji: '🕋', grad: ['#78350F', '#B45309'] },
-  { keyword: 'Mawlid',       emoji: '💚', grad: ['#065F46', '#047857'] },
-  { keyword: 'Laylat al-Qadr', emoji: '⭐', grad: ['#4C1D95', '#7C3AED'] },
-  { keyword: 'New Year',     emoji: '⭐', grad: ['#4C1D95', '#7C3AED'] },
-  { keyword: 'Ashura',       emoji: '📿', grad: ['#1E3A5F', '#2563EB'] },
-];
-
-async function fetchIslamicEvents(): Promise<{ name: string; date: Date; emoji: string; grad: [string, string] }[]> {
-  try {
-    const raw = await AsyncStorage.getItem(ISLAMIC_EVENTS_CACHE_KEY);
-    if (raw) {
-      const { events, cachedAt } = JSON.parse(raw);
-      if (Date.now() - cachedAt < EVENTS_TTL_MS) {
-        return events.map((e: any) => ({ ...e, date: new Date(e.date) }));
-      }
-    }
-  } catch {}
-
-  try {
-    const year = new Date().getFullYear();
-    const res = await fetch(`https://api.aladhan.com/v1/calendar/${year}?annual=true`);
-    if (!res.ok) throw new Error('API error');
-    const json = await res.json();
-    const found: { name: string; date: Date; emoji: string; grad: [string, string] }[] = [];
-    const seen = new Set<string>();
-    for (const month of Object.values(json.data || {}) as any[]) {
-      for (const day of month) {
-        const dateStr = day.gregorian?.date; // DD-MM-YYYY
-        const holidays: string[] = day.hijri?.holidays || [];
-        for (const holiday of holidays) {
-          const match = HIJRI_EVENT_KEYWORDS.find(k => holiday.toLowerCase().includes(k.keyword.toLowerCase()));
-          if (match && dateStr && !seen.has(holiday)) {
-            seen.add(holiday);
-            const [d, m, y] = dateStr.split('-').map(Number);
-            found.push({ name: holiday, date: new Date(y, m - 1, d), emoji: match.emoji, grad: match.grad });
-          }
-        }
-      }
-    }
-    if (found.length) {
-      await AsyncStorage.setItem(ISLAMIC_EVENTS_CACHE_KEY, JSON.stringify({ events: found, cachedAt: Date.now() }));
-      return found;
-    }
-  } catch {}
-
-  // Static fallback for the current cycle — only used if API is unreachable
-  return [
-    { name: 'Ramadan 1447',     date: new Date('2026-02-17'), emoji: '🌙', grad: ['#0F2D5A', '#1D4ED8'] },
-    { name: 'Eid al-Fitr 1447', date: new Date('2026-03-20'), emoji: '🌙', grad: ['#065F46', '#10B981'] },
-    { name: 'Eid al-Adha 1447', date: new Date('2026-05-27'), emoji: '🕌', grad: ['#78350F', '#B45309'] },
-  ];
-}
-
-function getNextIslamicEvent(events: { name: string; date: Date; emoji: string; grad: [string, string] }[]) {
-  const now = new Date();
-  const future = events.filter(e => e.date > now).sort((a, b) => a.date.getTime() - b.date.getTime());
-  if (!future.length) return null;
-  const next = future[0];
-  const daysLeft = Math.ceil((next.date.getTime() - now.getTime()) / 86400000);
-  return { ...next, daysLeft };
-}
-
-const QUICK_ACTIONS = [
-  { id: "pillarsOfIslam",    label: "5 Pillars of Islam",      route: "/pillars-of-islam",      emoji: "☪️" },
-  { id: "dawah",             label: "Dawah (Why Islam)",       route: "/dawah",                  emoji: "📖" },
-  { id: "nobleQuran",        label: "Al-Qur'aan",             route: "/quran",                  image: require("@/assets/images/quran_icon.png") },
-  { id: "hadithCollections", label: "Hadith Collections",      route: "/hadith",                 emoji: "📚" },
-  { id: "fatawaAnswers",     label: "Fatawa Answers",          route: "/fatawa",                 emoji: "⚖️" },
-  { id: "seerah",            label: "Seerah",                  route: "/seerah",                 emoji: "🌙" },
-  { id: "duas",              label: "Du'as",                   route: "/dua-hub",               emoji: "🤲" },
-  { id: "fortressMuslim",    label: "Fortress of Muslim",      route: "/fortress",              emoji: "🛡️" },
-  { id: "namesOfAllah",      label: "Asma Al-Husna",          route: "/names",                  emoji: "✨" },
-  { id: "babyNames",         label: "Baby Names",             route: "/baby-names",             emoji: "👶" },
-  { id: "qiblaDirection",    label: "Qiblah Direction",        route: "/qibla",                  emoji: "🧭" },
-  { id: "zakatCalculator",   label: "Zakat Calculator",        route: "/zakat-calculator",       emoji: "💰" },
-  { id: "views360",          label: "360° Views",             route: "/views360",               emoji: "🌐" },
-  { id: "identifyRecitation", label: "Recitation ID",         route: "/quran/identify",         emoji: "🎙️" },
-  { id: "qadhaTracker",      label: "Qadha Tracker",           route: "/qadha",                  emoji: "📝" },
-  { id: "ramadanCompanion",  label: "Ramadan Mode",            route: "/ramadan",                emoji: "✨" },
-  { id: "hijriCalendar",     label: "Islamic Calendar",        route: "/hijri-calendar",         emoji: "📅" },
-  { id: "tasbihCounter",     label: "Tasbih Counter",          route: "/dhikr",                  emoji: "📿" },
-  { id: "mosqueFinder",      label: "Masjid Finder",           route: "/finder?type=mosque",     image: require("@/assets/images/masjid_finder_icon.png") },
-  { id: "halalFoodFinder",   label: "Halal Food Finder",       route: "/finder?type=halal",      emoji: "🍽️", premium: true },
-  { id: "halalFoodScanner",  label: "Halal Product Scanner",   route: "/halal-scanner",          emoji: "🔎",  premium: true },
-];
-
-const HOME_QUICK_ACTIONS = QUICK_ACTIONS;
-
-function getGreeting(prayerName?: string) {
-  const hour = new Date().getHours();
-  let timePrefix = "Good morning";
-  if (hour >= 12 && hour < 17) timePrefix = "Good afternoon";
-  else if (hour >= 17 && hour < 21) timePrefix = "Good evening";
-  else if (hour >= 21 || hour < 5) timePrefix = "Good night";
-
-  if (prayerName) {
-    const pName = prayerName.trim();
-    return {
-      salaam: "Assalamu Alaikum",
-      sub: `${timePrefix}, it is now ${pName} time`,
-    };
-  }
-
-  if (hour < 5) return { salaam: "Assalamu Alaikum", sub: "May your night be blessed" };
-  if (hour < 12) return { salaam: "Assalamu Alaikum", sub: "Good morning, may Allah bless your day" };
-  if (hour < 17) return { salaam: "Assalamu Alaikum", sub: "Good afternoon, remember your prayers" };
-  if (hour < 21) return { salaam: "Assalamu Alaikum", sub: "Good evening, may your evening be blessed" };
-  return { salaam: "Assalamu Alaikum", sub: "Good night, may your sleep be peaceful" };
-}
-
-// format12Hour imported from @/src/utils/time
-
-
-function getHijriDate() {
-  try {
-    const date = new Date();
-    let g_y = date.getFullYear();
-    let g_m = date.getMonth();
-    let g_d = date.getDate();
-
-    let myDate = new Date(Date.UTC(g_y, g_m, g_d, 12, 0, 0));
-
-    let y = myDate.getUTCFullYear();
-    let m = myDate.getUTCMonth() + 1;
-    let d = myDate.getUTCDate();
-
-    if (m <= 2) {
-      y -= 1;
-      m += 12;
-    }
-    let A = Math.floor(y / 100);
-    let B = 2 - A + Math.floor(A / 4);
-    // Added +1 day offset to align arithmetic calendar with standard Umm al-Qura calendar
-    let jd = Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5 + 1;
-
-    let epoch = 1948439.5;
-    let diff = jd - epoch;
-    let cycle = Math.floor(diff / 10631);
-    let rem = diff % 10631;
-
-    let h_y = 30 * cycle + 1;
-    const leap_years = [2, 5, 7, 10, 13, 16, 18, 21, 24, 26, 29];
-
-    for (let i = 1; i <= 30; i++) {
-      const is_leap = leap_years.includes(i);
-      const length = is_leap ? 355 : 354;
-      if (rem < length) {
-        h_y = 30 * cycle + i;
-        break;
-      }
-      rem -= length;
-    }
-
-    const month_lengths = [30, 29, 30, 29, 30, 29, 30, 29, 30, 29, 30, 29];
-    const current_year_in_cycle = (h_y - 1) % 30 + 1;
-    if (leap_years.includes(current_year_in_cycle)) {
-      month_lengths[11] = 30;
-    }
-
-    let h_m = 1;
-    for (let i = 0; i < 12; i++) {
-      if (rem < month_lengths[i]) {
-        h_m = i + 1;
-        break;
-      }
-      rem -= month_lengths[i];
-    }
-
-    let h_d = Math.floor(rem) + 1;
-
-    const monthNames = [
-      "Muharram", "Safar", "Rabi' al-Awwal", "Rabi' al-Thani",
-      "Jumada al-Awwal", "Jumada al-Thani", "Rajab", "Sha'ban",
-      "Ramadan", "Shawwal", "Dhu al-Qi'dah", "Dhu al-Hijjah"
-    ];
-
-    const mName = monthNames[h_m - 1] || "Muharram";
-
-    let suffix = "th";
-    if (h_d % 10 === 1 && h_d !== 11) suffix = "st";
-    else if (h_d % 10 === 2 && h_d !== 12) suffix = "nd";
-    else if (h_d % 10 === 3 && h_d !== 13) suffix = "rd";
-
-    return `${h_d}${suffix} ${mName} ${h_y} AH`;
-  } catch {
-    return "";
-  }
-}
-
-function parseTime(t: string): Date {
-  const [h, m] = t.split(":").map(Number);
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return d;
-}
-
-function getPrayerPeriods(times: Record<string, string>) {
-  const now = new Date();
-
-  // Parse all times into Dates for comparison
-  const parsed = PRAYERS.map((name) => {
-    const t = times[name];
-    if (!t) return null;
-    const [h, m] = t.split(":").map(Number);
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    return { name, date: d, timeStr: t };
-  }).filter(Boolean) as { name: string; date: Date; timeStr: string }[];
-
-  if (parsed.length === 0) return null;
-
-  // Find next prayer (first one where date > now)
-  let nextIdx = parsed.findIndex((p) => p.date > now);
-
-  let current, next;
-
-  if (nextIdx === -1) {
-    // All prayers for today have passed.
-    // Current is Isha.
-    current = parsed[parsed.length - 1];
-    // Next is Fajr tomorrow.
-    const tomorrowFajr = new Date(parsed[0].date);
-    tomorrowFajr.setDate(tomorrowFajr.getDate() + 1);
-    next = {
-      name: "Fajr",
-      date: tomorrowFajr,
-      timeStr: parsed[0].timeStr
-    };
-  } else if (nextIdx === 0) {
-    // Before Fajr.
-    // Current is Isha yesterday.
-    const yesterdayIsha = new Date(parsed[parsed.length - 1].date);
-    yesterdayIsha.setDate(yesterdayIsha.getDate() - 1);
-    current = {
-      name: "Isha",
-      date: yesterdayIsha,
-      timeStr: parsed[parsed.length - 1].timeStr
-    };
-    next = parsed[0];
-  } else {
-    current = parsed[nextIdx - 1];
-    next = parsed[nextIdx];
-  }
-
-  // Adjust for the 15-minute Sunrise duration:
-  // If the current period is Sunrise, it only lasts 15 minutes.
-  // During these 15 minutes, the next target is "Sunrise" end.
-  // After 15 minutes, the next target becomes Dhuhr.
-  if (current.name === "Sunrise") {
-    const sunriseEndTime = new Date(current.date.getTime() + 15 * 60 * 1000);
-    if (now < sunriseEndTime) {
-      next = {
-        name: "Sunrise",
-        date: sunriseEndTime,
-        timeStr: ""
-      };
-    }
-  }
-
-  return { current, next };
-}
-
-export default function HomeScreen() {
-  const router = useRouter();
-  const { profile, user, isGuest } = useAuth();
-  const { showPremiumModal } = usePremiumModal();
-  const { colors, language } = useTheme();
+// ── Isolated prayer countdown ring ────────────────────────────────────────────────
+// The 1-second tick lives in this small memoized component so each interval
+// update re-renders ONLY the ring — not the entire ~3,000-line Home screen.
+// The sticky prayer notification update (throttled to once/minute) lives here too.
+const PrayerCountdownRing = memo(function PrayerCountdownRing({ times }: { times: Record<string, string> | null }) {
+  const { language, colors } = useTheme();
   const { t } = useTranslation(language);
-  const { onScroll, onScrollEndDrag, onMomentumScrollEnd } = useTabBarVisibility();
-  // Prayer times & countdown
-  const [times, setTimes] = useState<Record<string, string> | null>(null);
-  const [city, setCity] = useState("");
   const [countdown, setCountdown] = useState("--:--:--");
   const [progress, setProgress] = useState(0);
-
-  const prayerPeriods = useMemo(() => times ? getPrayerPeriods(times) : null, [times]);
-  const greeting = useMemo(() => getGreeting(prayerPeriods?.current?.name), [prayerPeriods?.current?.name]);
-  const hijri = useMemo(() => getHijriDate(), []);
-  const nextIslamicEvent = useMemo(() => getNextIslamicEvent([]), []);
-  const [dynamicIslamicEvent, setDynamicIslamicEvent] = useState(nextIslamicEvent);
-  useEffect(() => {
-    fetchIslamicEvents().then(events => {
-      const next = getNextIslamicEvent(events);
-      if (next) setDynamicIslamicEvent(next);
-    }).catch(() => {});
-  }, []);
-
-  // Time-aware greeting gradient + Arabic phrase
-  const greetingGrad = useMemo((): [string, string] => {
-    const h = new Date().getHours();
-    if (h < 5) return ["#0D1B2A", "#1B2838"];
-    if (h < 12) return ["#0B2D25", "#065F46"];
-    if (h < 16) return ["#1E3A5F", "#1B6CA8"];
-    if (h < 20) return ["#3B1F63", "#6D28D9"];
-    return ["#0D1B2A", "#1B2838"];
-  }, []);
-  const arabicGreeting = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 5) return { arabic: "اللَّيْلُ مُبَارَكٌ", english: "Blessed night" };
-    if (h < 12) return { arabic: "صَبَاحُ الْخَيْرِ", english: greeting.sub };
-    if (h < 17) return { arabic: "اللَّهُمَّ بِكَ أَصْبَحْنَا", english: greeting.sub };
-    if (h < 20) return { arabic: "مَسَاءُ الْخَيْرِ", english: greeting.sub };
-    return { arabic: "اللَّهُمَّ بِكَ أَمْسَيْنَا", english: "Blessed evening" };
-  }, [greeting]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastNotifMin = useRef<number | null>(null);
 
-  // Goals
-  const [completed, setCompleted] = useState<string[]>([]);
-  const [activeIds, setActiveIds] = useState<string[]>([]);
-  const [customGoals, setCustomGoals] = useState<Goal[]>([]);
-  const [expandPrayersInline, setExpandPrayersInline] = useState(false);
-
-  // Calendar card states
-  const [calendarConnected, setCalendarConnected] = useState(false);
-  const [calendarDismissed, setCalendarDismissed] = useState(false);
-
-  // Live UmmahAPI Daily Dua state
-  const [dailyDua, setDailyDua] = useState<{
-    title: string;
-    arabic: string;
-    translation: string;
-    source: string;
-  } | null>(null);
-  const [dailyDuaDismissed, setDailyDuaDismissed] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const dismissedDate = await AsyncStorage.getItem("hikmah:daily-dua-dismissed-date");
-        const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-        if (dismissedDate === todayStr) {
-          setDailyDuaDismissed(true);
-        }
-      } catch {}
-    })();
-
-    fetch("https://www.ummahapi.com/api/duas/random")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (json?.data?.title && json?.data?.arabic) {
-          setDailyDua({
-            title: json.data.title,
-            arabic: json.data.arabic,
-            translation: json.data.translation || "",
-            source: json.data.source || "",
-          });
-        }
-      })
-      .catch((err) => console.warn("UmmahAPI daily dua fetch error:", err));
-  }, []);
-
-  // Menstrual mode
-  const [menstrualMode, setMenstrualMode] = useState(false);
-  // Dhikr counts
-  const [dhikrCounts, setDhikrCounts] = useState<Record<string, number>>({});
-  // Prayer completions
-  const [prayerCompletions, setPrayerCompletions] = useState<Record<string, boolean>>({
-    Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false
-  });
-  // Prayers Modal
-  const [prayersModalVisible, setPrayersModalVisible] = useState(false);
-
-  // Custom Daily Adhkars selection modal states
-  const [dhikrModalVisible, setDhikrModalVisible] = useState(false);
-  const [selectedAdhkarCount, setSelectedAdhkarCount] = useState(3);
-  const [quickActionOrder, setQuickActionOrder] = useState<string[]>(HOME_QUICK_ACTIONS.map(action => action.id));
-  const [reorderFrom, setReorderFrom] = useState<string | null>(null);
-  const [quickPageIndex, setQuickPageIndex] = useState(0);
-  const quickPagerPulse = useRef(new Animated.Value(1)).current;
-  const quickScrollX = useRef(new Animated.Value(0)).current;
-  const scrollY = useRef(new Animated.Value(0)).current;
-  // Quran last-read (Continue Reading widget)
-  const [lastReadQuran, setLastReadQuran] = useState<{ surahNumber: number; surahName: string; ayahNumber?: number } | null>(null);
-  // Pull-to-refresh
-  const [refreshing, setRefreshing] = useState(false);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const loc = await resolveUserLocation();
-      setCity(loc.city);
-      const settings = await getPrayerSettings();
-      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
-      const r = await fetch(url);
-      const j = await r.json();
-      if (j?.data?.timings) setTimes(j.data.timings);
-    } catch {
-      // On refresh failure, keep showing whatever is already on screen
-      if (__DEV__) console.warn('[Home] Refresh fetch failed — keeping current times');
-    }
-    setRefreshing(false);
-  }, []);
-  const orderedQuickActions = useMemo(() => {
-    const actionsById = new Map(HOME_QUICK_ACTIONS.map(action => [action.id, action]));
-    const saved = quickActionOrder.map(id => actionsById.get(id)).filter(Boolean) as any[];
-    return [...saved, ...HOME_QUICK_ACTIONS.filter(action => !quickActionOrder.includes(action.id))];
-  }, [quickActionOrder]);
-  const quickActionPages = useMemo(() => Array.from(
-    { length: Math.ceil(orderedQuickActions.length / 9) },
-    (_, page) => orderedQuickActions.slice(page * 9, page * 9 + 9),
-  ), [orderedQuickActions]);
-
-  // Action sheet for 3 dots goal menu
-  const [activeActionGoal, setActiveActionGoal] = useState<Goal | null>(null);
-
-  // Custom goal states
-  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
-  const [newGoalTitle, setNewGoalTitle] = useState("");
-  const [newGoalCategory, setNewGoalCategory] = useState<"prayer" | "quran" | "dhikr" | "other">("other");
-  const [surahSearch, setSurahSearch] = useState("");
-  const [dhikrSearch, setDhikrSearch] = useState("");
-
-  useEffect(() => {
-    AsyncStorage.getItem("hikmah:home-quick-action-order:v1").then(raw => {
-      if (!raw) return;
-      try {
-        const saved = JSON.parse(raw);
-        if (Array.isArray(saved)) setQuickActionOrder(saved.filter((id): id is string => typeof id === "string"));
-      } catch {}
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.timing(quickPagerPulse, {
-        toValue: 1.35,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.spring(quickPagerPulse, {
-        toValue: 1,
-        friction: 5,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [quickPageIndex, quickPagerPulse]);
-
-  // Confetti particles for completion celebration
-  const [allCompletedModalVisible, setAllCompletedModalVisible] = useState(false);
-  const lastDoneCount = useRef(0);
-  const confettiParticles = useRef(Array(65).fill(0).map(() => ({
-    x: Math.random() * width,
-    y: new Animated.Value(-100),
-    rotate: new Animated.Value(0),
-    scale: Math.random() * 0.7 + 0.3,
-    color: ["#FF5A5F", "#3b82f6", "#10b981", "#fbbf24", "#8b5cf6", "#f43f5e", "#06b6d4", "#eab308"][Math.floor(Math.random() * 8)],
-    shape: Math.random() > 0.5 ? "rect" : "circle",
-    drift: Math.random() * 100 - 50
-  }))).current;
-
-  // Load prayer times — network first, cache fallback for offline/travel
-  useEffect(() => {
-    (async () => {
-      try {
-        const loc = await resolveUserLocation();
-        setCity(loc.city);
-        const settings = await getPrayerSettings();
-        const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
-        const r = await fetch(url);
-        const j = await r.json();
-        const fetchedTimings = j?.data?.timings || null;
-        setTimes(fetchedTimings);
-        // Reconcile once on launch: cancel orphaned legacy schedules, then
-        // retain exactly one daily Adhan alert for each enabled prayer.
-        if (fetchedTimings) {
-          await schedulePrayerNotifications(fetchedTimings, settings.adhanEnabled);
-        }
-      } catch (e) {
-        if (__DEV__) console.warn('[Home] Aladhan fetch failed — loading from cache:', e);
-        // A3: Offline fallback — show cached timings so the prayer card is never blank
-        const cached = await getPrayerTimingsCache();
-        if (cached?.timings) {
-          setTimes(cached.timings);
-          if ((cached as any).city) setCity((cached as any).city);
-        }
-      }
-    })();
-  }, []);
-
-  // Countdown timer
   useEffect(() => {
     if (!times) return;
     const tick = () => {
@@ -601,9 +89,201 @@ export default function HomeScreen() {
       }
     };
     tick();
-    timerRef.current = setInterval(tick, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
   }, [times]);
+
+  const periods = times ? getPrayerPeriods(times) : null;
+  if (!periods) return null;
+  const strokeDash = (1 - progress) * CIRC;
+
+  return (
+    <View style={styles.ringWrap}>
+      <Svg width={RING} height={RING}>
+        <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke={colors.brand} strokeWidth={STROKE} fill="transparent" opacity={0.85} />
+        <Circle
+          cx={RING/2} cy={RING/2} r={RADIUS}
+          stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
+          strokeDasharray={CIRC} strokeDashoffset={strokeDash}
+          strokeLinecap="round" rotation="-90" origin={`${RING/2},${RING/2}`}
+        />
+      </Svg>
+      <View style={styles.ringCenter}>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.75)" }}>
+          {t(periods.next.name.toLowerCase())}
+        </Text>
+        <Text style={{ fontSize: 14, fontWeight: "900", color: "#FFFFFF", marginTop: 2 }}>
+          {countdown}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const { profile, user, isGuest } = useAuth();
+  const { showPremiumModal } = usePremiumModal();
+  const { colors, language } = useTheme();
+  const { t } = useTranslation(language);
+  const { scrollHandler } = useTabBarVisibility();
+  // Prayer times & countdown
+  const [times, setTimes] = useState<Record<string, string> | null>(null);
+  const [city, setCity] = useState("");
+
+  const prayerPeriods = useMemo(() => times ? getPrayerPeriods(times) : null, [times]);
+  const greeting = useMemo(() => getGreeting(prayerPeriods?.current?.name), [prayerPeriods?.current?.name]);
+  const hijri = useMemo(() => getHijriDate(), []);
+  const nextIslamicEvent = useMemo(() => getNextIslamicEvent([]), []);
+  const [dynamicIslamicEvent, setDynamicIslamicEvent] = useState(nextIslamicEvent);
+  useEffect(() => {
+    // Deferred: cache/network event lookup runs after the open transition
+    const task = InteractionManager.runAfterInteractions(() => {
+      fetchIslamicEvents().then(events => {
+        const next = getNextIslamicEvent(events);
+        if (next) setDynamicIslamicEvent(next);
+      }).catch(() => {});
+    });
+    return () => task.cancel();
+  }, []);
+
+  // Time-aware greeting gradient + Arabic phrase
+  const greetingGrad = useMemo((): [string, string] => {
+    const h = new Date().getHours();
+    if (h < 5) return ["#0D1B2A", "#1B2838"];
+    if (h < 12) return ["#0B2D25", "#065F46"];
+    if (h < 16) return ["#1E3A5F", "#1B6CA8"];
+    if (h < 20) return ["#3B1F63", "#6D28D9"];
+    return ["#0D1B2A", "#1B2838"];
+  }, []);
+  const arabicGreeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 5) return { arabic: "اللَّيْلُ مُبَارَكٌ", english: "Blessed night" };
+    if (h < 12) return { arabic: "صَبَاحُ الْخَيْرِ", english: greeting.sub };
+    if (h < 17) return { arabic: "اللَّهُمَّ بِكَ أَصْبَحْنَا", english: greeting.sub };
+    if (h < 20) return { arabic: "مَسَاءُ الْخَيْرِ", english: greeting.sub };
+    return { arabic: "اللَّهُمَّ بِكَ أَمْسَيْنَا", english: "Blessed evening" };
+  }, [greeting]);
+
+  // Goals
+  const [completed, setCompleted] = useState<string[]>([]);
+  const [activeIds, setActiveIds] = useState<string[]>([]);
+  const [customGoals, setCustomGoals] = useState<Goal[]>([]);
+  const [expandPrayersInline, setExpandPrayersInline] = useState(false);
+
+  // Calendar card states
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarDismissed, setCalendarDismissed] = useState(false);
+
+  // Menstrual mode
+  const [menstrualMode, setMenstrualMode] = useState(false);
+  // Dhikr counts
+  const [dhikrCounts, setDhikrCounts] = useState<Record<string, number>>({});
+  // Prayer completions
+  const [prayerCompletions, setPrayerCompletions] = useState<Record<string, boolean>>({
+    Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false
+  });
+  // Prayers Modal
+  const [prayersModalVisible, setPrayersModalVisible] = useState(false);
+
+  // Custom Daily Adhkars selection modal states
+  const [dhikrModalVisible, setDhikrModalVisible] = useState(false);
+  const [selectedAdhkarCount, setSelectedAdhkarCount] = useState(3);
+  const [quickActionOrder, setQuickActionOrder] = useState<string[]>(HOME_QUICK_ACTIONS.map(action => action.id));
+  const [reorderFrom, setReorderFrom] = useState<string | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  // Quran last-read (Continue Reading widget)
+  const [lastReadQuran, setLastReadQuran] = useState<{ surahNumber: number; surahName: string; ayahNumber?: number } | null>(null);
+  // Pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const loc = await resolveUserLocation();
+      setCity(loc.city);
+      const settings = await getPrayerSettings();
+      const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+      const r = await fetch(url);
+      const j = await r.json();
+      if (j?.data?.timings) setTimes(j.data.timings);
+    } catch {
+      // On refresh failure, keep showing whatever is already on screen
+      if (__DEV__) console.warn('[Home] Refresh fetch failed — keeping current times');
+    }
+    setRefreshing(false);
+  }, []);
+  const orderedQuickActions = useMemo(() => {
+    const actionsById = new Map(HOME_QUICK_ACTIONS.map(action => [action.id, action]));
+    const saved = quickActionOrder.map(id => actionsById.get(id)).filter(Boolean) as any[];
+    return [...saved, ...HOME_QUICK_ACTIONS.filter(action => !quickActionOrder.includes(action.id))];
+  }, [quickActionOrder]);
+
+  // Action sheet for 3 dots goal menu
+  const [activeActionGoal, setActiveActionGoal] = useState<Goal | null>(null);
+
+  // Custom goal states
+  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [newGoalTitle, setNewGoalTitle] = useState("");
+  const [newGoalCategory, setNewGoalCategory] = useState<"prayer" | "quran" | "dhikr" | "other">("other");
+  const [surahSearch, setSurahSearch] = useState("");
+  const [dhikrSearch, setDhikrSearch] = useState("");
+
+  useEffect(() => {
+    AsyncStorage.getItem("hikmah:home-quick-action-order:v1").then(raw => {
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw);
+        if (Array.isArray(saved)) setQuickActionOrder(saved.filter((id): id is string => typeof id === "string"));
+      } catch {}
+    }).catch(() => {});
+  }, []);
+
+  // Confetti particles for completion celebration
+  const [allCompletedModalVisible, setAllCompletedModalVisible] = useState(false);
+  const lastDoneCount = useRef(0);
+  const confettiParticles = useRef(Array(65).fill(0).map(() => ({
+    x: Math.random() * width,
+    y: new Animated.Value(-100),
+    rotate: new Animated.Value(0),
+    scale: Math.random() * 0.7 + 0.3,
+    color: ["#FF5A5F", "#3b82f6", "#10b981", "#fbbf24", "#8b5cf6", "#f43f5e", "#06b6d4", "#eab308"][Math.floor(Math.random() * 8)],
+    shape: Math.random() > 0.5 ? "rect" : "circle",
+    drift: Math.random() * 100 - 50
+  }))).current;
+
+  // Load prayer times — network first, cache fallback for offline/travel
+  // Deferred until after the open transition so first paint is never blocked.
+  useEffect(() => {
+    const prayerLoadTask = InteractionManager.runAfterInteractions(() => {
+    (async () => {
+      try {
+        const loc = await resolveUserLocation();
+        setCity(loc.city);
+        const settings = await getPrayerSettings();
+        const url = `https://api.aladhan.com/v1/timings?latitude=${loc.lat}&longitude=${loc.lon}&method=${settings.method}&school=${settings.juristic}`;
+        const r = await fetch(url);
+        const j = await r.json();
+        const fetchedTimings = j?.data?.timings || null;
+        setTimes(fetchedTimings);
+        // Reconcile once on launch: cancel orphaned legacy schedules, then
+        // retain exactly one daily Adhan alert for each enabled prayer.
+        if (fetchedTimings) {
+          schedulePrayerNotifications(fetchedTimings, settings.adhanEnabled).catch((e) => console.error(e));
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[Home] Aladhan fetch failed — loading from cache:', e);
+        // A3: Offline fallback — show cached timings so the prayer card is never blank
+        const cached = await getPrayerTimingsCache();
+        if (cached?.timings) {
+          setTimes(cached.timings);
+          if ((cached as any).city) setCity((cached as any).city);
+        }
+      }
+    })();
+    });
+    return () => prayerLoadTask.cancel();
+  }, []);
 
   // Load goals and new settings on focus
   useFocusEffect(
@@ -659,58 +339,63 @@ export default function HomeScreen() {
     return [...DEFAULT_GOALS, ...customGoals];
   }, [customGoals]);
 
-  const allDhikrAndDuaOptions = useMemo(() => {
-    // Lazy-require duas.ts (608 KB) — only parsed when this memo first runs, not at module init
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { CATEGORIES: DUA_CATEGORIES } = require('@/src/data/duas');
-    const list: { id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[] = [];
-    const seenIds = new Set<string>();
+  // duas.ts is 608 KB — parse + build the combined list only AFTER the open
+  // transition completes, so the first paint of Home is never blocked by it.
+  const [allDhikrAndDuaOptions, setAllDhikrAndDuaOptions] = useState<{ id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[]>([]);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { CATEGORIES: DUA_CATEGORIES } = require('@/src/data/duas');
+      const list: { id: string; title: string; arabic: string; transliteration?: string; translation?: string; categoryTag: string }[] = [];
+      const seenIds = new Set<string>();
 
-    SELECTABLE_ADHKAAR.forEach(item => {
-      if (!seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        list.push({
-          id: item.id,
-          title: item.title,
-          arabic: item.arabic,
-          transliteration: item.transliteration,
-          translation: item.translation,
-          categoryTag: "Daily Adhkar"
+      SELECTABLE_ADHKAAR.forEach(item => {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          list.push({
+            id: item.id,
+            title: item.title,
+            arabic: item.arabic,
+            transliteration: item.transliteration,
+            translation: item.translation,
+            categoryTag: "Daily Adhkar"
+          });
+        }
+      });
+
+      DUA_CATEGORIES.forEach((cat: any) => {
+        cat.duas.forEach((d: any) => {
+          if (!seenIds.has(d.id)) {
+            seenIds.add(d.id);
+            list.push({
+              id: d.id,
+              title: d.title,
+              arabic: d.arabic,
+              transliteration: d.transliteration,
+              translation: d.translation,
+              categoryTag: cat.title
+            });
+          }
         });
-      }
-    });
+      });
 
-    DUA_CATEGORIES.forEach((cat: any) => {
-      cat.duas.forEach((d: any) => {
+      DHIKRS.forEach(d => {
         if (!seenIds.has(d.id)) {
           seenIds.add(d.id);
           list.push({
             id: d.id,
-            title: d.title,
+            title: d.transliteration,
             arabic: d.arabic,
             transliteration: d.transliteration,
             translation: d.translation,
-            categoryTag: cat.title
+            categoryTag: "Dhikr"
           });
         }
       });
-    });
 
-    DHIKRS.forEach(d => {
-      if (!seenIds.has(d.id)) {
-        seenIds.add(d.id);
-        list.push({
-          id: d.id,
-          title: d.transliteration,
-          arabic: d.arabic,
-          transliteration: d.transliteration,
-          translation: d.translation,
-          categoryTag: "Dhikr"
-        });
-      }
+      setAllDhikrAndDuaOptions(list);
     });
-
-    return list;
+    return () => task.cancel();
   }, []);
 
   const activeGoals = useMemo(() => {
@@ -787,8 +472,6 @@ export default function HomeScreen() {
 
   const overallProgress = totalGoals > 0 ? totalDone / totalGoals : 0;
 
-  const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-  const strokeDash = (1 - progress) * CIRC;
 
   const handleGoalTap = useCallback(async (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -1455,13 +1138,11 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <Reanimated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         removeClippedSubviews
-        onScroll={onScroll}
-        onScrollEndDrag={onScrollEndDrag}
-        onMomentumScrollEnd={onMomentumScrollEnd}
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
@@ -1481,15 +1162,11 @@ export default function HomeScreen() {
           style={{
             marginHorizontal: theme.spacing.lg,
             marginBottom: theme.spacing.lg,
-            borderRadius: 24,
+            borderRadius: theme.radius.xl,
             overflow: "hidden",
             borderWidth: 1,
             borderColor: colors.mode === "dark" ? "rgba(0,168,132,0.3)" : "rgba(6,95,70,0.18)",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 12 },
-            shadowOpacity: 0.16,
-            shadowRadius: 20,
-            elevation: 8,
+            ...getElevation(5),
           }}
         >
           <LinearGradient
@@ -1516,7 +1193,7 @@ export default function HomeScreen() {
                   <Text style={{ fontSize: 26, fontWeight: "900", color: "#FFFFFF" }}>
                     {t(prayerPeriods.current.name.toLowerCase())}
                   </Text>
-                  <Text style={{ fontSize: 18, fontWeight: "800", color: "#70FF00", marginTop: 1 }}>
+                  <Text style={{ fontSize: 18, fontWeight: "800", color: colors.brand, marginTop: 1 }}>
                     {format12Hour(prayerPeriods.current.timeStr)}
                   </Text>
                   <Text style={{ fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.85)", marginTop: 6 }}>
@@ -1524,26 +1201,9 @@ export default function HomeScreen() {
                   </Text>
                 </View>
 
-                {/* Countdown Ring on the RIGHT SIDE */}
-                <View style={styles.ringWrap}>
-                  <Svg width={RING} height={RING}>
-                    <Circle cx={RING/2} cy={RING/2} r={RADIUS} stroke="#70FF00" strokeWidth={STROKE} fill="transparent" opacity={0.85} />
-                    <Circle
-                      cx={RING/2} cy={RING/2} r={RADIUS}
-                      stroke="#FFFFFF" strokeWidth={STROKE} fill="transparent"
-                      strokeDasharray={CIRC} strokeDashoffset={strokeDash}
-                      strokeLinecap="round" rotation="-90" origin={`${RING/2},${RING/2}`}
-                    />
-                  </Svg>
-                  <View style={styles.ringCenter}>
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "rgba(255,255,255,0.75)" }}>
-                      {t(prayerPeriods.next.name.toLowerCase())}
-                    </Text>
-                    <Text style={{ fontSize: 14, fontWeight: "900", color: "#FFFFFF", marginTop: 2 }}>
-                      {countdown}
-                    </Text>
-                  </View>
-                </View>
+                {/* Countdown Ring on the RIGHT SIDE — isolated memoized component so
+                    its 1-second timer re-renders only the ring, not the whole screen */}
+                <PrayerCountdownRing times={times} />
               </View>
             ) : null}
           </View>
@@ -1553,7 +1213,7 @@ export default function HomeScreen() {
         {dynamicIslamicEvent && (
           <AnimatedCard
             onPress={() => router.push('/articles' as any)}
-            style={{ marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: 'hidden' }}
+            style={{ marginHorizontal: 20, marginBottom: 16, borderRadius: theme.radius.lg, overflow: 'hidden' }}
           >
             <LinearGradient
               colors={dynamicIslamicEvent.grad}
@@ -1582,25 +1242,9 @@ export default function HomeScreen() {
           </AnimatedCard>
         )}
 
-        <ScrollView
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          style={styles.quickPager}
-          contentContainerStyle={styles.quickPagerContent}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: quickScrollX } } }],
-            { useNativeDriver: false }
-          )}
-          scrollEventThrottle={16}
-          onMomentumScrollEnd={(event) => {
-            const page = Math.round(event.nativeEvent.contentOffset.x / width);
-            setQuickPageIndex(Math.max(0, Math.min(page, quickActionPages.length - 1)));
-          }}
-        >
-          {quickActionPages.map((page, pageIndex) => (
-            <View key={`quick-page-${pageIndex}`} style={styles.quickPage}>
-              {page.map((a) => (
+        {/* ── Quick Actions — single curated grid (restraint pass: no swipeable pages) ── */}
+        <View style={styles.quickGrid}>
+          {orderedQuickActions.map((a) => (
             <AnimatedCard key={a.id} onPress={() => handleQuickActionPress(a)} onLongPress={() => setReorderFrom(a.id)} delayLongPress={350}
               style={[styles.quickBtn, reorderFrom === a.id && { opacity: 0.45 }, { overflow: "hidden" }]}>
               <View style={styles.quickIconOnly}>
@@ -1622,56 +1266,11 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.quickLabel, { color: colors.onSurfaceSecondary }]}>{a.label}</Text>
             </AnimatedCard>
-              ))}
-            </View>
           ))}
-        </ScrollView>
+        </View>
         {reorderFrom ? (
           <Text style={[styles.quickReorderHint, { color: colors.onSurfaceMuted }]}>Tap another icon to swap its position</Text>
-        ) : (
-          <View
-            style={styles.quickDots}
-            accessible
-            accessibilityRole="adjustable"
-            accessibilityLabel={`Shortcut page ${quickPageIndex + 1} of ${quickActionPages.length}`}
-          >
-            {quickActionPages.map((_, index) => {
-              const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
-
-              const dotWidth = quickScrollX.interpolate({
-                inputRange,
-                outputRange: [8, 22, 8],
-                extrapolate: "clamp",
-              });
-
-              const opacity = quickScrollX.interpolate({
-                inputRange,
-                outputRange: [0.3, 1, 0.3],
-                extrapolate: "clamp",
-              });
-
-              const backgroundColor = quickScrollX.interpolate({
-                inputRange,
-                outputRange: [colors.border, colors.brand, colors.border],
-                extrapolate: "clamp",
-              });
-
-              return (
-                <Animated.View
-                  key={`quick-dot-${index}`}
-                  style={[
-                    styles.quickDot,
-                    {
-                      width: dotWidth,
-                      opacity,
-                      backgroundColor,
-                    },
-                  ]}
-                />
-              );
-            })}
-          </View>
-        )}
+        ) : null}
 
         {/* Connection & Daily Goals Section */}
 
@@ -1826,956 +1425,42 @@ export default function HomeScreen() {
           </View>
         </View>
 
-      </ScrollView>
-
-      {/* All Prayers Modal */}
-      <Modal
-        visible={prayersModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPrayersModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setPrayersModalVisible(false)}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>All Prayers</Text>
-              <AppIconButton
-                accessibilityLabel="Close all prayers"
-                icon="close"
-                onPress={() => setPrayersModalVisible(false)}
-              />
-            </View>
-
-            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
-              {["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"].map((pName) => {
-                const isDone = menstrualMode ? true : prayerCompletions[pName];
-                return (
-                  <Pressable
-                    key={pName}
-                    onPress={() => {
-                      if (menstrualMode) return;
-                      togglePrayerCompletion(pName);
-                    }}
-                    style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                  >
-                    <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{pName}</Text>
-                    <View style={[styles.goalCircleCheck, { borderColor: CATEGORY_COLORS.prayer, backgroundColor: isDone ? CATEGORY_COLORS.prayer : "transparent" }]}>
-                      {isDone && <MaterialCommunityIcons name="check" size={14} color="#fff" />}
-                    </View>
-                  </Pressable>
-                );
-              })}
-
-              {/* Menstrual Mode Section */}
-              <View style={[styles.menstrualCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={[styles.menstrualTitle, { color: colors.onSurface }]}>Menstrual Mode</Text>
-                  <Text style={[styles.menstrualSub, { color: colors.onSurfaceMuted }]}>
-                    Menstrual mode will excuse your Prayers until you turn it off at the end of your period.
-                  </Text>
-                </View>
-                <AppSwitch
-                  accessibilityLabel="Menstrual mode"
-                  value={menstrualMode}
-                  onValueChange={handleMenstrualModeToggle}
-                />
-              </View>
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Select Daily Adhkar Modal */}
-      <Modal
-        visible={dhikrModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setDhikrModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Select Daily Adhkar</Text>
-                <Text style={{ fontSize: 12, color: colors.onSurfaceMuted, marginTop: 2 }}>Select your favourite Dhikr to perform everyday</Text>
-              </View>
-              <AppIconButton
-                accessibilityLabel="Close daily adhkar selection"
-                icon="close"
-                onPress={() => setDhikrModalVisible(false)}
-              />
-            </View>
-
-            {/* Create Custom Goal Button */}
-            <Pressable
-              onPress={() => {
-                setDhikrModalVisible(false);
-                setShowAddCustomModal(true);
-              }}
-              style={[styles.addCustomBtn, { backgroundColor: colors.brand, marginVertical: 10, borderRadius: 12, paddingVertical: 10 }]}
-            >
-              <MaterialCommunityIcons name="plus-circle-outline" size={20} color={colors.onBrandPrimary} style={{ marginRight: 6 }} />
-              <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 14 }}>Create Custom Goal</Text>
-            </Pressable>
-
-            <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
-              {SELECTABLE_ADHKAAR.map((item) => {
-                const isAdded = activeIds.includes(item.id);
-                return (
-                  <View
-                    key={item.id}
-                    style={{
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                      borderWidth: 1,
-                      borderRadius: 14,
-                      padding: 14,
-                      gap: 8
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.onSurface, flex: 1, paddingRight: 8 }}>{item.title}</Text>
-                      <AppSwitch
-                        accessibilityLabel={`Include ${item.title} in daily adhkar`}
-                        value={isAdded}
-                        onValueChange={async () => {
-                          Haptics.selectionAsync().catch(() => {});
-                          if (isAdded) {
-                            const updated = activeIds.filter(id => id !== item.id);
-                            setActiveIds(updated);
-                            await saveActiveGoalIds(updated);
-                          } else {
-                            const updated = [...activeIds, item.id];
-                            setActiveIds(updated);
-                            await saveActiveGoalIds(updated);
-                          }
-                        }}
-                      />
-                    </View>
-
-                    <Text style={{ fontSize: 16, color: colors.brand, fontFamily: "Amiri", textAlign: "right", lineHeight: 28 }}>
-                      {item.arabic}
-                    </Text>
-
-                    <View style={{ marginTop: 2 }}>
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurfaceMuted }}>Transliteration:</Text>
-                      <Text style={{ fontSize: 13, color: colors.onSurface, lineHeight: 18, marginTop: 2 }}>
-                        {item.transliteration}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add Custom Goal Modal */}
-      <Modal
-        visible={showAddCustomModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAddCustomModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, maxHeight: height * 0.85, width: "92%", borderRadius: 20 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.onSurface, fontSize: 18, fontWeight: "700" }]}>Create Custom Goal</Text>
-              <AppIconButton
-                accessibilityLabel="Close custom goal"
-                icon="close"
-                onPress={() => setShowAddCustomModal(false)}
-              />
-            </View>
-
-            <View style={{ gap: 14, marginTop: 8, width: "100%", flex: 1 }}>
-              <View>
-                <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Category</Text>
-                <View style={{ flexDirection: "row", gap: 6 }}>
-                  {(["prayer", "quran", "dhikr", "other"] as const).map((cat) => {
-                    const isSel = newGoalCategory === cat;
-                    const labelMap: Record<string, string> = { prayer: "Prayer", quran: "Qur'an", dhikr: "Dhikr", other: "Other" };
-                    return (
-                      <Pressable
-                        key={cat}
-                        onPress={() => {
-                          Haptics.selectionAsync().catch(() => {});
-                          setNewGoalCategory(cat);
-                        }}
-                        style={[
-                          styles.catSelectBtn,
-                          { flex: 1, borderColor: colors.border, backgroundColor: isSel ? colors.brand : colors.surface, paddingVertical: 10, alignItems: "center", borderRadius: 10 }
-                        ]}
-                      >
-                        <Text style={{ fontSize: 12, color: isSel ? colors.onBrandPrimary : colors.onSurface, fontWeight: isSel ? "700" : "500" }}>
-                          {labelMap[cat]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {newGoalCategory === "quran" ? (
-                <View style={{ flex: 1, gap: 8 }}>
-                  <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Surah to Recite Everyday</Text>
-                  <AppTextInput
-                    value={surahSearch}
-                    onChangeText={setSurahSearch}
-                    placeholder="Search Surah (e.g. Yaseen, Kahf, Mulk...)"
-                    leadingIcon="magnify"
-                    style={styles.input}
-                  />
-
-                  <FlatList
-                    data={SURAH_LIST.filter(s =>
-                      s.englishName.toLowerCase().includes(surahSearch.toLowerCase()) ||
-                      s.englishNameTranslation.toLowerCase().includes(surahSearch.toLowerCase()) ||
-                      s.number.toString() === surahSearch.trim()
-                    )}
-                    keyExtractor={(surah: any) => surah.number.toString()}
-                    style={{ flex: 1 }}
-                    contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
-                    showsVerticalScrollIndicator={false}
-                    initialNumToRender={10}
-                    maxToRenderPerBatch={10}
-                    windowSize={5}
-                    removeClippedSubviews
-                    renderItem={({ item: surah }: { item: any }) => (
-                      <Pressable
-                        onPress={async () => {
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                          const newGoal = {
-                            id: `custom-surah--`,
-                            title: `Recite Surah `,
-                            arabic: surah.name,
-                            category: "quran" as const,
-                            repeat: "daily" as const
-                          };
-                          const updatedCustom = [...customGoals, newGoal];
-                          setCustomGoals(updatedCustom);
-                          await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
-                          const updatedActive = [...activeIds, newGoal.id];
-                          setActiveIds(updatedActive);
-                          await saveActiveGoalIds(updatedActive);
-                          setShowAddCustomModal(false);
-                          setSurahSearch("");
-                          Alert.alert("Goal Created \ud83c\udf89", `Added "Recite Surah " to your daily goals!`);
-                        }}
-                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12 }]}
-                      >
-                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brand + "18", alignItems: "center", justifyContent: "center" }}>
-                          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.brand }}>{surah.number}</Text>
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 10 }}>
-                          <Text style={[styles.modalPrayerLabel, { color: colors.onSurface }]}>{surah.englishName}</Text>
-                          <Text style={{ fontSize: 11, color: colors.onSurfaceMuted }}>{surah.englishNameTranslation} � {surah.numberOfAyahs} Verses</Text>
-                        </View>
-                        <Text style={{ fontSize: 16, color: colors.brand, fontFamily: "Amiri" }}>{surah.name}</Text>
-                      </Pressable>
-                    )}
-                  />
-                </View>
-              ) : newGoalCategory === "dhikr" ? (
-                <View style={{ flex: 1, gap: 8 }}>
-                  <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, fontWeight: "600" }}>Select Dhikr or Du'a from Du'a Hub to Recite Everyday</Text>
-                  <AppTextInput
-                    value={dhikrSearch}
-                    onChangeText={setDhikrSearch}
-                    placeholder="Search Dhikr or Du'a (e.g. Protection, Forgiveness, Ummah, Healing...)"
-                    leadingIcon="magnify"
-                    style={styles.input}
-                  />
-
-                  <FlatList
-                    data={allDhikrAndDuaOptions.filter(item =>
-                      item.title.toLowerCase().includes(dhikrSearch.toLowerCase()) ||
-                      (item.transliteration && item.transliteration.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
-                      (item.translation && item.translation.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
-                      (item.categoryTag && item.categoryTag.toLowerCase().includes(dhikrSearch.toLowerCase())) ||
-                      item.arabic.includes(dhikrSearch.trim())
-                    )}
-                    keyExtractor={(item: any) => item.id}
-                    style={{ flex: 1 }}
-                    contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
-                    showsVerticalScrollIndicator={false}
-                    initialNumToRender={8}
-                    maxToRenderPerBatch={8}
-                    windowSize={5}
-                    removeClippedSubviews
-                    renderItem={({ item: dhikrItem }: { item: any }) => (
-                      <Pressable
-                        onPress={async () => {
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                          const newGoal = {
-                            id: `custom-dhikr--`,
-                            title: dhikrItem.title,
-                            arabic: dhikrItem.arabic,
-                            subtitle: dhikrItem.transliteration || dhikrItem.translation,
-                            category: "dhikr" as const,
-                            repeat: "daily" as const
-                          };
-                          const updatedCustom = [...customGoals, newGoal];
-                          setCustomGoals(updatedCustom);
-                          await AsyncStorage.setItem("hikmah:custom-goals:v1", JSON.stringify(updatedCustom));
-                          const updatedActive = [...activeIds, newGoal.id];
-                          setActiveIds(updatedActive);
-                          await saveActiveGoalIds(updatedActive);
-                          setShowAddCustomModal(false);
-                          setDhikrSearch("");
-                          Alert.alert("Goal Created \ud83c\udf89", `Added "" to your daily goals!`);
-                        }}
-                        style={[styles.modalPrayerRow, { backgroundColor: colors.surface, borderColor: colors.border, paddingVertical: 10, borderRadius: 12, alignItems: "flex-start" }]}
-                      >
-                        <View style={{ flex: 1, paddingRight: 8 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
-                            <Text style={[styles.modalPrayerLabel, { color: colors.onSurface, fontSize: 14 }]}>{dhikrItem.title}</Text>
-                            <View style={{ backgroundColor: colors.brand + "18", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                              <Text style={{ fontSize: 10, color: colors.brand, fontWeight: "600" }}>{dhikrItem.categoryTag}</Text>
-                            </View>
-                          </View>
-                          {dhikrItem.transliteration ? (
-                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }} numberOfLines={2}>{dhikrItem.transliteration}</Text>
-                          ) : dhikrItem.translation ? (
-                            <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 2 }} numberOfLines={2}>{dhikrItem.translation}</Text>
-                          ) : null}
-                        </View>
-                        <Text style={{ fontSize: 15, color: colors.brand, fontFamily: "Amiri", textAlign: "right" }}>{dhikrItem.arabic}</Text>
-                      </Pressable>
-                    )}
-                  />
-                </View>
-              ) : (
-                <View style={{ gap: 16, marginTop: 4 }}>
-                  <View>
-                    <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, marginBottom: 6, fontWeight: "600" }}>Goal Title</Text>
-                    <AppTextInput
-                      value={newGoalTitle}
-                      onChangeText={setNewGoalTitle}
-                      placeholder={newGoalCategory === "prayer" ? "e.g. Offer Ishraq, Offer Duha" : "e.g. Read Tafseer, Visit Family"}
-                      style={styles.input}
-                    />
-                  </View>
-
-                  <Pressable
-                    onPress={handleAddCustomGoal}
-                    style={[styles.modalSubmitBtn, { backgroundColor: colors.brand, marginTop: 8, borderRadius: 12 }]}
-                  >
-                    <Text style={{ color: colors.onBrandPrimary, fontWeight: "700", fontSize: 15 }}>Create & Add Goal</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Goal ActionSheet Modal */}
-      <Modal
-        visible={activeActionGoal !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setActiveActionGoal(null)}
-      >
-        <Pressable style={styles.actionSheetOverlay} onPress={() => setActiveActionGoal(null)}>
-          <View style={[styles.actionSheetContent, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <Pressable
-              onPress={() => {
-                if (activeActionGoal) {
-                  setActiveActionGoal(null);
-                  router.push("/goal-settings");
-                }
-              }}
-              style={[styles.actionSheetOpt, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-            >
-              <Text style={[styles.actionSheetText, { color: colors.onSurface }]}>Edit goal</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => {
-                if (activeActionGoal) {
-                  const id = activeActionGoal.id;
-                  setActiveActionGoal(null);
-                  removeGoalFromHome(id);
-                }
-              }}
-              style={[styles.actionSheetOpt, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-            >
-              <Text style={[styles.actionSheetText, { color: colors.error }]}>Remove</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setActiveActionGoal(null)}
-              style={styles.actionSheetOpt}
-            >
-              <Text style={[styles.actionSheetText, { color: colors.onSurface, fontWeight: "700" }]}>Cancel</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Confetti Celebration Overlay Modal */}
-      <Modal
-        visible={allCompletedModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAllCompletedModalVisible(false)}
-      >
-        <Pressable
-          style={StyleSheet.absoluteFillObject}
-          onPress={() => setAllCompletedModalVisible(false)}
-        >
-          <View style={[styles.congratsOverlay, { backgroundColor: "rgba(0,0,0,0.55)" }]}>
-            {/* Render Confetti Particles */}
-            {confettiParticles.map((p, idx) => {
-              const rotation = p.rotate.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0deg', `${360 + Math.random() * 360}deg`]
-              });
-              const translateX = p.rotate.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, p.drift]
-              });
-              return (
-                <Animated.View
-                  key={idx}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: p.x,
-                    width: p.shape === "rect" ? 14 : 9,
-                    height: 9,
-                    borderRadius: p.shape === "circle" ? 4.5 : 2,
-                    backgroundColor: p.color,
-                    transform: [
-                      { translateY: p.y },
-                      { translateX: translateX },
-                      { rotate: rotation },
-                      { scale: p.scale }
-                    ],
-                    zIndex: 9999,
-                  }}
-                />
-              );
-            })}
-
-            {/* Celebratory Text */}
-            <View style={{ alignItems: "center", justifyContent: "center", flex: 1, paddingHorizontal: 32 }}>
-              <Text style={{ fontSize: 48, color: "#F5D061", fontWeight: "bold", textAlign: "center", marginBottom: 16, fontFamily: "AmiriBold", textShadowColor: "rgba(245,208,97,0.45)", textShadowOffset: { width: 0, height: 4 }, textShadowRadius: 14 }}>
-                سُبْحَانَ ٱللَّٰهِ
-              </Text>
-              <Text style={{ fontSize: 24, color: "#FFFFFF", fontWeight: "800", textAlign: "center", lineHeight: 36, textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 6 }}>
-                {"You've completed\nall your goals for today."}
-              </Text>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* ── Dua of the Day Pop-up Modal ── */}
-      <Modal
-        visible={!dailyDuaDismissed && !!dailyDua}
-        transparent
-        animationType="fade"
-        onRequestClose={async () => {
-          setDailyDuaDismissed(true);
-          const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-          await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-        }}
-      >
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", padding: 16 }}>
-          <View style={{ width: width * 0.92, maxWidth: 520, borderRadius: 28, padding: 26, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brand + "44", elevation: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.35, shadowRadius: 24 }}>
-            {/* Header */}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, marginRight: 8 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.brand + "20", alignItems: "center", justifyContent: "center" }}>
-                  <MaterialCommunityIcons name="hands-pray" size={22} color={colors.brand} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontWeight: "800", color: colors.brand, textTransform: "uppercase", letterSpacing: 0.9 }}>
-                    Dua of the Day
-                  </Text>
-                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.onSurface, marginTop: 1 }} numberOfLines={1}>
-                    {dailyDua?.title}
-                  </Text>
-                </View>
-              </View>
-
-              <Pressable
-                onPress={async () => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  setDailyDuaDismissed(true);
-                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-                }}
-                hitSlop={12}
-                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center" }}
-              >
-                <MaterialCommunityIcons name="close" size={22} color={colors.onSurfaceMuted} />
-              </Pressable>
-            </View>
-
-            {/* Arabic + Translation Scrollable Area */}
-            <ScrollView style={{ maxHeight: 300, marginVertical: 10 }} showsVerticalScrollIndicator={false}>
-              <Text style={{ fontFamily: "AmiriBold", fontSize: 28, color: colors.onSurface, textAlign: "right", lineHeight: 48, marginBottom: 16 }}>
-                {dailyDua?.arabic}
-              </Text>
-              <Text style={{ fontSize: 14, color: colors.onSurfaceSecondary, lineHeight: 22, fontStyle: "italic", marginBottom: 12 }}>
-                "{dailyDua?.translation}"
-              </Text>
-              {dailyDua?.source ? (
-                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.brand, marginTop: 4 }}>
-                  Source: {dailyDua.source}
-                </Text>
-              ) : null}
-            </ScrollView>
-
-            {/* Single Full-Width Action Button ("Open Du'as Hub") */}
-            <View style={{ marginTop: 16 }}>
-              <Pressable
-                onPress={async () => {
-                  setDailyDuaDismissed(true);
-                  const todayStr = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
-                  await AsyncStorage.setItem("hikmah:daily-dua-dismissed-date", todayStr);
-                  router.push("/dua-hub" as any);
-                }}
-                style={{ width: "100%", backgroundColor: colors.brand, paddingVertical: 14, borderRadius: 16, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: "800", color: "#FFFFFF" }}>{"Open Du'as Hub"}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      </Reanimated.ScrollView>
+      <HomeScreenModals
+          activeActionGoal={activeActionGoal}
+          activeIds={activeIds}
+          allCompletedModalVisible={allCompletedModalVisible}
+          allDhikrAndDuaOptions={allDhikrAndDuaOptions}
+          colors={colors}
+          confettiParticles={confettiParticles}
+          customGoals={customGoals}
+          dhikrModalVisible={dhikrModalVisible}
+          dhikrSearch={dhikrSearch}
+          handleAddCustomGoal={handleAddCustomGoal}
+          handleMenstrualModeToggle={handleMenstrualModeToggle}
+          menstrualMode={menstrualMode}
+          newGoalCategory={newGoalCategory}
+          newGoalTitle={newGoalTitle}
+          prayerCompletions={prayerCompletions}
+          prayersModalVisible={prayersModalVisible}
+          removeGoalFromHome={removeGoalFromHome}
+          router={router}
+          setActiveActionGoal={setActiveActionGoal}
+          setActiveIds={setActiveIds}
+          setAllCompletedModalVisible={setAllCompletedModalVisible}
+          setCustomGoals={setCustomGoals}
+          setDhikrModalVisible={setDhikrModalVisible}
+          setDhikrSearch={setDhikrSearch}
+          setNewGoalCategory={setNewGoalCategory}
+          setNewGoalTitle={setNewGoalTitle}
+          setPrayersModalVisible={setPrayersModalVisible}
+          setShowAddCustomModal={setShowAddCustomModal}
+          setSurahSearch={setSurahSearch}
+          showAddCustomModal={showAddCustomModal}
+          styles={styles}
+          surahSearch={surahSearch}
+          togglePrayerCompletion={togglePrayerCompletion}
+      />
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  goldHalo: {
-    position: "absolute",
-    top: 70,
-    right: -90,
-    width: 230,
-    height: 230,
-    borderRadius: 115,
-    backgroundColor: "rgba(212,175,55,0.12)",
-  },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
-  headerTitle: { fontSize: 22, fontWeight: "800", letterSpacing: 0.2 },
-  hijriDate: { fontSize: 11, marginTop: 2 },
-  scrollContent: { paddingBottom: 120 },
-  greeting: { paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
-  greetingHi: { fontSize: 13, fontWeight: "600" },
-  cityTxt: { fontSize: 12, marginTop: 4 },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginHorizontal: theme.spacing.lg,
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  locationTxt: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  // Prayer countdown card
-  prayerCard: {
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: 24,
-    padding: theme.spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: theme.spacing.lg,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(212,175,55,0.22)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.18,
-    shadowRadius: 22,
-    elevation: 10,
-  },
-  prayerCardGlow: {
-    position: "absolute",
-    right: -42,
-    top: -58,
-    width: 154,
-    height: 154,
-    borderRadius: 77,
-    backgroundColor: "rgba(212,175,55,0.16)",
-  },
-  prayerLabel: { fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
-  prayerName: { fontSize: 28, fontWeight: "800", marginTop: 2 },
-  prayerTime: { fontSize: 20, fontWeight: "700" },
-  viewAll: { fontSize: 13, fontWeight: "600", marginTop: 8 },
-  ringWrap: { width: RING, height: RING, alignItems: "center", justifyContent: "center" },
-  ringCenter: { position: "absolute", alignItems: "center" },
-  nextLabel: { fontSize: 9, fontWeight: "600" },
-  countdown: { fontSize: 11, fontWeight: "800", marginTop: 2 },
-
-  // Quick actions
-  quickPager: { marginBottom: 2 },
-  quickPagerContent: { alignItems: "flex-start" },
-  quickPage: { width, flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, justifyContent: "flex-start" },
-  quickBtn: { alignItems: "center", justifyContent: "flex-start", width: (width - theme.spacing.lg * 2) / 3, marginBottom: 16 },
-  quickDots: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: -2,
-    marginBottom: theme.spacing.md,
-  },
-  quickDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  quickReorderHint: { fontSize: 11, textAlign: "center", marginBottom: theme.spacing.md },
-  quickIconOnly: {
-    width: 64,
-    height: 64,
-    marginBottom: 7,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  quickLockBadge: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quickLockEmoji: {
-    fontSize: 11,
-  },
-  quickIconImage: {
-    width: 48,
-    height: 48,
-    resizeMode: "contain",
-  },
-  quickEmoji: {
-    fontSize: 42,
-    textShadowColor: "rgba(0,0,0,0.22)",
-    textShadowOffset: { width: 0, height: 5 },
-    textShadowRadius: 7,
-  },
-  quickLabel: { fontSize: 11, fontWeight: "800", textAlign: "center", lineHeight: 15 },
-
-  // Goals card
-  goalsCard: {
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: 24,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(212,175,55,0.16)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 7,
-  },
-  goalsHeader: { marginBottom: theme.spacing.sm },
-  goalsTitle: { fontSize: 16, fontWeight: "700" },
-  progressBg: { height: 6, borderRadius: 3, marginBottom: theme.spacing.sm },
-  progressFill: { height: 6, borderRadius: 3 },
-  catPills: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: theme.spacing.md },
-  pill: { flexDirection: "row", alignItems: "center", gap: 4 },
-  pillDot: { width: 8, height: 8, borderRadius: 4 },
-  pillTxt: { fontSize: 11 },
-  goalRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12, borderBottomWidth: 1 },
-  goalCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  goalTitle: { fontSize: 15, fontWeight: "600" },
-  goalSub: { fontSize: 12, marginTop: 2 },
-  goalArabic: { fontSize: 12, fontFamily: "Amiri", marginTop: 2 },
-  viewMoreBtn: { paddingTop: 12, alignItems: "center" },
-  viewMoreTxt: { fontWeight: "600", fontSize: 14 },
-
-  // Duas grid
-  segment: { flexDirection: "row", marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.pill, padding: 4, marginBottom: theme.spacing.lg },
-  segmentBtn: { flex: 1, paddingVertical: 12, borderRadius: theme.radius.pill, alignItems: "center" },
-  segmentText: { fontWeight: "600", fontSize: 14 },
-  segmentTextActive: { color: "#03201F" },
-  grid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md },
-  card: { height: 140, borderRadius: theme.radius.lg, overflow: "hidden" },
-  cardImage: { flex: 1, justifyContent: "flex-end" },
-  cardScrim: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: theme.spacing.sm },
-  cardLabelContainer: {
-    backgroundColor: "rgba(15, 23, 42, 0.82)", // dark navy translucent overlay
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  cardTitle: { color: "#FFFFFF", fontSize: 11, fontWeight: "800", letterSpacing: 0.8, textAlign: "center" },
-
-  // Google Calendar Card
-  calendarCard: {
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-  },
-  calendarHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  calendarTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-  calendarBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-  },
-  calendarBtnTxt: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  // Goal checklist items
-  goalsListContainer: {
-    marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
-  },
-  goalRowItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  goalCheckArea: {
-    paddingRight: 12,
-  },
-  goalCircleCheck: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  goalItemTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  goalItemSub: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  goalItemArabic: {
-    fontSize: 12,
-    fontFamily: "Amiri",
-    marginTop: 2,
-  },
-  sectionTitleHeader: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  bottomButtonsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: theme.spacing.md,
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  bottomOutlineBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 24,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  bottomBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  // Prayers Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    width: width * 0.9,
-    maxHeight: "80%",
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    padding: theme.spacing.lg,
-    alignItems: "center",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-    width: "100%",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  modalPrayerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: theme.spacing.lg,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  modalPrayerLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  menstrualCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: theme.spacing.lg,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  menstrualTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  menstrualSub: {
-    fontSize: 12,
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  addCustomBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 24,
-    marginTop: 8,
-    width: "100%",
-  },
-  input: {
-    fontSize: 15,
-    marginBottom: 4,
-    width: "100%",
-  },
-  catSelectBtn: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-  },
-  modalSubmitBtn: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 24,
-    width: "100%",
-  },
-  actionSheetOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    justifyContent: "flex-end",
-  },
-  actionSheetContent: {
-    width: "100%",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: theme.spacing.lg,
-    paddingBottom: 24,
-    borderWidth: 1,
-  },
-  actionSheetOpt: {
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-  },
-  actionSheetText: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  congratsOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  congratsContent: {
-    width: width * 0.85,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  congratsTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    marginBottom: 8,
-  },
-  congratsSub: {
-    fontSize: 14,
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 20,
-  },
-  congratsBtn: {
-    width: "100%",
-    paddingVertical: 12,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  congratsBtnTxt: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  balloonContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: "hidden",
-  },
-  congratsBalloon: {
-    position: "absolute",
-    bottom: -100,
-  },
-});
-// End of HomeScreen component

@@ -5,6 +5,7 @@ import React, { useEffect, Component } from "react";
 import { AppState, LogBox, Pressable, Text, View, Image, StyleSheet, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { enableFreeze } from "react-native-screens";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import {
@@ -36,6 +37,11 @@ import PremiumModal from "@/src/components/PremiumModal";
 import { QuranPlayerProvider } from "@/src/QuranPlayerContext";
 import { MiniPlayerBar } from "@/src/components/MiniPlayerBar";
 import { getPrayerTimingsCache, savePrayerTimingsCache, localDateKey } from "@/src/storage";
+
+// Freeze off-screen pages so hidden screens stop re-rendering and running
+// effects while they are not visible — they were stealing JS-thread time
+// during transitions and scrolling.
+enableFreeze(true);
 
 async function checkPrayerNotificationExpired(notification: Notification): Promise<boolean> {
   try {
@@ -206,7 +212,7 @@ function ThemedStack({ azaanPlaying, onStopAzaan }: { azaanPlaying: boolean; onS
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.surface },
-          animation: "slide_from_right",
+          animation: "ios_from_right",
           gestureEnabled: true,
           gestureDirection: "horizontal",
           animationDuration: 260,

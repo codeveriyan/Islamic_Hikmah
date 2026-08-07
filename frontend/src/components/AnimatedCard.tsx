@@ -7,7 +7,14 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-const SPRING_CONFIG = { damping: 15, stiffness: 300, mass: 0.6 };
+import {
+  SPRING_PRESS,
+  TIMING_FAST,
+  TIMING_BASE,
+  getSpringConfig,
+  getTimingConfig,
+  useReducedMotion,
+} from "@/src/motion";
 
 type Props = Omit<PressableProps, "children" | "style"> & {
   children: React.ReactNode;
@@ -19,6 +26,9 @@ type Props = Omit<PressableProps, "children" | "style"> & {
  * Drop-in replacement for <Pressable> with Reanimated 3 spring physics.
  * Works exactly like Pressable but adds spring scale + opacity bounce.
  * Nested Pressables are NOT blocked — this wraps using the Animated.Pressable pattern.
+ *
+ * Animation feel comes from the shared tokens in `@/src/motion`, and presses
+ * respect the OS "Reduce Motion" accessibility setting automatically.
  */
 export function AnimatedCard({
   children,
@@ -34,6 +44,7 @@ export function AnimatedCard({
 }: Props) {
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -47,12 +58,12 @@ export function AnimatedCard({
         onLongPress={onLongPress}
         onPressIn={() => {
           if (disabled) return;
-          scale.value = withSpring(pressedScale, SPRING_CONFIG);
-          opacity.value = withTiming(0.88, { duration: 80 });
+          scale.value = withSpring(pressedScale, getSpringConfig(SPRING_PRESS, reduceMotion));
+          opacity.value = withTiming(0.88, getTimingConfig(TIMING_FAST, reduceMotion));
         }}
         onPressOut={() => {
-          scale.value = withSpring(1, SPRING_CONFIG);
-          opacity.value = withTiming(1, { duration: 120 });
+          scale.value = withSpring(1, getSpringConfig(SPRING_PRESS, reduceMotion));
+          opacity.value = withTiming(1, getTimingConfig(TIMING_BASE, reduceMotion));
         }}
         disabled={disabled}
         delayLongPress={delayLongPress}
